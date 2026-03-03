@@ -8,7 +8,8 @@ That's it. dbghelp.dll is a proxy loader — Game.exe loads it automatically,
 which bootstraps Aether.dll. No injector needed.
 
 Hotkeys:
-  F10  — Settings menu
+  F10  — Debug mode
+  F12  - Settings menu
   N    — Pathfind to next area
   P    — Pathfind to previous area
 
