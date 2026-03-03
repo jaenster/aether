@@ -1,0 +1,18 @@
+Aether — Setup
+
+1. Copy Aether.dll and dbghelp.dll into your Diablo II directory (next to Game.exe)
+2. Copy the scripts/ folder into <game dir>/aether/scripts/
+3. Launch Game.exe
+
+That's it. dbghelp.dll is a proxy loader — Game.exe loads it automatically,
+which bootstraps Aether.dll. No injector needed.
+
+Hotkeys:
+  F10  — Settings menu
+  N    — Pathfind to next area
+  P    — Pathfind to previous area
+
+Wine (macOS/Linux):
+  WINEDLLOVERRIDES="dbghelp=n" wine Game.exe -w
+
+To uninstall: delete Aether.dll and dbghelp.dll from the game directory.

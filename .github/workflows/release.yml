@@ -29,6 +29,7 @@ jobs:
           cp zig-out/bin/dbghelp.dll release/
           cp -r scripts release/
           cp README.md release/
+          cp INSTALL.txt release/
           cd release && zip -r ../aether-${{ github.ref_name }}.zip .
 
       - name: Create Release
