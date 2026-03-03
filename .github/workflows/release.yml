@@ -1,0 +1,38 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.1
+
+      - name: Build
+        run: zig build -Doptimize=ReleaseSmall
+
+      - name: Package
+        run: |
+          mkdir -p release
+          cp zig-out/bin/Aether.dll release/
+          cp zig-out/bin/dbghelp.dll release/
+          cp -r scripts release/
+          cp README.md release/
+          cd release && zip -r ../aether-${{ github.ref_name }}.zip .
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: aether-${{ github.ref_name }}.zip
+          generate_release_notes: true
