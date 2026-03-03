@@ -12,6 +12,7 @@ const d2 = struct {
 pub const fog_allocator = @import("fog_allocator.zig");
 const crash_handler = @import("crash_handler.zig");
 const log = @import("log.zig");
+const ogl = @import("renderer/ogl.zig");
 
 // Features
 const screen_info = @import("features/screen_info.zig");
@@ -42,6 +43,9 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
             _ = DisableThreadLibraryCalls(hModule);
             crash_handler.install();
 
+            // OpenGL renderer — must run before game_hooks to patch D2GFX_Initialize
+            ogl.earlyInit();
+
             // Register features — isolating crash
             feature.register(&screen_info.hooks);
             feature.register(&misc.hooks);
@@ -69,6 +73,7 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
             lua_engine.deinit();
             game_hooks.uninstall();
             feature.deinitAll();
+            ogl.cleanup();
         },
         else => {},
     }

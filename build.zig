@@ -36,6 +36,8 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     aether.linkLibC();
+    aether.linkSystemLibrary("opengl32");
+    aether.linkSystemLibrary("gdi32");
 
     // Lua 5.4.7
     const lua_dir = "vendor/lua-5.4.7";
