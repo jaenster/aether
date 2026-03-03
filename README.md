@@ -13,7 +13,7 @@ A QoL tool for Diablo II 1.14d written in Zig, with embedded Lua 5.4 scripting. 
 - POI discovery (waypoints, quest objects, seals, bosses)
 - Farming route system with HUD overlay
 - Item quality-of-life (name colors, filtering)
-- Embedded Lua 5.4 scripting engine
+- Embedded Lua 5.4 scripting engine (runs on the game's FOG memory pool, ticks inside the game loop)
 - Console window for live log output
 - Settings menu (F10) with persistent config
 
