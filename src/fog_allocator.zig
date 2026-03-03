@@ -12,23 +12,38 @@ const DWORD = u32;
 const BYTE = u8;
 
 // FOG pool function addresses (D2 1.14d)
-const ADDR_INIT_POOL_SYSTEM: usize = 0x00409DD0; // stdcall (D2PoolManagerStrc**, char*, i32)
-const ADDR_POOL_ALLOC: usize = 0x0040A080; // thiscall (this, size, char*, i32) -> void*
-const ADDR_POOL_FREE: usize = 0x00409AB0; // thiscall (this, void**, char*, i32)
-const ADDR_POOL_REALLOC: usize = 0x0040A1F0; // cdecl (D2PoolManagerStrc*, void*, size, char*, i32) -> void*
-const ADDR_FREE_MEMORY_POOL: usize = 0x00409C80; // thiscall — the teardown hook target
+// All pool functions are __fastcall (ECX=arg1, EDX=arg2, stack=rest).
+// Zig's .Fastcall is broken on x86 (ziglang/zig#10363), so we use inline asm.
+const ADDR_INIT_POOL_SYSTEM: usize = 0x00409DD0; // cdecl (D2PoolManagerStrc**, char*, i32)
+const ADDR_POOL_ALLOC: usize = 0x0040A080; // fastcall (pool, size, file, line) -> void*
+const ADDR_POOL_FREE: usize = 0x00409AB0; // fastcall (pool, ptr**, file, line)
+const ADDR_POOL_REALLOC: usize = 0x0040A1F0; // fastcall (pool, ptr, size, file, line) -> void*
+const ADDR_FREE_MEMORY_POOL: usize = 0x00409C80; // cdecl (pool)
 
-// Thiscall: ECX = this, args on stack. On x86-windows Zig, .Thiscall puts first arg in ECX.
-const PoolAllocFn = *const fn (*D2PoolManagerStrc, usize, [*:0]const u8, i32) callconv(.Thiscall) ?[*]BYTE;
-const PoolFreeFn = *const fn (*D2PoolManagerStrc, *?[*]BYTE, [*:0]const u8, i32) callconv(.Thiscall) void;
-const PoolReallocFn = *const fn (*D2PoolManagerStrc, ?[*]BYTE, usize, [*:0]const u8, i32) callconv(.Fastcall) ?[*]BYTE;
-
-pub const pool_alloc: PoolAllocFn = @ptrFromInt(ADDR_POOL_ALLOC);
-pub const pool_free: PoolFreeFn = @ptrFromInt(ADDR_POOL_FREE);
-pub const pool_realloc: PoolReallocFn = @ptrFromInt(ADDR_POOL_REALLOC);
-
-const InitPoolSystemFn = *const fn (**D2PoolManagerStrc, [*:0]const u8, i32) callconv(.Stdcall) void;
+const InitPoolSystemFn = *const fn (**D2PoolManagerStrc, [*:0]const u8, i32) callconv(.C) void;
 const init_pool_system: InitPoolSystemFn = @ptrFromInt(ADDR_INIT_POOL_SYSTEM);
+
+// Fastcall wrappers using the buffer+asm pattern from d2/functions.zig.
+// Zig's .Fastcall is broken on x86 (ziglang/zig#10363).
+const d2fn = @import("d2/functions.zig");
+
+const PoolAlloc = d2fn.fastcall(ADDR_POOL_ALLOC, fn (u32, u32, u32, i32) u32);
+const PoolFree = d2fn.fastcall(ADDR_POOL_FREE, fn (u32, u32, u32, i32) void);
+const PoolRealloc = d2fn.fastcall(ADDR_POOL_REALLOC, fn (u32, u32, u32, u32, i32) u32);
+
+pub noinline fn pool_alloc(pool: *D2PoolManagerStrc, size: usize, file: [*:0]const u8, line: i32) ?[*]BYTE {
+    const raw = PoolAlloc.call(.{ @intFromPtr(pool), @as(u32, @intCast(size)), @intFromPtr(file), line });
+    return if (raw == 0) null else @ptrFromInt(raw);
+}
+
+pub noinline fn pool_free(pool: *D2PoolManagerStrc, ptr: *?[*]BYTE, file: [*:0]const u8, line: i32) void {
+    PoolFree.call(.{ @intFromPtr(pool), @intFromPtr(ptr), @intFromPtr(file), line });
+}
+
+pub noinline fn pool_realloc(pool: *D2PoolManagerStrc, ptr: ?[*]BYTE, size: usize, file: [*:0]const u8, line: i32) ?[*]BYTE {
+    const raw = PoolRealloc.call(.{ @intFromPtr(pool), if (ptr) |p| @intFromPtr(p) else @as(u32, 0), @as(u32, @intCast(size)), @intFromPtr(file), line });
+    return if (raw == 0) null else @ptrFromInt(raw);
+}
 
 var aether_pool: ?*D2PoolManagerStrc = null;
 
@@ -117,10 +132,10 @@ pub fn registerCleanup(pool: *D2PoolManagerStrc, callback: CleanupFn, ctx: ?*any
 // We intercept FreeMemoryPool to run cleanup callbacks before the pool is destroyed.
 
 var free_pool_trampoline: ?trampoline.Trampoline = null;
-const FreePoolFn = *const fn (*D2PoolManagerStrc) callconv(.Thiscall) void;
+const FreePoolFn = *const fn (*D2PoolManagerStrc) callconv(.C) void;
 var original_free_pool: ?FreePoolFn = null;
 
-fn hookFreeMemoryPool(this: *D2PoolManagerStrc) callconv(.Thiscall) void {
+fn hookFreeMemoryPool(this: *D2PoolManagerStrc) callconv(.C) void {
     // Find and run cleanup for this pool
     for (&pool_registry) |*slot| {
         if (slot.*) |entry| {

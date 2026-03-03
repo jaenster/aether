@@ -4,6 +4,8 @@ The unseen layer between you and Diablo II.
 
 A QoL tool for Diablo II 1.14d written in Zig, with embedded Lua 5.4 scripting. Cross-compiles from any platform to x86 Windows.
 
+[**Download latest release**](https://github.com/jaenster/aether/releases/latest)
+
 ## Features
 
 - Map reveal with room boundaries and exit markers
@@ -54,6 +56,10 @@ function onTick()
     local maxhp = aether.getPlayerMaxHP()
 end
 ```
+
+## Known Issues
+
+- **Zig `callconv(.Fastcall)` is broken on x86** — [ziglang/zig#10363](https://github.com/ziglang/zig/issues/10363). Zig generates incorrect code for `__fastcall` (ECX/EDX) on 32-bit targets. We work around this with inline asm wrappers that manually set ECX/EDX and push stack args. See `src/d2/functions.zig` for the comptime `fastcall()` generator and `src/fog_allocator.zig` for hand-written examples. If you add new game function bindings, never use `callconv(.Fastcall)` — use the inline asm pattern instead.
 
 ## Structure
 

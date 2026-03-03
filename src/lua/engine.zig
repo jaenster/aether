@@ -16,7 +16,7 @@ var lua_alloc_count: u32 = 0;
 var lua_free_count: u32 = 0;
 var using_fog_pool: bool = false;
 
-fn fogLuaAlloc(ud: ?*anyopaque, ptr: ?*anyopaque, _: usize, nsize: usize) callconv(.c) ?*anyopaque {
+fn fogLuaAlloc(ud: ?*anyopaque, ptr: ?*anyopaque, osize: usize, nsize: usize) callconv(.c) ?*anyopaque {
     const pool: *D2PoolManagerStrc = @ptrCast(@alignCast(ud orelse return null));
     const old_ptr: ?[*]u8 = if (ptr) |p| @ptrCast(p) else null;
 
@@ -30,10 +30,25 @@ fn fogLuaAlloc(ud: ?*anyopaque, ptr: ?*anyopaque, _: usize, nsize: usize) callco
         return null;
     }
 
-    // alloc or realloc
-    const result = fog.pool_realloc(pool, old_ptr, nsize, "Lua", 0);
-    if (result != null) lua_alloc_count += 1;
-    return @ptrCast(result);
+    if (old_ptr == null) {
+        // fresh alloc
+        const result = fog.pool_alloc(pool, nsize, "Lua", 0);
+        if (result != null) lua_alloc_count += 1;
+        return @ptrCast(result);
+    }
+
+    // realloc: alloc new, copy, free old
+    const new_mem = fog.pool_alloc(pool, nsize, "Lua", 0) orelse return null;
+    const copy_size = if (osize < nsize) osize else nsize;
+    const dst: [*]u8 = new_mem;
+    const src: [*]const u8 = old_ptr.?;
+    for (0..copy_size) |i| {
+        dst[i] = src[i];
+    }
+    var freeable: ?[*]u8 = old_ptr;
+    fog.pool_free(pool, &freeable, "Lua", 0);
+    lua_alloc_count += 1;
+    return @ptrCast(new_mem);
 }
 
 pub fn init() void {
@@ -48,15 +63,24 @@ pub fn init() void {
     _ = loadScript("aether\\scripts\\init.lua");
 }
 
-/// Swap Lua to use a FOG memory pool. Call once the game's memory system is ready.
+/// Re-create Lua state using a FOG memory pool. Call once the game's memory system is ready.
+/// We close the old (libc-backed) state and create a fresh one with the FOG allocator,
+/// because lua_setallocf can't safely transition — old libc pointers would be freed by FOG.
 pub fn attachPool(pool: *D2PoolManagerStrc) void {
-    const state = L orelse return;
     if (using_fog_pool) return;
-    c.lua_setallocf(state, fogLuaAlloc, @ptrCast(@alignCast(pool)));
+    if (L) |old| c.lua_close(old);
+    L = c.lua_newstate(fogLuaAlloc, @ptrCast(@alignCast(pool)));
+    if (L == null) {
+        log.print("lua: failed to create FOG-backed state");
+        return;
+    }
+    c.luaL_openlibs(L.?);
+    registerAPI(L.?);
     using_fog_pool = true;
     lua_alloc_count = 0;
     lua_free_count = 0;
     log.print("lua: switched to FOG pool allocator");
+    _ = loadScript("aether\\scripts\\init.lua");
 }
 
 pub fn deinit() void {

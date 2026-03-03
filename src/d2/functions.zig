@@ -33,7 +33,7 @@ fn funcPtr(comptime addr: usize, comptime FnT: type) FnT {
 //   pub const DrawText = fastcall(0x502320, fn ([*:0]const u16, c_int, c_int, DWORD, BOOL) void);
 //   DrawText.call(.{text, 100, 50, 4, 0});
 
-fn argToU32(comptime T: type, val: T) u32 {
+pub fn argToU32(comptime T: type, val: T) u32 {
     return switch (@typeInfo(T)) {
         .pointer => @intFromPtr(val),
         .optional => |opt| switch (@typeInfo(opt.child)) {
@@ -48,7 +48,7 @@ fn argToU32(comptime T: type, val: T) u32 {
     };
 }
 
-fn u32ToRet(comptime T: type, raw: u32) T {
+pub fn u32ToRet(comptime T: type, raw: u32) T {
     return switch (@typeInfo(T)) {
         .pointer => @ptrFromInt(raw),
         .optional => |opt| switch (@typeInfo(opt.child)) {
@@ -64,7 +64,7 @@ fn u32ToRet(comptime T: type, raw: u32) T {
 /// Build the inline asm string for an N-arg fastcall.
 /// Reads args from a u32 array pointed to by %[buf].
 /// Sets ECX from buf[0], EDX from buf[1], pushes buf[N-1]..buf[2].
-fn buildFastcallAsm(comptime n: usize) []const u8 {
+pub fn buildFastcallAsm(comptime n: usize) []const u8 {
     comptime {
         var s: []const u8 = "";
         // Push stack args in reverse order (right-to-left)
@@ -87,7 +87,7 @@ fn ArgsArray(comptime FnType: type) type {
     return [if (n > 0) n else 1]u32;
 }
 
-fn fastcall(comptime addr: u32, comptime FnType: type) type {
+pub fn fastcall(comptime addr: u32, comptime FnType: type) type {
     const info = @typeInfo(FnType).@"fn";
     const params = info.params;
     const n = params.len;
