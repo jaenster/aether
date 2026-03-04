@@ -14,6 +14,7 @@ const crash_handler = @import("crash_handler.zig");
 const log = @import("log.zig");
 
 // Features
+const headless = @import("features/headless.zig");
 const screen_info = @import("features/screen_info.zig");
 const omnivision = @import("features/omnivision.zig");
 const weather = @import("features/weather.zig");
@@ -42,7 +43,8 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
             _ = DisableThreadLibraryCalls(hModule);
             crash_handler.install();
 
-            // Register features — isolating crash
+            // Register features — headless must be first (patches before any DC6 loading)
+            feature.register(&headless.hooks);
             feature.register(&screen_info.hooks);
             feature.register(&misc.hooks);
             feature.register(&map_reveal.hooks);
