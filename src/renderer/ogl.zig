@@ -632,7 +632,7 @@ export fn ogl_implDrawImage(pData_val: u32, x_val: u32, y_val: u32, gamma: u32, 
     const x: i32 = @bitCast(x_val);
     const y: i32 = @bitCast(y_val);
     const draw_x = x + block.nOffsetX;
-    const draw_y = y - block.nOffsetY - block.nHeight;
+    const draw_y = y + block.nOffsetY - block.nHeight;
 
     glColor4f(1.0, 1.0, 1.0, 1.0);
     glBegin(GL_QUADS);
@@ -666,7 +666,7 @@ export fn ogl_implDrawShadow(pData_val: u32, x_val: u32, y_val: u32) callconv(.C
     const x: i32 = @bitCast(x_val);
     const y: i32 = @bitCast(y_val);
     const draw_x = x + block.nOffsetX;
-    const draw_y = y - block.nOffsetY - block.nHeight;
+    const draw_y = y + block.nOffsetY - block.nHeight;
 
     // Draw shadow as semi-transparent dark rectangle
     glDisable(GL_TEXTURE_2D);
