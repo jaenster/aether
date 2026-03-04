@@ -1,6 +1,10 @@
+const std = @import("std");
+const win = std.os.windows;
+const WINAPI = win.WINAPI;
 const feature = @import("../feature.zig");
 const patch = @import("../hook/patch.zig");
 const log = @import("../log.zig");
+const crash_handler = @import("../crash_handler.zig");
 
 // Headless mode patches — allow the game to boot without media files.
 // Stubs out DC6/DT1/video/sound loaders so the game survives with minimal MPQs.
@@ -53,7 +57,52 @@ fn init() void {
     // Stub: RET.
     _ = patch.writeBytes(0x005136F0, &[_]u8{0xC3});
 
+    // Patch 9: D2COMP_LoadAllItemPalettes (0x00505550) — __stdcall, 0 args
+    // Loads item palette .dat files; calls ERROR_Halt if missing. Stub: RET.
+    _ = patch.writeBytes(0x00505550, &[_]u8{0xC3});
+
+    // Patch 10: DrawAnim (0x005003A0) — __fastcall, 1 arg in ECX
+    // Draws animated DC6 images; asserts on form type then deref NULL DC6. Stub: RET.
+    _ = patch.writeBytes(0x005003A0, &[_]u8{0xC3});
+
+    // Patch 11: Draw(D2WinAnimImage) (0x005005B0) — __fastcall, 1 arg in ECX
+    // Anim image draw; deref NULL frame table at +0x9A. Stub: RET.
+    _ = patch.writeBytes(0x005005B0, &[_]u8{0xC3});
+
+    // Hook ExitProcess to log stack trace before the game silently exits
+    hookExitProcess();
+
     log.print("headless: all patches applied");
+}
+
+extern "kernel32" fn GetModuleHandleA(name: ?[*:0]const u8) callconv(WINAPI) ?win.HINSTANCE;
+extern "kernel32" fn GetProcAddress(h: win.HINSTANCE, name: [*:0]const u8) callconv(WINAPI) ?*anyopaque;
+
+var exit_process_original: [5]u8 = undefined;
+var exit_process_addr: usize = 0;
+
+fn hookExitProcess() void {
+    const kernel32 = GetModuleHandleA("kernel32.dll") orelse return;
+    const proc = GetProcAddress(kernel32, "ExitProcess") orelse return;
+    exit_process_addr = @intFromPtr(proc);
+
+    // Save original bytes
+    const src: [*]const u8 = @ptrFromInt(exit_process_addr);
+    @memcpy(&exit_process_original, src[0..5]);
+
+    // Write JMP to our interceptor
+    _ = patch.writeJump(exit_process_addr, @intFromPtr(&exitProcessInterceptor));
+}
+
+fn exitProcessInterceptor(exit_code: u32) callconv(WINAPI) noreturn {
+    log.print("headless: ExitProcess called! Stack trace:");
+    crash_handler.logStackTrace("ExitProcess");
+    log.hex("headless: exit code ", exit_code);
+
+    // Restore original ExitProcess bytes and call real
+    _ = patch.writeBytes(exit_process_addr, &exit_process_original);
+    const realExitProcess: *const fn (u32) callconv(WINAPI) noreturn = @ptrFromInt(exit_process_addr);
+    realExitProcess(exit_code);
 }
 
 fn deinit() void {
@@ -65,6 +114,9 @@ fn deinit() void {
     patch.revertRange(0x004FAC90, 3); // Patch 6
     patch.revertRange(0x005137E0, 3); // Patch 7
     patch.revertRange(0x005136F0, 1); // Patch 8
+    patch.revertRange(0x00505550, 1); // Patch 9
+    patch.revertRange(0x005003A0, 1); // Patch 10
+    patch.revertRange(0x005005B0, 1); // Patch 11
 }
 
 // Naked handler for Patch 1.
@@ -83,7 +135,25 @@ fn celcmpNullHandler() callconv(.naked) void {
     );
 }
 
+var tick_count: u32 = 0;
+
+fn oogTick() void {
+    tick_count += 1;
+    if (tick_count % 100 == 0) {
+        log.hex("headless: oog tick ", tick_count);
+    }
+}
+
+fn gameTick() void {
+    tick_count += 1;
+    if (tick_count % 100 == 0) {
+        log.hex("headless: game tick ", tick_count);
+    }
+}
+
 pub const hooks = feature.Hooks{
     .init = &init,
     .deinit = &deinit,
+    .oogLoop = &oogTick,
+    .gameLoop = &gameTick,
 };

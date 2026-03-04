@@ -23,8 +23,8 @@ static bool is_essential(const char *filename) {
     if (strcasestr(filename, "animdata.d2"))
         return true;
 
-    // Palettes (pal.dat only, not PL2 palette transforms)
-    if (strcasestr(filename, "data\\global\\palette\\") && strcasestr(filename, ".dat"))
+    // Palettes (pal.dat and pal.pl2 — both required for act palette loading)
+    if (strcasestr(filename, "data\\global\\palette\\"))
         return true;
 
     // Fonts (DC6 font sprites — needed for text rendering)
