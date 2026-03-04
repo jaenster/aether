@@ -69,6 +69,14 @@ fn init() void {
     // Anim image draw; deref NULL frame table at +0x9A. Stub: RET.
     _ = patch.writeBytes(0x005005B0, &[_]u8{0xC3});
 
+    // Patch 12: BnetLoadAndReturn (0x0051C180) — __stdcall, 0 args
+    // Loads Battle.net gateway list from registry; halts on malformed data. Stub: RET.
+    _ = patch.writeBytes(0x0051C180, &[_]u8{0xC3});
+
+    // Patch 13: CHARSEL_EnumerateLocalSaves (0x00438F70) — __stdcall, 0 args
+    // Parses save files; halts on parse errors. Stub: XOR EAX,EAX; RET (return 0).
+    _ = patch.writeBytes(0x00438F70, &[_]u8{ 0x31, 0xC0, 0xC3 });
+
     // Hook ExitProcess to log stack trace before the game silently exits
     hookExitProcess();
 
@@ -117,6 +125,8 @@ fn deinit() void {
     patch.revertRange(0x00505550, 1); // Patch 9
     patch.revertRange(0x005003A0, 1); // Patch 10
     patch.revertRange(0x005005B0, 1); // Patch 11
+    patch.revertRange(0x0051C180, 1); // Patch 12
+    patch.revertRange(0x00438F70, 3); // Patch 13
 }
 
 // Naked handler for Patch 1.
