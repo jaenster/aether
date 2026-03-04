@@ -38,14 +38,26 @@ mkdir -p "$DST"
 echo "=== Rebuilding MPQs ==="
 "$TOOL" "$SRC" "$DST"
 
-# Copy Game.exe
+# Copy Game.exe and required DLLs
 echo ""
-echo "Copying Game.exe..."
+echo "Copying Game.exe and dependencies..."
 cp "$SRC/Game.exe" "$DST/Game.exe"
+for dll in binkw32.dll SmackW32.dll ijl11.dll; do
+    if [ -f "$SRC/$dll" ]; then
+        cp "$SRC/$dll" "$DST/$dll"
+    else
+        echo "Warning: $dll not found in source"
+    fi
+done
 
-# Copy dbghelp.dll if present (for DLL injection)
-if [ -f "$SRC/dbghelp.dll" ]; then
+# Copy dbghelp.dll proxy from build output
+DLLINJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+if [ -f "$DLLINJECT_DIR/zig-out/bin/dbghelp.dll" ]; then
+    cp "$DLLINJECT_DIR/zig-out/bin/dbghelp.dll" "$DST/dbghelp.dll"
+    echo "Copied dbghelp.dll proxy from build output"
+elif [ -f "$SRC/dbghelp.dll" ]; then
     cp "$SRC/dbghelp.dll" "$DST/dbghelp.dll"
+    echo "Copied dbghelp.dll from source (may be stale)"
 fi
 
 echo ""

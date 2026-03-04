@@ -23,20 +23,16 @@ static bool is_essential(const char *filename) {
     if (strcasestr(filename, "animdata.d2"))
         return true;
 
-    // Palettes
-    if (strcasestr(filename, "data\\global\\palette\\") && strcasestr(filename, "pal"))
+    // Palettes (pal.dat only, not PL2 palette transforms)
+    if (strcasestr(filename, "data\\global\\palette\\") && strcasestr(filename, ".dat"))
         return true;
 
-    // Fonts
+    // Fonts (DC6 font sprites — needed for text rendering)
     if (strcasestr(filename, "data\\local\\font\\"))
         return true;
 
-    // Level presets (DS1 files)
+    // Level presets (DS1 files only — DT1 tile graphics are stubbed)
     if (strcasestr(filename, ".ds1"))
-        return true;
-
-    // Level type/preset txt-derived bins in tiles/
-    if (strcasestr(filename, "data\\global\\tiles\\"))
         return true;
 
     return false;
@@ -174,11 +170,26 @@ int main(int argc, char **argv) {
     snprintf(dst_path, sizeof(dst_path), "%s/d2exp.mpq", dst_dir);
     rebuild_mpq(src_path, dst_path);
 
-    // Rebuild Patch_D2.mpq (keep everything — it's already small)
-    printf("Copying Patch_D2.mpq...\n");
+    // Copy Patch_D2.mpq as-is (small, uses obfuscated filenames)
+    printf("Copying Patch_D2.mpq (verbatim)...\n");
     snprintf(src_path, sizeof(src_path), "%s/Patch_D2.mpq", src_dir);
     snprintf(dst_path, sizeof(dst_path), "%s/Patch_D2.mpq", dst_dir);
-    rebuild_mpq(src_path, dst_path);
+    {
+        FILE *in = fopen(src_path, "rb");
+        if (!in) { fprintf(stderr, "  Cannot open: %s\n", src_path); }
+        else {
+            FILE *out = fopen(dst_path, "wb");
+            if (!out) { fprintf(stderr, "  Cannot create: %s\n", dst_path); fclose(in); }
+            else {
+                char buf[65536];
+                size_t n;
+                while ((n = fread(buf, 1, sizeof(buf), in)) > 0) fwrite(buf, 1, n, out);
+                fclose(out);
+                fclose(in);
+                printf("  %s: copied verbatim\n", dst_path);
+            }
+        }
+    }
 
     // Create empty stubs for sound MPQs
     printf("Creating empty sound MPQ stubs...\n");

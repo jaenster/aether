@@ -71,11 +71,11 @@ fn deinit() void {
 // When CELCMP_FixupPointersAndPrepare gets pDC6==NULL, the original code
 // jumps to the epilogue without writing *ppDC6Out. We intercept to write NULL.
 //
-// At the JZ, the stack frame has ppDC6Out at [EBP+0x08] (first __stdcall arg).
-// We write NULL to *ppDC6Out, then do the original epilogue: POP ESI; POP EBP; RET 0x18.
+// Stack at JZ: EBP+0x04=retaddr, EBP+0x08=pDC6, EBP+0x0C=ppDC6Out.
+// Write NULL to *ppDC6Out, then epilogue: POP ESI; POP EBP; RET 0x18.
 fn celcmpNullHandler() callconv(.naked) void {
     asm volatile (
-        \\mov 0x08(%%ebp), %%eax
+        \\mov 0x0C(%%ebp), %%eax
         \\movl $0, (%%eax)
         \\pop %%esi
         \\pop %%ebp
