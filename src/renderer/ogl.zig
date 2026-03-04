@@ -209,7 +209,7 @@ export fn ogl_implCreateWindow(hwnd_val: u32, mode: u32) callconv(.C) u32 {
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
-    glClearColor(0.0, 0.0, 0.2, 1.0);
+    glClearColor(0.0, 0.0, 0.0, 1.0);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -686,6 +686,298 @@ export fn ogl_implClearScreen(_: u32) callconv(.C) void {
     glClear(GL_COLOR_BUFFER_BIT);
 }
 
+// ============================================================================
+// Tile drawing impls
+// ============================================================================
+
+// SPRITECACHE_AllocEntry — loads tile pixel data into LRU cache
+// After call: pTile[1].nDirection (0x50) = block count, pTile+0x54 = decoded data ptr
+const SPRITECACHE_AllocEntry: *const fn (pTile: u32, dwParam1: u32, dwParam2: u32) callconv(WINAPI) i32 = @ptrFromInt(0x005fdea0);
+
+var ground_tile_log_count: u32 = 0;
+var wall_tile_log_count: u32 = 0;
+
+// Ground tile sub-diamond geometry tables (15 scanlines per 32-pixel-wide block)
+// Each block is a diamond-shaped sub-tile within the 160x80 ground tile
+const GROUND_BLOCK_ROWS = 15;
+const ground_row_widths = [GROUND_BLOCK_ROWS]u32{ 4, 8, 12, 16, 20, 24, 28, 32, 28, 24, 20, 16, 12, 8, 4 };
+const ground_row_xoffs = [GROUND_BLOCK_ROWS]u32{ 14, 12, 10, 8, 6, 4, 2, 0, 2, 4, 6, 8, 10, 12, 14 };
+// Cumulative byte offset into the block's raw pixel buffer per row
+const ground_row_src = [GROUND_BLOCK_ROWS]u32{ 0, 4, 12, 24, 40, 60, 84, 112, 144, 172, 196, 216, 232, 244, 252 };
+
+const TILE_W = 160;
+const TILE_H = 80;
+var tile_rgba: [TILE_W * TILE_H * 4]u8 = undefined;
+var tile_tex: c_uint = 0;
+var tile_tex_created: bool = false;
+
+fn decodeGroundTileBlocks(nBlocks: i32, pBlockBase: u32) bool {
+    @memset(&tile_rgba, 0); // clear to transparent
+
+    if (nBlocks <= 0 or pBlockBase == 0) return false;
+
+    var decoded_any = false;
+    var i: u32 = 0;
+    while (i < @as(u32, @bitCast(nBlocks))) : (i += 1) {
+        const blockAddr = pBlockBase + i * 0x14;
+        const bp: [*]const u8 = @ptrFromInt(blockAddr);
+
+        const flags: u8 = bp[8];
+        if (flags & 1 == 0) continue; // not valid
+
+        // Pixel data pointer at block+0x10
+        const pPixels: u32 = @as(*const u32, @ptrCast(@alignCast(bp + 0x10))).*;
+        if (pPixels == 0) continue;
+
+        const xOff: i32 = @as(i32, @as(i16, @bitCast(@as(u16, bp[0]) | (@as(u16, bp[1]) << 8))));
+        const yOff: i32 = @as(i32, @as(i16, @bitCast(@as(u16, bp[2]) | (@as(u16, bp[3]) << 8))));
+
+        const pixelData: [*]const u8 = @ptrFromInt(pPixels);
+
+        for (0..GROUND_BLOCK_ROWS) |row| {
+            const width = ground_row_widths[row];
+            const rxoff = ground_row_xoffs[row];
+            const srcOff = ground_row_src[row];
+
+            if (width == 0) continue;
+
+            const destY: i32 = yOff + @as(i32, @intCast(row));
+            if (destY < 0 or destY >= TILE_H) continue;
+
+            var px: u32 = 0;
+            while (px < width) : (px += 1) {
+                const destX: i32 = xOff + @as(i32, @intCast(rxoff + px));
+                if (destX < 0 or destX >= TILE_W) continue;
+
+                const idx = pixelData[srcOff + px];
+                const off: usize = (@as(usize, @intCast(destY)) * TILE_W + @as(usize, @intCast(destX))) * 4;
+
+                if (palette_valid) {
+                    tile_rgba[off + 0] = palette_table[idx][0];
+                    tile_rgba[off + 1] = palette_table[idx][1];
+                    tile_rgba[off + 2] = palette_table[idx][2];
+                } else {
+                    tile_rgba[off + 0] = idx;
+                    tile_rgba[off + 1] = idx;
+                    tile_rgba[off + 2] = idx;
+                }
+                tile_rgba[off + 3] = if (idx == 0) 0 else 255;
+                decoded_any = true;
+            }
+        }
+    }
+    return decoded_any;
+}
+
+// fpDrawGroundTile: 9p fastcall
+// ECX=pTile, EDX=pLight, stack=[nPosX, nPosY, nWorldX, nWorldY, nAlpha, nScreenPanels, pTileData]
+export fn ogl_implDrawGroundTile(
+    pTile_val: u32,
+    pLight_val: u32,
+    nPosX: i32,
+    nPosY: i32,
+    nWorldX: i32,
+    nWorldY: i32,
+    nAlpha: u32,
+    nScreenPanels: i32,
+    pTileData: u32,
+) callconv(.C) u32 {
+    _ = pLight_val;
+    _ = nWorldX;
+    _ = nWorldY;
+    _ = nAlpha;
+    _ = nScreenPanels;
+    _ = pTileData;
+
+    if (pTile_val == 0) return 0;
+
+    // Load tile data via sprite cache
+    if (SPRITECACHE_AllocEntry(pTile_val, 1, 0) == 0) return 0;
+
+    // Read block info from runtime cache area
+    const pTile: [*]const u8 = @ptrFromInt(pTile_val);
+    const nBlocks: i32 = @as(*const i32, @ptrCast(@alignCast(pTile + 0x50))).*;
+    const pBlockBase: u32 = @as(*const u32, @ptrCast(@alignCast(pTile + 0x54))).*;
+
+    // Log first few calls
+    if (ground_tile_log_count < 3) {
+        ground_tile_log_count += 1;
+        var buf: [256]u8 = undefined;
+        const msg = std.fmt.bufPrint(&buf, "DrawGroundTile: pTile=0x{X:0>8} blocks={d} blockBase=0x{X:0>8} posX={d} posY={d}\r\n", .{ pTile_val, nBlocks, pBlockBase, nPosX, nPosY }) catch "fmt err\r\n";
+        if (log.openLogHandle()) |h| {
+            log.writeRawHandle(h, msg);
+            log.closeHandle(h);
+        }
+    }
+
+    if (!decodeGroundTileBlocks(nBlocks, pBlockBase)) {
+        // Fallback: draw green diamond if decode fails
+        glDisable(GL_TEXTURE_2D);
+        glColor4ub(35, 55, 25, 255);
+        glBegin(GL_QUADS);
+        glVertex2i(nPosX, nPosY);
+        glVertex2i(nPosX + 80, nPosY + 40);
+        glVertex2i(nPosX, nPosY + 80);
+        glVertex2i(nPosX - 80, nPosY + 40);
+        glEnd();
+        return 1;
+    }
+
+    // Upload tile texture
+    if (!tile_tex_created) {
+        glGenTextures(1, &tile_tex);
+        tile_tex_created = true;
+    }
+
+    glEnable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBindTexture(GL_TEXTURE_2D, tile_tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, @intCast(GL_RGBA), TILE_W, TILE_H, 0, GL_RGBA, GL_UNSIGNED_BYTE, &tile_rgba);
+
+    // Draw textured quad at tile bounding box: (posX-80, posY) to (posX+80, posY+80)
+    const x = nPosX - 80;
+    const y = nPosY;
+    glColor4f(1.0, 1.0, 1.0, 1.0);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0.0, 0.0);
+    glVertex2i(x, y);
+    glTexCoord2f(1.0, 0.0);
+    glVertex2i(x + TILE_W, y);
+    glTexCoord2f(1.0, 1.0);
+    glVertex2i(x + TILE_W, y + TILE_H);
+    glTexCoord2f(0.0, 1.0);
+    glVertex2i(x, y + TILE_H);
+    glEnd();
+
+    glDisable(GL_TEXTURE_2D);
+    return 1;
+}
+
+// fpDrawWallTile: 5p fastcall
+// ECX=pTile, EDX=nPosX, stack=[nPosY, pLight, nScreenPanels]
+export fn ogl_implDrawWallTile(
+    pTile_val: u32,
+    nPosX_val: u32,
+    nPosY: i32,
+    pLight_val: u32,
+    nScreenPanels: i32,
+) callconv(.C) void {
+    _ = pLight_val;
+    _ = nScreenPanels;
+
+    if (pTile_val == 0) return;
+    const nPosX: i32 = @bitCast(nPosX_val);
+
+    if (wall_tile_log_count < 3) {
+        wall_tile_log_count += 1;
+        var buf: [256]u8 = undefined;
+        const msg = std.fmt.bufPrint(&buf, "DrawWallTile: pTile=0x{X:0>8} posX={d} posY={d}\r\n", .{ pTile_val, nPosX, nPosY }) catch "fmt err\r\n";
+        if (log.openLogHandle()) |h| {
+            log.writeRawHandle(h, msg);
+            log.closeHandle(h);
+        }
+    }
+
+    // Load tile data
+    if (SPRITECACHE_AllocEntry(pTile_val, 1, 0) == 0) return;
+
+    // Read tile dimensions from header
+    const pTile: [*]const u8 = @ptrFromInt(pTile_val);
+    const tileHeight: i32 = @as(*const i32, @ptrCast(@alignCast(pTile + 0x08))).*;
+    const tileWidth: i32 = @as(*const i32, @ptrCast(@alignCast(pTile + 0x0C))).*;
+
+    if (tileWidth <= 0 or tileHeight <= 0) return;
+
+    // Wall tiles: draw as semi-transparent gray rectangle
+    glDisable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4ub(80, 75, 65, 200);
+    glBegin(GL_QUADS);
+    glVertex2i(nPosX, nPosY - tileHeight);
+    glVertex2i(nPosX + tileWidth, nPosY - tileHeight);
+    glVertex2i(nPosX + tileWidth, nPosY);
+    glVertex2i(nPosX, nPosY);
+    glEnd();
+}
+
+// fpDrawTransWallTile: 6p fastcall
+// ECX=pTile, EDX=nPosX, stack=[nPosY, pLight, nScreenPanels, nAlpha]
+export fn ogl_implDrawTransWallTile(
+    pTile_val: u32,
+    nPosX_val: u32,
+    nPosY: i32,
+    pLight_val: u32,
+    nScreenPanels: i32,
+    nAlpha: u32,
+) callconv(.C) void {
+    _ = pLight_val;
+    _ = nScreenPanels;
+
+    if (pTile_val == 0) return;
+    const nPosX: i32 = @bitCast(nPosX_val);
+
+    if (SPRITECACHE_AllocEntry(pTile_val, 1, 0) == 0) return;
+
+    const pTile: [*]const u8 = @ptrFromInt(pTile_val);
+    const tileHeight: i32 = @as(*const i32, @ptrCast(@alignCast(pTile + 0x08))).*;
+    const tileWidth: i32 = @as(*const i32, @ptrCast(@alignCast(pTile + 0x0C))).*;
+
+    if (tileWidth <= 0 or tileHeight <= 0) return;
+
+    const alpha: u8 = if (nAlpha > 255) 128 else @truncate(nAlpha);
+
+    glDisable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4ub(80, 75, 65, alpha);
+    glBegin(GL_QUADS);
+    glVertex2i(nPosX, nPosY - tileHeight);
+    glVertex2i(nPosX + tileWidth, nPosY - tileHeight);
+    glVertex2i(nPosX + tileWidth, nPosY);
+    glVertex2i(nPosX, nPosY);
+    glEnd();
+}
+
+// fpDrawShadowTile: 5p fastcall — same signature as DrawWallTile
+export fn ogl_implDrawShadowTile(
+    pTile_val: u32,
+    nPosX_val: u32,
+    nPosY: i32,
+    pLight_val: u32,
+    nScreenPanels: i32,
+) callconv(.C) void {
+    _ = pLight_val;
+    _ = nScreenPanels;
+
+    if (pTile_val == 0) return;
+    const nPosX: i32 = @bitCast(nPosX_val);
+
+    if (SPRITECACHE_AllocEntry(pTile_val, 1, 0) == 0) return;
+
+    const pTile: [*]const u8 = @ptrFromInt(pTile_val);
+    const tileHeight: i32 = @as(*const i32, @ptrCast(@alignCast(pTile + 0x08))).*;
+    const tileWidth: i32 = @as(*const i32, @ptrCast(@alignCast(pTile + 0x0C))).*;
+
+    if (tileWidth <= 0 or tileHeight <= 0) return;
+
+    glDisable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4ub(0, 0, 0, 60);
+    glBegin(GL_QUADS);
+    glVertex2i(nPosX, nPosY - tileHeight);
+    glVertex2i(nPosX + tileWidth, nPosY - tileHeight);
+    glVertex2i(nPosX + tileWidth, nPosY);
+    glVertex2i(nPosX, nPosY);
+    glEnd();
+}
+
 // Naked wrappers for primitives
 
 // 0-stack-arg wrappers (2 params in ECX, EDX)
@@ -880,6 +1172,105 @@ fn oglDrawShadow() callconv(.Naked) void {
     );
 }
 
+// Tile naked wrappers
+
+// fpDrawGroundTile: 9p fastcall (ECX, EDX + 7 stack) → ret $28
+fn oglDrawGroundTile() callconv(.Naked) void {
+    asm volatile (
+        \\push %%ebp
+        \\mov %%esp, %%ebp
+        \\push %%ebx
+        \\push %%esi
+        \\push %%edi
+        \\pushl 32(%%ebp)
+        \\pushl 28(%%ebp)
+        \\pushl 24(%%ebp)
+        \\pushl 20(%%ebp)
+        \\pushl 16(%%ebp)
+        \\pushl 12(%%ebp)
+        \\pushl 8(%%ebp)
+        \\push %%edx
+        \\push %%ecx
+        \\call _ogl_implDrawGroundTile
+        \\add $36, %%esp
+        \\pop %%edi
+        \\pop %%esi
+        \\pop %%ebx
+        \\pop %%ebp
+        \\ret $28
+    );
+}
+
+// fpDrawWallTile: 5p fastcall (ECX, EDX + 3 stack) → ret $12
+fn oglDrawWallTile() callconv(.Naked) void {
+    asm volatile (
+        \\push %%ebp
+        \\mov %%esp, %%ebp
+        \\push %%ebx
+        \\push %%esi
+        \\push %%edi
+        \\pushl 16(%%ebp)
+        \\pushl 12(%%ebp)
+        \\pushl 8(%%ebp)
+        \\push %%edx
+        \\push %%ecx
+        \\call _ogl_implDrawWallTile
+        \\add $20, %%esp
+        \\pop %%edi
+        \\pop %%esi
+        \\pop %%ebx
+        \\pop %%ebp
+        \\ret $12
+    );
+}
+
+// fpDrawTransWallTile: 6p fastcall (ECX, EDX + 4 stack) → ret $16
+fn oglDrawTransWallTile() callconv(.Naked) void {
+    asm volatile (
+        \\push %%ebp
+        \\mov %%esp, %%ebp
+        \\push %%ebx
+        \\push %%esi
+        \\push %%edi
+        \\pushl 20(%%ebp)
+        \\pushl 16(%%ebp)
+        \\pushl 12(%%ebp)
+        \\pushl 8(%%ebp)
+        \\push %%edx
+        \\push %%ecx
+        \\call _ogl_implDrawTransWallTile
+        \\add $24, %%esp
+        \\pop %%edi
+        \\pop %%esi
+        \\pop %%ebx
+        \\pop %%ebp
+        \\ret $16
+    );
+}
+
+// fpDrawShadowTile: 5p fastcall (ECX, EDX + 3 stack) → ret $12
+fn oglDrawShadowTile() callconv(.Naked) void {
+    asm volatile (
+        \\push %%ebp
+        \\mov %%esp, %%ebp
+        \\push %%ebx
+        \\push %%esi
+        \\push %%edi
+        \\pushl 16(%%ebp)
+        \\pushl 12(%%ebp)
+        \\pushl 8(%%ebp)
+        \\push %%edx
+        \\push %%ecx
+        \\call _ogl_implDrawShadowTile
+        \\add $20, %%esp
+        \\pop %%edi
+        \\pop %%esi
+        \\pop %%ebx
+        \\pop %%ebp
+        \\ret $12
+    );
+}
+
 // Simple naked stubs for functions that don't need logic yet
 fn oglInitPerspective() callconv(.Naked) void { asm volatile ("mov $1,%%eax\nret" ::: "eax"); }
 fn oglDestroyWindow() callconv(.Naked) void { asm volatile ("mov $1,%%eax\nret" ::: "eax"); }
@@ -923,7 +1314,7 @@ pub const ogl_function_table = [54]FnPtr{
     @ptrCast(&oglSetPaletteWrapped), // 0x70 fpSetPalette(1p, 0s)
     @ptrCast(&oglSetPaletteTable), //  0x74 fpSetPaletteTable(1p, 0s)
     @ptrCast(&stubVoid_s1), //         0x78 fpSetGlobalLight(3p, 1s)
-    @ptrCast(&stubRet1_s7), //         0x7C fpDrawGroundTile(9p, 7s)
+    @ptrCast(&oglDrawGroundTile), //    0x7C fpDrawGroundTile(9p, 7s)
     @ptrCast(&stubVoid_s5), //         0x80 fpDrawPerspectiveImage(7p, 5s)
     @ptrCast(&oglDrawImage), //         0x84 fpDrawImage(6p, 4s)
     @ptrCast(&oglDrawShiftedImage), //  0x88 fpDrawShiftedImage(6p, 4s)
@@ -931,9 +1322,9 @@ pub const ogl_function_table = [54]FnPtr{
     @ptrCast(&oglDrawShadow), //        0x90 fpDrawShadow(3p, 1s)
     @ptrCast(&stubVoid_s2), //         0x94 fpDrawImageFast(4p, 2s)
     @ptrCast(&stubVoid_s3), //         0x98 fpDrawClippedImage(5p, 3s)
-    @ptrCast(&stubVoid_s3), //         0x9C fpDrawWallTile(5p, 3s)
-    @ptrCast(&stubVoid_s4), //         0xA0 fpDrawTransWallTile(6p, 4s)
-    @ptrCast(&stubVoid_s3), //         0xA4 fpDrawShadowTile(5p, 3s)
+    @ptrCast(&oglDrawWallTile), //      0x9C fpDrawWallTile(5p, 3s)
+    @ptrCast(&oglDrawTransWallTile), // 0xA0 fpDrawTransWallTile(6p, 4s)
+    @ptrCast(&oglDrawShadowTile), //   0xA4 fpDrawShadowTile(5p, 3s)
     @ptrCast(&oglDrawRect), //          0xA8 fpDrawRect(2p, 0s)
     @ptrCast(&oglDrawRect), //          0xAC fpDrawRectEx(2p, 0s)
     @ptrCast(&oglDrawSolidRect), //     0xB0 fpDrawSolidRect(2p, 0s)
