@@ -95,7 +95,7 @@ fn hookExitProcess() void {
 }
 
 fn exitProcessInterceptor(exit_code: u32) callconv(WINAPI) noreturn {
-    log.print("headless: ExitProcess called! Stack trace:");
+    log.print("headless: ExitProcess called!");
     crash_handler.logStackTrace("ExitProcess");
     log.hex("headless: exit code ", exit_code);
 
@@ -135,25 +135,7 @@ fn celcmpNullHandler() callconv(.naked) void {
     );
 }
 
-var tick_count: u32 = 0;
-
-fn oogTick() void {
-    tick_count += 1;
-    if (tick_count % 100 == 0) {
-        log.hex("headless: oog tick ", tick_count);
-    }
-}
-
-fn gameTick() void {
-    tick_count += 1;
-    if (tick_count % 100 == 0) {
-        log.hex("headless: game tick ", tick_count);
-    }
-}
-
 pub const hooks = feature.Hooks{
     .init = &init,
     .deinit = &deinit,
-    .oogLoop = &oogTick,
-    .gameLoop = &gameTick,
 };
