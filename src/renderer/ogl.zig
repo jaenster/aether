@@ -4,6 +4,10 @@ const WINAPI = win.WINAPI;
 const log = @import("../log.zig");
 const patch = @import("../hook/patch.zig");
 
+// D2CMP sprite cache — loads DC6 frames into pDC6Block
+// __stdcall: all args on stack, callee cleans
+const SPRITECACHE_GetOrLoadSprite: *const fn (pData: u32, nParam1: i32, nParam2: i32) callconv(WINAPI) i32 = @ptrFromInt(0x006001f0);
+
 // Win32 types
 const DWORD = u32;
 const BYTE = u8;
@@ -594,6 +598,10 @@ export fn ogl_implDrawImage(pData_val: u32, x_val: u32, y_val: u32, gamma: u32, 
     _ = mode;
     _ = palette;
     if (pData_val == 0) return;
+
+    // Load sprite via D2CMP sprite cache — fills pDC6Block
+    if (SPRITECACHE_GetOrLoadSprite(pData_val, 0, 1) == 0) return;
+
     const pData: *const D2GfxDataStrc = @ptrFromInt(pData_val);
     if (pData.pDC6Block == 0) return;
 
@@ -650,6 +658,7 @@ export fn ogl_implDrawShiftedImage(pData_val: u32, x_val: u32, y_val: u32, gamma
 // fpDrawShadow(D2GfxDataStrc* pData, int x, int y) — 3 params: ECX=pData, EDX=x, stack=[y]
 export fn ogl_implDrawShadow(pData_val: u32, x_val: u32, y_val: u32) callconv(.C) void {
     if (pData_val == 0) return;
+    if (SPRITECACHE_GetOrLoadSprite(pData_val, 0, 1) == 0) return;
     const pData: *const D2GfxDataStrc = @ptrFromInt(pData_val);
     if (pData.pDC6Block == 0) return;
 

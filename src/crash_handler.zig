@@ -373,6 +373,31 @@ fn handler(info: *EXCEPTION_POINTERS) callconv(WINAPI) LONG {
     ExitProcess(1);
 }
 
+/// Walk the EBP chain from current frame and log a stack trace.
+/// label: prefix string for the log line.
+pub fn logStackTrace(label: []const u8) void {
+    const h = log.openLogHandle() orelse return;
+    defer log.closeHandle(h);
+
+    log.writeRawHandle(h, label);
+    log.writeRawHandle(h, " stack trace:\r\n");
+
+    // Get current EBP
+    var ebp: usize = @frameAddress();
+    var depth: usize = 0;
+    while (ebp != 0 and depth < 20) : (depth += 1) {
+        if (ebp < 0x10000 or ebp > 0x7FFFFFFF) break;
+        const frame: [*]const usize = @ptrFromInt(ebp);
+        const ret_addr = frame[1];
+        if (ret_addr == 0) break;
+        log.writeRawHandle(h, "  ");
+        var addr_buf: [64]u8 = undefined;
+        log.writeRawHandle(h, fmtAddr(ret_addr, &addr_buf));
+        log.writeRawHandle(h, "\r\n");
+        ebp = frame[0];
+    }
+}
+
 pub fn install() void {
     main_thread_id = GetCurrentThreadId();
 
