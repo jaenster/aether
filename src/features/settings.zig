@@ -23,6 +23,8 @@ pub var no_game_drawing: bool = false;
 pub var disable_roofs: bool = false;
 pub var no_pickup: bool = false;
 pub var auto_teleport: bool = true;
+pub var ladder_items: bool = true;
+pub var rebalance_drops: bool = true;
 
 // ============================================================================
 // Dialog state
@@ -47,6 +49,8 @@ const entries = [_]Entry{
     .{ .label = toW("Disable Rooftops"), .setting = &disable_roofs },
     .{ .label = toW("No Pickup"), .setting = &no_pickup },
     .{ .label = toW("Auto Teleport"), .setting = &auto_teleport },
+    .{ .label = toW("Ladder Items"), .setting = &ladder_items },
+    .{ .label = toW("Rebalance Drops"), .setting = &rebalance_drops },
 };
 
 const on_text = toW("\xffc2On");
