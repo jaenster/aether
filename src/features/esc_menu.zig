@@ -163,16 +163,16 @@ fn initTables() void {
     const count_ptr: *i32 = @ptrFromInt(ext_options_header + HDR_COUNT);
     count_ptr.* = 6;
 
-    // Copy 5 native entries
+    // Entry 0: AETHER (transparent DC6 placeholder — we draw text via DrawGameText)
+    const placeholder = buildTransparentDC6(256, 36);
+    itemFieldPtr(i32, ext_options_table, 0, OFF_TYPE).* = 0;
+    itemFieldPtr(i32, ext_options_table, 0, OFF_EXPANSION).* = 0;
+    itemFieldPtr(?*anyopaque, ext_options_table, 0, OFF_MAIN_DC6).* = placeholder;
+
+    // Entries 1-5: copy 5 native entries
     const native_tbl: [*]const u8 = @ptrFromInt(OPTIONS_TABLE_ADDR);
     const ext_tbl: [*]u8 = @ptrFromInt(ext_options_table);
-    @memcpy(ext_tbl[0 .. 5 * ITEM_SIZE], native_tbl[0 .. 5 * ITEM_SIZE]);
-
-    // Entry 5: transparent DC6 placeholder — we draw text via DrawGameText instead
-    const placeholder = buildTransparentDC6(256, 36);
-    itemFieldPtr(i32, ext_options_table, 5, OFF_TYPE).* = 0;
-    itemFieldPtr(i32, ext_options_table, 5, OFF_EXPANSION).* = 0;
-    itemFieldPtr(?*anyopaque, ext_options_table, 5, OFF_MAIN_DC6).* = placeholder;
+    @memcpy(ext_tbl[ITEM_SIZE .. 6 * ITEM_SIZE], native_tbl[0 .. 5 * ITEM_SIZE]);
 
     // --- Submenu table (14 entries: 13 toggles + Previous Menu) ---
     sub_header = @intFromPtr(VirtualAlloc(null, HEADER_SIZE, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) orelse return);
@@ -283,19 +283,19 @@ fn hookDrawEscMenu() callconv(.winapi) void {
     }
 }
 
-/// Draw "AETHER" at entry 5's computed Y position using DrawGameText.
 fn drawAetherLabel() void {
-    const computed_y = itemFieldPtr(i32, ext_options_table, 5, OFF_COMPUTED_Y).*;
+    const computed_y = itemFieldPtr(i32, ext_options_table, 0, OFF_COMPUTED_Y).*;
     if (computed_y == 0) return;
 
-    // Native draws DC6 at computedY + rowHeight (bottom-aligned baseline).
-    // DrawGameText also uses baseline positioning, so add rowHeight to match.
     const row_h: i32 = @as(*const i32, @ptrFromInt(ext_options_header + HDR_ROW_H)).*;
     const draw_y = computed_y + row_h;
 
-    const screen_cx = @divTrunc(d2.globals.screenWidth().*, 2);
     const prev_font = d2.functions.SetFont.call(.{FONT_MENU});
-    d2.functions.DrawGameText.call(.{ aether_label, screen_cx, draw_y, TEXT_COLOR_GOLD, 1 });
+    var tw: u32 = 0;
+    var th: u32 = 0;
+    _ = d2.functions.GetTextSize.call(.{ aether_label, &tw, &th });
+    const x = @divTrunc(d2.globals.screenWidth().* - @as(c_int, @intCast(tw)), 2);
+    d2.functions.DrawGameText.call(.{ aether_label, x, draw_y, TEXT_COLOR_GOLD, 0 });
     _ = d2.functions.SetFont.call(.{prev_font});
 }
 
@@ -316,13 +316,14 @@ fn keyEvent(key: u32, down: bool, _: u32) bool {
 fn handleOptionsKey(key: u32) bool {
     const idx = gnEscMenuSelectedIndex.*;
 
-    if (key == VK_RETURN and idx == 5) {
+    if (key == VK_RETURN and idx == 0) {
         state = .aether_submenu;
         gnEscMenuSelectedIndex.* = 0;
         return false;
     }
 
-    // Native only knows 5 entries (0-4), so handle wrapping at index 5
+    // Native only knows 5 entries (0-4), so handle wrapping for our 6-entry table.
+    // AETHER is at 0, native items at 1-5. Native would wrap at count=5.
     if (key == VK_DOWN) {
         if (idx == 4) {
             gnEscMenuSelectedIndex.* = 5;
@@ -357,7 +358,7 @@ fn handleSubmenuKey(key: u32) bool {
             } else if (idx == 13) {
                 // "Previous Menu" → back to options
                 state = .options_page;
-                gnEscMenuSelectedIndex.* = 5; // highlight Aether
+                gnEscMenuSelectedIndex.* = 0; // highlight Aether
             }
             return false;
         },
@@ -383,8 +384,7 @@ fn mouseEvent(x: i32, y: i32, button: u8, down: bool) bool {
 
     switch (state) {
         .options_page => {
-            if (button == 0 and !down and gnEscMenuSelectedIndex.* == 5) {
-                // Click release on Aether entry
+            if (button == 0 and !down and gnEscMenuSelectedIndex.* == 0) {
                 state = .aether_submenu;
                 gnEscMenuSelectedIndex.* = 0;
                 return false;
