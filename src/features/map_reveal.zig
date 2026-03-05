@@ -9,8 +9,7 @@ const d2 = struct {
     const automap = @import("../d2/automap.zig");
 };
 
-const WINAPI = std.os.windows.WINAPI;
-extern "kernel32" fn GetTickCount() callconv(WINAPI) u32;
+extern "kernel32" fn GetTickCount() callconv(.winapi) u32;
 
 const Room2 = d2.types.Room2;
 const Level = d2.types.Level;
@@ -319,7 +318,6 @@ fn drawPresets(room2: *Room2, layer: *AutomapLayer) void {
             else => {},
         }
     }
-
 }
 
 fn generateCell(room2: *const Room2, unit: *const PresetUnit, cell_no: i16, layer: *AutomapLayer) void {

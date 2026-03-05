@@ -1,6 +1,5 @@
 const std = @import("std");
 const win = std.os.windows;
-const WINAPI = win.WINAPI;
 
 const HANDLE = *anyopaque;
 const INVALID_HANDLE: HANDLE = @ptrFromInt(std.math.maxInt(usize));
@@ -14,7 +13,7 @@ extern "kernel32" fn CreateFileA(
     disp: DWORD,
     flags: DWORD,
     template: ?HANDLE,
-) callconv(WINAPI) HANDLE;
+) callconv(.winapi) HANDLE;
 
 extern "kernel32" fn WriteFile(
     h: HANDLE,
@@ -22,17 +21,17 @@ extern "kernel32" fn WriteFile(
     len: DWORD,
     written: ?*DWORD,
     overlapped: ?*anyopaque,
-) callconv(WINAPI) win.BOOL;
+) callconv(.winapi) win.BOOL;
 
-extern "kernel32" fn CloseHandle(h: HANDLE) callconv(WINAPI) win.BOOL;
-extern "kernel32" fn AllocConsole() callconv(WINAPI) win.BOOL;
-extern "kernel32" fn GetStdHandle(id: DWORD) callconv(WINAPI) HANDLE;
+extern "kernel32" fn CloseHandle(h: HANDLE) callconv(.winapi) win.BOOL;
+extern "kernel32" fn AllocConsole() callconv(.winapi) win.BOOL;
+extern "kernel32" fn GetStdHandle(id: DWORD) callconv(.winapi) HANDLE;
 
 const STD_OUTPUT_HANDLE: DWORD = @as(DWORD, @bitCast(@as(i32, -11)));
 var console_handle: ?HANDLE = null;
 
 const SetFilePointer = struct {
-    extern "kernel32" fn SetFilePointer(h: HANDLE, dist: i32, high: ?*i32, method: DWORD) callconv(WINAPI) DWORD;
+    extern "kernel32" fn SetFilePointer(h: HANDLE, dist: i32, high: ?*i32, method: DWORD) callconv(.winapi) DWORD;
 }.SetFilePointer;
 
 const GENERIC_WRITE: DWORD = 0x40000000;

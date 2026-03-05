@@ -1,6 +1,5 @@
 const std = @import("std");
 const win = std.os.windows;
-const WINAPI = win.WINAPI;
 const log = @import("log.zig");
 const symbols = @import("symbols.zig");
 
@@ -68,13 +67,13 @@ const EXCEPTION_INT_DIVIDE_BY_ZERO: DWORD = 0xC0000094;
 const EXCEPTION_ILLEGAL_INSTRUCTION: DWORD = 0xC000001D;
 const EXCEPTION_PRIV_INSTRUCTION: DWORD = 0xC0000096;
 
-const FilterFn = *const fn (*EXCEPTION_POINTERS) callconv(WINAPI) LONG;
-extern "kernel32" fn SetUnhandledExceptionFilter(handler: ?FilterFn) callconv(WINAPI) ?FilterFn;
-extern "kernel32" fn AddVectoredExceptionHandler(first: DWORD, handler: FilterFn) callconv(WINAPI) ?*anyopaque;
-extern "kernel32" fn GetModuleHandleA(name: ?[*:0]const u8) callconv(WINAPI) ?*anyopaque;
-extern "kernel32" fn ExitProcess(code: DWORD) callconv(WINAPI) noreturn;
-extern "kernel32" fn ExitThread(code: DWORD) callconv(WINAPI) noreturn;
-extern "kernel32" fn GetCurrentThreadId() callconv(WINAPI) DWORD;
+const FilterFn = *const fn (*EXCEPTION_POINTERS) callconv(.winapi) LONG;
+extern "kernel32" fn SetUnhandledExceptionFilter(handler: ?FilterFn) callconv(.winapi) ?FilterFn;
+extern "kernel32" fn AddVectoredExceptionHandler(first: DWORD, handler: FilterFn) callconv(.winapi) ?*anyopaque;
+extern "kernel32" fn GetModuleHandleA(name: ?[*:0]const u8) callconv(.winapi) ?*anyopaque;
+extern "kernel32" fn ExitProcess(code: DWORD) callconv(.winapi) noreturn;
+extern "kernel32" fn ExitThread(code: DWORD) callconv(.winapi) noreturn;
+extern "kernel32" fn GetCurrentThreadId() callconv(.winapi) DWORD;
 
 const IMAGE_DOS_HEADER = extern struct {
     e_magic: u16,
@@ -304,7 +303,7 @@ extern "user32" fn MessageBoxA(
     text: [*:0]const u8,
     caption: [*:0]const u8,
     typ: DWORD,
-) callconv(WINAPI) c_int;
+) callconv(.winapi) c_int;
 
 const MB_ICONERROR: DWORD = 0x10;
 const MB_OK: DWORD = 0x0;
@@ -329,7 +328,7 @@ fn isFatalException(code: DWORD) bool {
     };
 }
 
-fn handler(info: *EXCEPTION_POINTERS) callconv(WINAPI) LONG {
+fn handler(info: *EXCEPTION_POINTERS) callconv(.winapi) LONG {
     const code = info.ExceptionRecord.ExceptionCode;
 
     // Let non-fatal exceptions pass through (breakpoints, C++ exceptions, etc)

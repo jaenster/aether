@@ -62,7 +62,7 @@ pub fn drawAutomapMarker(x: f64, y: f64, color: u32) void {
           [color] "r" (color),
           [nx] "{ecx}" (p.x),
           [ny] "{eax}" (p.y),
-        : "edx", "esi", "memory"
+        : .{ .edx = true, .esi = true, .memory = true }
     );
 }
 

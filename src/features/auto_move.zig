@@ -83,9 +83,9 @@ var relocate_last_y: i32 = 0;
 
 // Naked thunk: preserves the exact __fastcall stack layout.
 // ECX=pGame, EDX=pUnit, stack: [ret] [pRoom] [nX] [nY] [nParam1] [nParam2]
-fn hookRelocateUnit() callconv(.Naked) void {
+fn hookRelocateUnit() callconv(.naked) void {
     asm volatile (
-        // Save fastcall regs
+    // Save fastcall regs
         \\ push %%ecx
         \\ push %%edx
         // Save nX, nY for later (from original stack: +8=ret, +12=pRoom, +16=nX, +20=nY)
@@ -123,7 +123,7 @@ fn hookRelocateUnit() callconv(.Naked) void {
     );
 }
 
-fn relocateFailLog() callconv(.C) void {
+fn relocateFailLog() callconv(.c) void {
     log.print("RELOCATE FAILED:");
     log.hex("  nX=", @as(u32, @bitCast(relocate_last_x)));
     log.hex("  nY=", @as(u32, @bitCast(relocate_last_y)));
@@ -299,9 +299,7 @@ fn drawPath() void {
 
     // Markers on top
     for (wps, 0..) |wp, i| {
-        const node_color: u32 = if (i < draw_current_wp) 0x08
-        else if (i == draw_current_wp) 0x84
-        else 0x20;
+        const node_color: u32 = if (i < draw_current_wp) 0x08 else if (i == draw_current_wp) 0x84 else 0x20;
         d2.automap.drawAutomapMarker(@floatFromInt(wp.x), @floatFromInt(wp.y), node_color);
     }
 }
@@ -327,10 +325,7 @@ fn drawPathInGame() void {
         const wpy: f64 = @floatFromInt(wp.y);
 
         const past = i < draw_current_wp;
-        const node_color: u32 = if (past) 0x08
-        else if (i == draw_current_wp) 0x84
-        else 0x20;
-
+        const node_color: u32 = if (past) 0x08 else if (i == draw_current_wp) 0x84 else 0x20;
 
         d2.automap.drawScreenCross(wpx, wpy, node_color, 4);
     }
@@ -634,7 +629,10 @@ fn teleportSequence() void {
     var retries: u32 = 0;
 
     while (current_wp < teleport_reducer.waypoint_count) {
-        const pos_before = getPlayerPos() orelse { restoreSkill(); return; };
+        const pos_before = getPlayerPos() orelse {
+            restoreSkill();
+            return;
+        };
         const px: i32 = @intCast(pos_before[0]);
         const py: i32 = @intCast(pos_before[1]);
 
@@ -696,8 +694,14 @@ fn teleportSequence() void {
             return;
         } else {
             // Verify skill is still teleport before retry
-            const p2 = d2.globals.playerUnit().* orelse { restoreSkill(); return; };
-            const info = p2.pInfo orelse { restoreSkill(); return; };
+            const p2 = d2.globals.playerUnit().* orelse {
+                restoreSkill();
+                return;
+            };
+            const info = p2.pInfo orelse {
+                restoreSkill();
+                return;
+            };
             if (info.pRightSkill) |rs| {
                 if (rs.pSkillInfo) |si| {
                     if (si.wSkillId != TELEPORT_SKILL_ID) {
@@ -711,7 +715,10 @@ fn teleportSequence() void {
     }
 
     // Final teleport to actual destination if not already there
-    const final_pos = getPlayerPos() orelse { restoreSkill(); return; };
+    const final_pos = getPlayerPos() orelse {
+        restoreSkill();
+        return;
+    };
     const final_ds = distSq(dest_x, dest_y, @intCast(final_pos[0]), @intCast(final_pos[1]));
     if (final_ds >= 5 * 5 and isTeleportReachable(dest_x, dest_y)) {
         d2.functions.castRightSkillAt(@intCast(dest_x), @intCast(dest_y));

@@ -4,8 +4,6 @@ const d2 = struct {
     const functions = @import("../d2/functions.zig");
 };
 
-const WINAPI = @import("std").os.windows.WINAPI;
-
 // =============================================================================
 // Addresses — game hook points for draw/loop callbacks
 // =============================================================================
@@ -42,45 +40,45 @@ const ADDR_DRAW_CURSOR: usize = 0x004684C0;
 
 // --- Logic ---
 
-fn hookGameLoop() callconv(.C) void {
+fn hookGameLoop() callconv(.c) void {
     feature.dispatchGameLoop();
 }
 
-fn hookOogLoop() callconv(.C) void {
+fn hookOogLoop() callconv(.c) void {
     feature.dispatchOogLoop();
 }
 
 // --- Drawing: units ---
 
-fn hookUnitPreDraw() callconv(.C) void {
+fn hookUnitPreDraw() callconv(.c) void {
     feature.in_game = true;
     feature.dispatchGameUnitPreDraw();
-    const drawUnits: *const fn () callconv(.C) void = @ptrFromInt(ADDR_DRAW_UNITS);
+    const drawUnits: *const fn () callconv(.c) void = @ptrFromInt(ADDR_DRAW_UNITS);
     drawUnits();
 }
 
-fn hookUnitPostDraw() callconv(WINAPI) void {
+fn hookUnitPostDraw() callconv(.winapi) void {
     feature.dispatchGameUnitPostDraw();
 }
 
 // --- Drawing: automap ---
 
-fn hookAutomapDraw() callconv(.C) void {
+fn hookAutomapDraw() callconv(.c) void {
     feature.dispatchGameAutomapPreDraw();
-    const drawAutomap: *const fn () callconv(.C) void = @ptrFromInt(ADDR_DRAW_AUTOMAP);
+    const drawAutomap: *const fn () callconv(.c) void = @ptrFromInt(ADDR_DRAW_AUTOMAP);
     drawAutomap();
     feature.dispatchGameAutomapPostDraw();
 }
 
 // --- Drawing: game frame ---
 
-fn hookGamePreDraw() callconv(WINAPI) u32 {
+fn hookGamePreDraw() callconv(.winapi) u32 {
     feature.dispatchPreDraw();
-    const getTypeBorder: *const fn () callconv(WINAPI) u32 = @ptrFromInt(ADDR_GET_TYPE_BORDER);
+    const getTypeBorder: *const fn () callconv(.winapi) u32 = @ptrFromInt(ADDR_GET_TYPE_BORDER);
     return getTypeBorder();
 }
 
-fn hookGamePostDraw() callconv(.C) void {
+fn hookGamePostDraw() callconv(.c) void {
     const old = d2.functions.SetFont.call(.{1});
     feature.dispatchGamePostDraw();
     feature.dispatchAllPostDraw();
@@ -89,23 +87,23 @@ fn hookGamePostDraw() callconv(.C) void {
 
 // --- Drawing: OOG ---
 
-fn hookOogDraw() callconv(.C) void {
+fn hookOogDraw() callconv(.c) void {
     feature.in_game = false;
     const old = d2.functions.SetFont.call(.{1});
     feature.dispatchOogPostDraw();
     feature.dispatchAllPostDraw();
     _ = d2.functions.SetFont.call(.{old});
-    const drawCursorOog: *const fn () callconv(.C) void = @ptrFromInt(ADDR_DRAW_CURSOR_OOG);
+    const drawCursorOog: *const fn () callconv(.c) void = @ptrFromInt(ADDR_DRAW_CURSOR_OOG);
     drawCursorOog();
 }
 
 // --- Drawing: cursor (congrats/disc/unknown screens) ---
 
-fn hookDrawCursor() callconv(.C) void {
+fn hookDrawCursor() callconv(.c) void {
     const old = d2.functions.SetFont.call(.{1});
     feature.dispatchAllPostDraw();
     _ = d2.functions.SetFont.call(.{old});
-    const drawCursor: *const fn () callconv(.C) void = @ptrFromInt(ADDR_DRAW_CURSOR);
+    const drawCursor: *const fn () callconv(.c) void = @ptrFromInt(ADDR_DRAW_CURSOR);
     drawCursor();
 }
 

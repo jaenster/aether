@@ -19,32 +19,39 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     // --- dbghelp.dll proxy ---
-    const dbghelp = b.addSharedLibrary(.{
+    const dbghelp = b.addLibrary(.{
+        .linkage = .dynamic,
         .name = "dbghelp",
-        .root_source_file = b.path("src/dbghelp_proxy.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/dbghelp_proxy.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
     });
-    dbghelp.linkLibC();
     b.installArtifact(dbghelp);
 
     // --- Aether.dll ---
-    const aether = b.addSharedLibrary(.{
-        .name = "Aether",
+    const aether_mod = b.createModule(.{
         .root_source_file = b.path("src/aether.zig"),
         .target = target,
         .optimize = optimize,
+        .link_libc = true,
     });
-    aether.linkLibC();
 
     // Lua 5.4.7
     const lua_dir = "vendor/lua-5.4.7";
-    aether.addIncludePath(b.path(lua_dir));
-    aether.addCSourceFiles(.{
+    aether_mod.addIncludePath(b.path(lua_dir));
+    aether_mod.addCSourceFiles(.{
         .files = &lua_sources,
         .root = b.path(lua_dir),
         .flags = &.{"-std=c99"},
     });
 
+    const aether = b.addLibrary(.{
+        .linkage = .dynamic,
+        .name = "Aether",
+        .root_module = aether_mod,
+    });
     b.installArtifact(aether);
 }

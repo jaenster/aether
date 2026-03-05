@@ -1,11 +1,10 @@
 const std = @import("std");
 const win = std.os.windows;
-const WINAPI = win.WINAPI;
 
 const DWORD = u32;
 const BYTE = u8;
 
-extern "kernel32" fn VirtualProtect(addr: *anyopaque, size: usize, new_protect: DWORD, old_protect: *DWORD) callconv(WINAPI) win.BOOL;
+extern "kernel32" fn VirtualProtect(addr: *anyopaque, size: usize, new_protect: DWORD, old_protect: *DWORD) callconv(.winapi) win.BOOL;
 
 const PAGE_READWRITE: DWORD = 0x04;
 

@@ -1,24 +1,23 @@
 const std = @import("std");
 const win = std.os.windows;
-const WINAPI = win.WINAPI;
 
 const HMODULE = win.HINSTANCE;
-const FARPROC = *const fn () callconv(WINAPI) isize;
+const FARPROC = *const fn () callconv(.winapi) isize;
 const BOOL = win.BOOL;
 const LPCSTR = [*:0]const u8;
 const LPCWSTR = [*:0]const u16;
 const LPWSTR = [*:0]u16;
 const MAX_PATH = 260;
 
-extern "kernel32" fn GetSystemDirectoryW(buf: [*]u16, size: u32) callconv(WINAPI) u32;
-extern "kernel32" fn LoadLibraryW(name: LPCWSTR) callconv(WINAPI) ?HMODULE;
-extern "kernel32" fn FreeLibrary(h: HMODULE) callconv(WINAPI) BOOL;
-extern "kernel32" fn GetProcAddress(h: HMODULE, name: LPCSTR) callconv(WINAPI) ?FARPROC;
-extern "kernel32" fn GetCommandLineW() callconv(WINAPI) LPWSTR;
-extern "kernel32" fn DisableThreadLibraryCalls(h: HMODULE) callconv(WINAPI) BOOL;
-extern "shell32" fn CommandLineToArgvW(cmd: LPWSTR, pNumArgs: *c_int) callconv(WINAPI) ?[*]LPWSTR;
-extern "kernel32" fn LocalFree(hMem: ?*anyopaque) callconv(WINAPI) ?*anyopaque;
-extern "user32" fn MessageBoxW(hWnd: ?*anyopaque, text: LPCWSTR, caption: LPCWSTR, uType: u32) callconv(WINAPI) c_int;
+extern "kernel32" fn GetSystemDirectoryW(buf: [*]u16, size: u32) callconv(.winapi) u32;
+extern "kernel32" fn LoadLibraryW(name: LPCWSTR) callconv(.winapi) ?HMODULE;
+extern "kernel32" fn FreeLibrary(h: HMODULE) callconv(.winapi) BOOL;
+extern "kernel32" fn GetProcAddress(h: HMODULE, name: LPCSTR) callconv(.winapi) ?FARPROC;
+extern "kernel32" fn GetCommandLineW() callconv(.winapi) LPWSTR;
+extern "kernel32" fn DisableThreadLibraryCalls(h: HMODULE) callconv(.winapi) BOOL;
+extern "shell32" fn CommandLineToArgvW(cmd: LPWSTR, pNumArgs: *c_int) callconv(.winapi) ?[*]LPWSTR;
+extern "kernel32" fn LocalFree(hMem: ?*anyopaque) callconv(.winapi) ?*anyopaque;
+extern "user32" fn MessageBoxW(hWnd: ?*anyopaque, text: LPCWSTR, caption: LPCWSTR, uType: u32) callconv(.winapi) c_int;
 
 const log = @import("log.zig");
 
@@ -111,9 +110,9 @@ fn resolveForwarders() void {
     }
 }
 
-fn makeForwarder(comptime idx: usize) *const fn () callconv(.Naked) void {
+fn makeForwarder(comptime idx: usize) *const fn () callconv(.naked) void {
     return &(struct {
-        fn forward() callconv(.Naked) void {
+        fn forward() callconv(.naked) void {
             @setRuntimeSafety(false);
             const ptr = resolved_ptrs[idx];
             asm volatile ("jmp *%[addr]"

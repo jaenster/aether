@@ -6,15 +6,13 @@ const d2 = struct {
     const functions = @import("../d2/functions.zig");
 };
 
-const WINAPI = std.os.windows.WINAPI;
-
 const HWND = ?*anyopaque;
 const WPARAM = usize;
 const LPARAM = isize;
 const LRESULT = isize;
 const UINT = u32;
 const ATOM = u16;
-const WNDPROC = *const fn (HWND, UINT, WPARAM, LPARAM) callconv(WINAPI) LRESULT;
+const WNDPROC = *const fn (HWND, UINT, WPARAM, LPARAM) callconv(.winapi) LRESULT;
 
 const WM_KEYDOWN: UINT = 0x0100;
 const WM_SYSKEYDOWN: UINT = 0x0104;
@@ -38,7 +36,7 @@ const WNDCLASSA = extern struct {
     lpszClassName: ?[*:0]const u8,
 };
 
-extern "user32" fn RegisterClassA(lpWndClass: *WNDCLASSA) callconv(WINAPI) ATOM;
+extern "user32" fn RegisterClassA(lpWndClass: *WNDCLASSA) callconv(.winapi) ATOM;
 
 // Address of the CALL to RegisterClassA in Game.exe
 const ADDR_REGISTER_CLASS: usize = 0x4f5379;
@@ -54,7 +52,7 @@ fn deinit() void {
     patch.revertRange(ADDR_REGISTER_CLASS, 6);
 }
 
-fn registerClassHook(wnd_class: *WNDCLASSA) callconv(WINAPI) ATOM {
+fn registerClassHook(wnd_class: *WNDCLASSA) callconv(.winapi) ATOM {
     old_wnd_proc = wnd_class.lpfnWndProc;
     wnd_class.lpfnWndProc = &windowProc;
     log.print("input: WndProc hooked");
@@ -69,7 +67,7 @@ fn hiWord(v: LPARAM) i32 {
     return @as(i32, @as(i16, @truncate(v >> 16)));
 }
 
-fn windowProc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) callconv(WINAPI) LRESULT {
+fn windowProc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) callconv(.winapi) LRESULT {
     var allow = true;
 
     switch (msg) {

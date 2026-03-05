@@ -1,6 +1,5 @@
 const std = @import("std");
 const win = std.os.windows;
-const WINAPI = win.WINAPI;
 
 const feature = @import("feature.zig");
 const game_hooks = @import("hook/game_hooks.zig");
@@ -32,7 +31,7 @@ const lua_feature = @import("lua/feature.zig");
 const BOOL = win.BOOL;
 const HMODULE = win.HINSTANCE;
 
-extern "kernel32" fn DisableThreadLibraryCalls(h: HMODULE) callconv(WINAPI) BOOL;
+extern "kernel32" fn DisableThreadLibraryCalls(h: HMODULE) callconv(.winapi) BOOL;
 
 pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
     switch (reason) {

@@ -7,7 +7,6 @@ const d2 = struct {
     const types = @import("../d2/types.zig");
 };
 
-const WINAPI = std.os.windows.WINAPI;
 const RECT = d2.types.RECT;
 
 // ============================================================================
@@ -193,7 +192,7 @@ fn mouseEvent(x: i32, y: i32, button: u8, down: bool) bool {
 // ============================================================================
 // Settings file persistence
 // ============================================================================
-extern "kernel32" fn GetModuleFileNameA(?*anyopaque, [*]u8, u32) callconv(WINAPI) u32;
+extern "kernel32" fn GetModuleFileNameA(?*anyopaque, [*]u8, u32) callconv(.winapi) u32;
 
 var settings_path: [512]u8 = undefined;
 var settings_path_len: usize = 0;
@@ -253,11 +252,12 @@ fn saveSettings() void {
     const path_ptr: [*:0]const u8 = @ptrCast(&settings_path);
     const file = std.fs.createFileAbsoluteZ(path_ptr, .{}) catch return;
     defer file.close();
-    const writer = file.writer();
 
     inline for (entries) |entry| {
         const name = comptime wideToAscii(entry.label);
-        writer.print("{s}: {d}\n", .{ name, @as(u32, if (entry.setting.*) 1 else 0) }) catch {};
+        var buf: [128]u8 = undefined;
+        const line = std.fmt.bufPrint(&buf, "{s}: {d}\n", .{ name, @as(u32, if (entry.setting.*) 1 else 0) }) catch "";
+        file.writeAll(line) catch {};
     }
 }
 
