@@ -223,8 +223,6 @@ fn gameAutomapPostDraw() void {
 fn gameUnitPostDraw() void {
     if (!settings.auto_teleport) return;
 
-    drawRoomBoundaries();
-
     if (!show_path) return;
     updateDrawProgress();
     if (draw_wp_count == 0) return;
@@ -238,46 +236,6 @@ fn gamePostDraw() void {
     if (!show_path) return;
     if (draw_wp_count == 0) return;
     drawPathDistances();
-}
-
-fn drawRoomBoundaries() void {
-    const player = d2.globals.playerUnit().* orelse return;
-    const path = player.pPath orelse return;
-    const room1 = path.pRoom1 orelse return;
-
-    // Draw current room
-    drawRoomRect(room1, 0x20); // green
-
-    // Draw adjacent rooms
-    const near_count = room1.dwRoomsNear;
-    if (near_count == 0 or near_count > 64) return;
-    const rooms_near = room1.pRoomsNear orelse return;
-
-    var i: u32 = 0;
-    while (i < near_count) : (i += 1) {
-        if (rooms_near[i]) |near_room| {
-            drawRoomRect(near_room, 0x08); // grey
-        }
-    }
-}
-
-fn drawRoomRect(room1: *d2.types.Room1, color: u32) void {
-    const coll = room1.pColl orelse return;
-    const rx: f64 = @floatFromInt(coll.dwPosGameX);
-    const ry: f64 = @floatFromInt(coll.dwPosGameY);
-    const rw: f64 = @floatFromInt(coll.dwSizeGameX);
-    const rh: f64 = @floatFromInt(coll.dwSizeGameY);
-
-    // Four corners in world space
-    const tl = d2.automap.toScreen(rx, ry);
-    const tr = d2.automap.toScreen(rx + rw, ry);
-    const bl = d2.automap.toScreen(rx, ry + rh);
-    const br = d2.automap.toScreen(rx + rw, ry + rh);
-
-    d2.functions.DrawLine.call(tl.x, tl.y, tr.x, tr.y, color, 0x80);
-    d2.functions.DrawLine.call(tr.x, tr.y, br.x, br.y, color, 0x80);
-    d2.functions.DrawLine.call(br.x, br.y, bl.x, bl.y, color, 0x80);
-    d2.functions.DrawLine.call(bl.x, bl.y, tl.x, tl.y, color, 0x80);
 }
 
 fn drawPath() void {

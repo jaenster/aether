@@ -23,15 +23,16 @@ const gpEscMenuItemCount: *usize = @ptrFromInt(0x7BC93C); // ptr to header
 const gpEscMenuCurrentTable: *usize = @ptrFromInt(0x7BC940); // ptr to table
 const gnEscMenuSelectedIndex: *i32 = @ptrFromInt(0x7BC938);
 
-// Submenu layout
-const SUB_SPACING: i32 = 28;
-
 // Font indices
 const FONT_MENU: u32 = 3; // Largest font (41px height)
-const FONT_FORMAL: u32 = 4; // FontFormal10 — readable for toggles
+const FONT_SMALL: u32 = 1; // Small readable font for submenu rows
 
 // Text color
 const TEXT_COLOR_GOLD: u32 = 0; // White/default — game applies palette from font
+
+// Submenu layout
+const TOTAL_ROWS: i32 = @as(i32, @intCast(settings.entries.len)) + 1; // 13 toggles + Previous Menu
+const ROW_SPACING: i32 = 22;
 
 // Keys
 const VK_UP: u32 = 0x26;
@@ -60,17 +61,11 @@ fn itemFieldPtr(comptime T: type, table: usize, index: usize, offset: usize) *T 
 const OFF_TYPE: usize = 0x000;
 const OFF_EXPANSION: usize = 0x004;
 const OFF_COMPUTED_Y: usize = 0x008;
-const OFF_ENABLE_CB: usize = 0x110;
-const OFF_PREDRAW_CB: usize = 0x11C;
-const OFF_FRAME_IDX: usize = 0x124;
 const OFF_MAIN_DC6: usize = 0x53C;
-const OFF_SUB_DC6: usize = 0x540; // 4 pointers
 
 // Header fields (i32 each)
 const HDR_COUNT: usize = 0;
-const HDR_SPACING: usize = 4;
 const HDR_ROW_H: usize = 8;
-const HDR_STAR_OFF: usize = 12;
 
 // ============================================================================
 // State
@@ -81,33 +76,34 @@ var state: State = .inactive;
 var initialized: bool = false;
 var init_attempted: bool = false;
 
-// Our custom table memory
+// Our custom table memory (options page only)
 var ext_options_header: usize = 0; // points to our 6-entry header
 var ext_options_table: usize = 0; // points to our 6-entry table
-var sub_header: usize = 0; // points to our 14-entry submenu header
-var sub_table: usize = 0; // points to our 14-entry submenu table
 
-// DC6 contexts
-var toggle_off_dc6: ?*anyopaque = null;
-var toggle_on_dc6: ?*anyopaque = null;
+// Submenu state — we manage selection ourselves
+var sub_selected: i32 = 0;
+var mouse_x: i32 = 0;
+var mouse_y: i32 = 0;
 
-// Wide string for DrawGameText
+// Frame counter: draw hook increments, input handlers compare to detect
+// when the ESC menu is no longer being drawn.
+var draw_frame: u32 = 0;
+var last_input_frame: u32 = 0;
+
+// Wide string constants
 const aether_label: [*:0]const u16 = std.unicode.utf8ToUtf16LeStringLiteral("AETHER");
+const prev_menu_label: [*:0]const u16 = std.unicode.utf8ToUtf16LeStringLiteral("Previous Menu");
+const on_text: [*:0]const u16 = toW("\xffc2On");
+const off_text: [*:0]const u16 = toW("\xffc1Off");
 
-// ============================================================================
-// ASCII label extraction from settings (comptime)
-// ============================================================================
-
-fn wideToAscii(comptime w: [*:0]const u16) []const u8 {
+fn toW(comptime s: []const u8) *const [s.len:0]u16 {
     comptime {
-        var len: usize = 0;
-        while (w[len] != 0) : (len += 1) {}
-        var buf: [len]u8 = undefined;
-        for (0..len) |i| {
-            buf[i] = @truncate(w[i]);
+        var buf: [s.len:0]u16 = undefined;
+        for (s, 0..) |c, i| {
+            buf[i] = c;
         }
-        const result = buf;
-        return &result;
+        const final = buf;
+        return &final;
     }
 }
 
@@ -115,15 +111,10 @@ fn wideToAscii(comptime w: [*:0]const u16) []const u8 {
 // Transparent DC6 generator
 // ============================================================================
 
-/// Build a 1-frame transparent CellFile of given dimensions.
-/// Native draw will process it (computing Y, star cursor) but render nothing visible.
 fn buildTransparentDC6(width: u32, height: u32) ?*anyopaque {
     const dc6 = @import("../d2/dc6.zig");
-
-    // Build frame: all transparent pixels (zeroed buffer)
     const pixel_count = width * height;
     const pixels = VirtualAlloc(null, pixel_count, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) orelse return null;
-
     return dc6_gen.buildCellFile(&[_]dc6.FrameInput{
         .{ .pixels = pixels[0..pixel_count], .width = width, .height = height },
     });
@@ -141,16 +132,7 @@ fn initTables() void {
 
     // Force-load the fonts we need
     _ = d2.functions.SetFont.call(.{FONT_MENU});
-    _ = d2.functions.SetFont.call(.{FONT_FORMAL});
-
-    // Generate On/Off DC6s (shared by all toggles)
-    toggle_off_dc6 = dc6_gen.generateTextDC6(FONT_FORMAL, "Off", "toggle_off");
-    toggle_on_dc6 = dc6_gen.generateTextDC6(FONT_FORMAL, "On", "toggle_on");
-
-    if (toggle_off_dc6 == null or toggle_on_dc6 == null) {
-        log.print("esc_menu: failed to generate On/Off DC6s");
-        return;
-    }
+    _ = d2.functions.SetFont.call(.{FONT_SMALL});
 
     // --- Extended Options table (6 entries) ---
     ext_options_header = @intFromPtr(VirtualAlloc(null, HEADER_SIZE, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) orelse return);
@@ -174,50 +156,8 @@ fn initTables() void {
     const ext_tbl: [*]u8 = @ptrFromInt(ext_options_table);
     @memcpy(ext_tbl[ITEM_SIZE .. 6 * ITEM_SIZE], native_tbl[0 .. 5 * ITEM_SIZE]);
 
-    // --- Submenu table (14 entries: 13 toggles + Previous Menu) ---
-    sub_header = @intFromPtr(VirtualAlloc(null, HEADER_SIZE, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) orelse return);
-    sub_table = @intFromPtr(VirtualAlloc(null, 14 * ITEM_SIZE, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) orelse return);
-
-    // Submenu header
-    const sub_hdr_count: *i32 = @ptrFromInt(sub_header + HDR_COUNT);
-    const sub_hdr_spacing: *i32 = @ptrFromInt(sub_header + HDR_SPACING);
-    const sub_hdr_rowh: *i32 = @ptrFromInt(sub_header + HDR_ROW_H);
-    const sub_hdr_star: *i32 = @ptrFromInt(sub_header + HDR_STAR_OFF);
-    sub_hdr_count.* = 14;
-    sub_hdr_spacing.* = SUB_SPACING;
-    sub_hdr_rowh.* = SUB_SPACING;
-    sub_hdr_star.* = SUB_SPACING + 2;
-
-    // 13 toggle entries
-    inline for (0..settings.entries.len) |i| {
-        const label_ascii = comptime wideToAscii(settings.entries[i].label);
-        const label_name = comptime labelFileName(i);
-        const label_dc6 = dc6_gen.generateTextDC6(FONT_FORMAL, label_ascii, label_name);
-
-        itemFieldPtr(i32, sub_table, i, OFF_TYPE).* = 1; // dual-sided
-        itemFieldPtr(i32, sub_table, i, OFF_EXPANSION).* = 0;
-        itemFieldPtr(?*anyopaque, sub_table, i, OFF_MAIN_DC6).* = label_dc6;
-        itemFieldPtr(?*anyopaque, sub_table, i, OFF_SUB_DC6).* = toggle_off_dc6; // [0] = Off
-        itemFieldPtr(?*anyopaque, sub_table, i, OFF_SUB_DC6 + 4).* = toggle_on_dc6; // [1] = On
-        itemFieldPtr(i32, sub_table, i, OFF_FRAME_IDX).* = if (settings.entries[i].setting.*) 1 else 0;
-    }
-
-    // Entry 13: "Previous Menu" (type 0, centered)
-    const prev_dc6 = dc6_gen.generateTextDC6(FONT_FORMAL, "Previous Menu", "previous_menu");
-    itemFieldPtr(i32, sub_table, 13, OFF_TYPE).* = 0;
-    itemFieldPtr(i32, sub_table, 13, OFF_EXPANSION).* = 0;
-    itemFieldPtr(?*anyopaque, sub_table, 13, OFF_MAIN_DC6).* = prev_dc6;
-
     initialized = true;
     log.print("esc_menu: tables initialized");
-}
-
-fn labelFileName(comptime i: usize) []const u8 {
-    return comptime blk: {
-        const d0: u8 = '0' + (i / 10);
-        const d1: u8 = '0' + (i % 10);
-        break :blk &[_]u8{ 't', 'o', 'g', 'g', 'l', 'e', '_', d0, d1 };
-    };
 }
 
 // ============================================================================
@@ -226,6 +166,8 @@ fn labelFileName(comptime i: usize) []const u8 {
 
 fn hookDrawEscMenu() callconv(.winapi) void {
     const original: *const fn () callconv(.winapi) void = @ptrFromInt(ADDR_DRAW_ESCMENU);
+
+    draw_frame +%= 1;
 
     const current_table = gpEscMenuCurrentTable.*;
     const is_options = (current_table == OPTIONS_TABLE_ADDR);
@@ -242,21 +184,8 @@ fn hookDrawEscMenu() callconv(.winapi) void {
 
     switch (state) {
         .aether_submenu => {
-            // Update toggle frame indices to reflect current settings
-            inline for (0..settings.entries.len) |i| {
-                itemFieldPtr(i32, sub_table, i, OFF_FRAME_IDX).* = if (settings.entries[i].setting.*) 1 else 0;
-            }
-
-            // Swap to submenu table, draw, restore
-            const saved_header = gpEscMenuItemCount.*;
-            const saved_table = gpEscMenuCurrentTable.*;
-            gpEscMenuItemCount.* = sub_header;
-            gpEscMenuCurrentTable.* = sub_table;
-
-            original();
-
-            gpEscMenuItemCount.* = saved_header;
-            gpEscMenuCurrentTable.* = saved_table;
+            // Don't call original — we own the screen in submenu state
+            drawSubmenu();
         },
         else => {
             if (is_options) {
@@ -300,11 +229,115 @@ fn drawAetherLabel() void {
 }
 
 // ============================================================================
+// Submenu drawing (pure text, Configure Controls style)
+// ============================================================================
+
+fn submenuLayout() struct { start_y: i32, label_x: i32, value_x: i32 } {
+    const sw = d2.globals.screenWidth().*;
+    const sh = d2.globals.screenHeight().*;
+    const total_h = TOTAL_ROWS * ROW_SPACING + 60; // 60px for title gap
+    const start_y = @divTrunc(sh - total_h, 2) + 60;
+    return .{
+        .start_y = start_y,
+        .label_x = @divTrunc(sw, 4),
+        .value_x = sw - @divTrunc(sw, 4),
+    };
+}
+
+fn drawSubmenu() void {
+    const sw = d2.globals.screenWidth().*;
+    const sh = d2.globals.screenHeight().*;
+    const layout = submenuLayout();
+
+    // Dark background
+    d2.functions.DrawSolidRectAlpha.call(0, 0, sw, sh, 0, 0xD0);
+
+    // Title: "AETHER" centered at top
+    const prev_font = d2.functions.SetFont.call(.{FONT_MENU});
+    var tw: u32 = 0;
+    var th: u32 = 0;
+    _ = d2.functions.GetTextSize.call(.{ aether_label, &tw, &th });
+    const title_x = @divTrunc(sw - @as(c_int, @intCast(tw)), 2);
+    const title_y = layout.start_y - 40;
+    d2.functions.DrawGameText.call(.{ aether_label, title_x, title_y, TEXT_COLOR_GOLD, 0 });
+
+    // Switch to small font for rows
+    _ = d2.functions.SetFont.call(.{FONT_SMALL});
+
+    // Draw 13 setting rows
+    for (0..settings.entries.len) |i| {
+        const row_y = layout.start_y + @as(i32, @intCast(i)) * ROW_SPACING;
+        const ii: i32 = @intCast(i);
+
+        // Highlight selected row
+        if (ii == sub_selected) {
+            d2.functions.DrawSolidRectAlpha.call(
+                layout.label_x - 10,
+                row_y - ROW_SPACING + 4,
+                layout.value_x + 10,
+                row_y + 4,
+                0x0D,
+                0x60,
+            );
+        }
+
+        // Label (left-aligned)
+        d2.functions.DrawGameText.call(.{ settings.entries[i].label, layout.label_x, row_y, TEXT_COLOR_GOLD, 0 });
+
+        // On/Off value (right-aligned)
+        const val_text: [*:0]const u16 = if (settings.entries[i].setting.*) on_text else off_text;
+        var vw: u32 = 0;
+        var vh: u32 = 0;
+        _ = d2.functions.GetTextSize.call(.{ val_text, &vw, &vh });
+        d2.functions.DrawGameText.call(.{ val_text, layout.value_x - @as(c_int, @intCast(vw)), row_y, TEXT_COLOR_GOLD, 0 });
+    }
+
+    // "Previous Menu" centered at bottom
+    const prev_y = layout.start_y + @as(i32, @intCast(settings.entries.len)) * ROW_SPACING + ROW_SPACING;
+
+    // Highlight if selected
+    if (sub_selected == TOTAL_ROWS - 1) {
+        var pmw: u32 = 0;
+        var pmh: u32 = 0;
+        _ = d2.functions.GetTextSize.call(.{ prev_menu_label, &pmw, &pmh });
+        const pm_x = @divTrunc(sw - @as(c_int, @intCast(pmw)), 2);
+        d2.functions.DrawSolidRectAlpha.call(
+            pm_x - 10,
+            prev_y - ROW_SPACING + 4,
+            pm_x + @as(c_int, @intCast(pmw)) + 10,
+            prev_y + 4,
+            0x0D,
+            0x60,
+        );
+    }
+
+    {
+        var pmw: u32 = 0;
+        var pmh: u32 = 0;
+        _ = d2.functions.GetTextSize.call(.{ prev_menu_label, &pmw, &pmh });
+        const pm_x = @divTrunc(sw - @as(c_int, @intCast(pmw)), 2);
+        d2.functions.DrawGameText.call(.{ prev_menu_label, pm_x, prev_y, TEXT_COLOR_GOLD, 0 });
+    }
+
+    // Restore font
+    _ = d2.functions.SetFont.call(.{prev_font});
+}
+
+// ============================================================================
 // Input: keyboard
 // ============================================================================
 
+fn checkMenuAlive() void {
+    // If draw hook hasn't fired since last input check, menu closed
+    if (draw_frame == last_input_frame and state != .inactive) {
+        state = .inactive;
+    }
+    last_input_frame = draw_frame;
+}
+
 fn keyEvent(key: u32, down: bool, _: u32) bool {
     if (!down or !initialized) return true;
+    checkMenuAlive();
 
     return switch (state) {
         .options_page => handleOptionsKey(key),
@@ -318,7 +351,7 @@ fn handleOptionsKey(key: u32) bool {
 
     if (key == VK_RETURN and idx == 0) {
         state = .aether_submenu;
-        gnEscMenuSelectedIndex.* = 0;
+        sub_selected = 0;
         return false;
     }
 
@@ -346,29 +379,34 @@ fn handleOptionsKey(key: u32) bool {
 }
 
 fn handleSubmenuKey(key: u32) bool {
-    const idx = gnEscMenuSelectedIndex.*;
-
     switch (key) {
+        VK_UP => {
+            sub_selected -= 1;
+            if (sub_selected < 0) sub_selected = TOTAL_ROWS - 1;
+            return false;
+        },
+        VK_DOWN => {
+            sub_selected += 1;
+            if (sub_selected >= TOTAL_ROWS) sub_selected = 0;
+            return false;
+        },
         VK_RETURN => {
-            if (idx >= 0 and idx < @as(i32, @intCast(settings.entries.len))) {
-                // Toggle setting
-                const ui: usize = @intCast(idx);
+            if (sub_selected >= 0 and sub_selected < @as(i32, @intCast(settings.entries.len))) {
+                const ui: usize = @intCast(sub_selected);
                 settings.entries[ui].setting.* = !settings.entries[ui].setting.*;
                 settings.saveSettings();
-            } else if (idx == 13) {
-                // "Previous Menu" → back to options
+            } else if (sub_selected == TOTAL_ROWS - 1) {
                 state = .options_page;
-                gnEscMenuSelectedIndex.* = 0; // highlight Aether
+                gnEscMenuSelectedIndex.* = 0;
             }
             return false;
         },
         VK_ESCAPE => {
-            // Back to options page
             state = .options_page;
-            gnEscMenuSelectedIndex.* = 5;
+            gnEscMenuSelectedIndex.* = 0;
             return false;
         },
-        else => return true, // let native handle Up/Down/etc
+        else => return false, // consume all keys in submenu
     }
 }
 
@@ -377,39 +415,63 @@ fn handleSubmenuKey(key: u32) bool {
 // ============================================================================
 
 fn mouseEvent(x: i32, y: i32, button: u8, down: bool) bool {
-    _ = x;
-    _ = y;
+    mouse_x = x;
+    mouse_y = y;
 
     if (!initialized) return true;
+    checkMenuAlive();
 
     switch (state) {
         .options_page => {
             if (button == 0 and !down and gnEscMenuSelectedIndex.* == 0) {
                 state = .aether_submenu;
-                gnEscMenuSelectedIndex.* = 0;
+                sub_selected = 0;
                 return false;
             }
             return true;
         },
         .aether_submenu => {
+            // Compute which row the mouse is over
+            const layout = submenuLayout();
+            const row = hitTestRow(y, layout.start_y);
+
+            // Mouse hover updates selection
+            if (row >= 0 and row < TOTAL_ROWS) {
+                sub_selected = row;
+            }
+
             if (button == 0 and !down) {
-                const idx = gnEscMenuSelectedIndex.*;
-                if (idx >= 0 and idx < @as(i32, @intCast(settings.entries.len))) {
-                    const ui: usize = @intCast(idx);
+                if (row >= 0 and row < @as(i32, @intCast(settings.entries.len))) {
+                    const ui: usize = @intCast(row);
                     settings.entries[ui].setting.* = !settings.entries[ui].setting.*;
                     settings.saveSettings();
-                    return false;
-                } else if (idx == 13) {
+                } else if (row == TOTAL_ROWS - 1) {
                     state = .options_page;
-                    gnEscMenuSelectedIndex.* = 5;
-                    return false;
+                    gnEscMenuSelectedIndex.* = 0;
                 }
             }
-            // In submenu, consume all mouse events to prevent native from acting
-            return false;
+            return false; // consume all mouse events in submenu
         },
         .inactive => return true,
     }
+}
+
+fn hitTestRow(y: i32, start_y: i32) i32 {
+    // Setting rows (0..12)
+    for (0..settings.entries.len) |i| {
+        const row_y = start_y + @as(i32, @intCast(i)) * ROW_SPACING;
+        const row_top = row_y - ROW_SPACING + 4;
+        const row_bot = row_y + 4;
+        if (y >= row_top and y < row_bot) return @intCast(i);
+    }
+
+    // Previous Menu row
+    const prev_y = start_y + @as(i32, @intCast(settings.entries.len)) * ROW_SPACING + ROW_SPACING;
+    const prev_top = prev_y - ROW_SPACING + 4;
+    const prev_bot = prev_y + 4;
+    if (y >= prev_top and y < prev_bot) return TOTAL_ROWS - 1;
+
+    return -1;
 }
 
 // ============================================================================
