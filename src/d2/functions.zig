@@ -286,6 +286,10 @@ pub const GetScreenModeSize = struct {
 
 pub const GetUiFlag = fastcall(0x4538D0, fn (DWORD) DWORD);
 
+pub const EscMenuShowMenu = fastcall(0x47E090, fn (i32, i32) void);
+
+pub const ImageLoadDC6Ex = fastcall(0x4788B0, fn ([*:0]const u8, DWORD) ?*anyopaque);
+
 // ============================================================================
 // Room / Collision — game engine functions for teleport validation
 // ============================================================================
