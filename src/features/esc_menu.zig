@@ -288,9 +288,14 @@ fn drawAetherLabel() void {
     const computed_y = itemFieldPtr(i32, ext_options_table, 5, OFF_COMPUTED_Y).*;
     if (computed_y == 0) return;
 
+    // Native draws DC6 at computedY + rowHeight (bottom-aligned baseline).
+    // DrawGameText also uses baseline positioning, so add rowHeight to match.
+    const row_h: i32 = @as(*const i32, @ptrFromInt(ext_options_header + HDR_ROW_H)).*;
+    const draw_y = computed_y + row_h;
+
     const screen_cx = @divTrunc(d2.globals.screenWidth().*, 2);
     const prev_font = d2.functions.SetFont.call(.{FONT_MENU});
-    d2.functions.DrawGameText.call(.{ aether_label, screen_cx, computed_y, TEXT_COLOR_GOLD, 1 });
+    d2.functions.DrawGameText.call(.{ aether_label, screen_cx, draw_y, TEXT_COLOR_GOLD, 1 });
     _ = d2.functions.SetFont.call(.{prev_font});
 }
 
@@ -312,10 +317,28 @@ fn handleOptionsKey(key: u32) bool {
     const idx = gnEscMenuSelectedIndex.*;
 
     if (key == VK_RETURN and idx == 5) {
-        // Enter on our "AETHER" entry → open submenu
         state = .aether_submenu;
         gnEscMenuSelectedIndex.* = 0;
         return false;
+    }
+
+    // Native only knows 5 entries (0-4), so handle wrapping at index 5
+    if (key == VK_DOWN) {
+        if (idx == 4) {
+            gnEscMenuSelectedIndex.* = 5;
+            return false;
+        } else if (idx == 5) {
+            gnEscMenuSelectedIndex.* = 0;
+            return false;
+        }
+    } else if (key == VK_UP) {
+        if (idx == 0) {
+            gnEscMenuSelectedIndex.* = 5;
+            return false;
+        } else if (idx == 5) {
+            gnEscMenuSelectedIndex.* = 4;
+            return false;
+        }
     }
 
     return true;
