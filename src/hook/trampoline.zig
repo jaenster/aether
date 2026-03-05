@@ -1,6 +1,5 @@
 const std = @import("std");
 const win = std.os.windows;
-const WINAPI = win.WINAPI;
 const patch = @import("patch.zig");
 
 const DWORD = u32;
@@ -11,8 +10,8 @@ const MEM_RESERVE: DWORD = 0x2000;
 const MEM_RELEASE: DWORD = 0x8000;
 const PAGE_EXECUTE_READWRITE: DWORD = 0x40;
 
-extern "kernel32" fn VirtualAlloc(addr: ?*anyopaque, size: usize, alloc_type: DWORD, protect: DWORD) callconv(WINAPI) ?[*]BYTE;
-extern "kernel32" fn VirtualFree(addr: *anyopaque, size: usize, free_type: DWORD) callconv(WINAPI) win.BOOL;
+extern "kernel32" fn VirtualAlloc(addr: ?*anyopaque, size: usize, alloc_type: DWORD, protect: DWORD) callconv(.winapi) ?[*]BYTE;
+extern "kernel32" fn VirtualFree(addr: *anyopaque, size: usize, free_type: DWORD) callconv(.winapi) win.BOOL;
 
 pub const Trampoline = struct {
     buffer: [*]BYTE,

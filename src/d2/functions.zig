@@ -13,7 +13,6 @@ const RECT = types.RECT;
 
 const DWORD = u32;
 const BOOL = i32;
-const WINAPI = @import("std").os.windows.WINAPI;
 
 fn funcPtr(comptime addr: usize, comptime FnT: type) FnT {
     return @ptrFromInt(addr);
@@ -112,7 +111,7 @@ fn fastcall(comptime addr: u32, comptime FnType: type) type {
                     : [ret] "={eax}" (-> u32),
                     : [buf] "r" (&buf),
                       [func] "r" (addr),
-                    : "ecx", "edx", "memory"
+                    : .{ .ecx = true, .edx = true, .memory = true }
                 );
                 return u32ToRet(RetType, raw);
             } else {
@@ -120,7 +119,7 @@ fn fastcall(comptime addr: u32, comptime FnType: type) type {
                     :
                     : [buf] "r" (&buf),
                       [func] "r" (addr),
-                    : "eax", "ecx", "edx", "memory"
+                    : .{ .eax = true, .ecx = true, .edx = true, .memory = true }
                 );
             }
         }
@@ -144,7 +143,7 @@ pub const GetUnitName = fastcall(0x464A60, fn (?*UnitAny) ?[*:0]u16);
 // ============================================================================
 
 pub const DrawLine = struct {
-    const Fn = *const fn (c_int, c_int, c_int, c_int, DWORD, DWORD) callconv(WINAPI) void;
+    const Fn = *const fn (c_int, c_int, c_int, c_int, DWORD, DWORD) callconv(.winapi) void;
     const ptr: Fn = funcPtr(0x4F6380, Fn);
     pub inline fn call(x0: c_int, y0: c_int, x1: c_int, y1: c_int, color: DWORD, alpha: DWORD) void {
         ptr(x0, y0, x1, y1, color, alpha);
@@ -152,7 +151,7 @@ pub const DrawLine = struct {
 };
 
 pub const DrawRect = struct {
-    const Fn = *const fn (*RECT, u8) callconv(WINAPI) void;
+    const Fn = *const fn (*RECT, u8) callconv(.winapi) void;
     const ptr: Fn = funcPtr(0x4F62A0, Fn);
     pub inline fn call(rect: *RECT, palette_idx: u8) void {
         ptr(rect, palette_idx);
@@ -160,7 +159,7 @@ pub const DrawRect = struct {
 };
 
 pub const DrawSolidRectAlpha = struct {
-    const Fn = *const fn (c_int, c_int, c_int, c_int, DWORD, DWORD) callconv(WINAPI) void;
+    const Fn = *const fn (c_int, c_int, c_int, c_int, DWORD, DWORD) callconv(.winapi) void;
     const ptr: Fn = funcPtr(0x4F6340, Fn);
     pub inline fn call(x0: c_int, y0: c_int, x1: c_int, y1: c_int, color: DWORD, alpha: DWORD) void {
         ptr(x0, y0, x1, y1, color, alpha);
@@ -168,7 +167,7 @@ pub const DrawSolidRectAlpha = struct {
 };
 
 pub const DrawImage = struct {
-    const Fn = *const fn (?*anyopaque, c_int, c_int, c_int, DWORD, ?*anyopaque) callconv(WINAPI) void;
+    const Fn = *const fn (?*anyopaque, c_int, c_int, c_int, DWORD, ?*anyopaque) callconv(.winapi) void;
     const ptr: Fn = funcPtr(0x4F6480, Fn);
     pub inline fn call(dc6_ctx: ?*anyopaque, x: c_int, y: c_int, gamma: c_int, mode: DWORD, palette: ?*anyopaque) void {
         ptr(dc6_ctx, x, y, gamma, mode, palette);
@@ -180,7 +179,7 @@ pub const DrawImage = struct {
 // ============================================================================
 
 pub const GetUnitStat = struct {
-    const Fn = *const fn (?*UnitAny, DWORD, DWORD) callconv(WINAPI) DWORD;
+    const Fn = *const fn (?*UnitAny, DWORD, DWORD) callconv(.winapi) DWORD;
     const ptr: Fn = funcPtr(0x625480, Fn);
     pub inline fn call(unit: ?*UnitAny, stat: DWORD, stat2: DWORD) DWORD {
         return ptr(unit, stat, stat2);
@@ -188,7 +187,7 @@ pub const GetUnitStat = struct {
 };
 
 pub const GetUnitState = struct {
-    const Fn = *const fn (?*UnitAny, DWORD) callconv(WINAPI) c_int;
+    const Fn = *const fn (?*UnitAny, DWORD) callconv(.winapi) c_int;
     const ptr: Fn = funcPtr(0x639DF0, Fn);
     pub inline fn call(unit: ?*UnitAny, state_no: DWORD) c_int {
         return ptr(unit, state_no);
@@ -196,7 +195,7 @@ pub const GetUnitState = struct {
 };
 
 pub const UnitLocation = struct {
-    const Fn = *const fn (?*UnitAny, *POINT) callconv(WINAPI) void;
+    const Fn = *const fn (?*UnitAny, *POINT) callconv(.winapi) void;
     const ptr: Fn = funcPtr(0x620870, Fn);
     pub inline fn call(unit: ?*UnitAny, point: *POINT) void {
         ptr(unit, point);
@@ -210,7 +209,7 @@ pub const CreateUnit = fastcall(0x555230, fn (types.UnitType, DWORD, DWORD, DWOR
 // ============================================================================
 
 pub const AddRoomData = struct {
-    const Fn = *const fn (?*Act, c_int, c_int, c_int, ?*Room1) callconv(WINAPI) void;
+    const Fn = *const fn (?*Act, c_int, c_int, c_int, ?*Room1) callconv(.winapi) void;
     const ptr: Fn = funcPtr(0x61A070, Fn);
     pub inline fn call(act: ?*Act, level_id: c_int, x: c_int, y: c_int, room: ?*Room1) void {
         ptr(act, level_id, x, y, room);
@@ -218,7 +217,7 @@ pub const AddRoomData = struct {
 };
 
 pub const RemoveRoomData = struct {
-    const Fn = *const fn (?*Act, c_int, c_int, c_int, ?*Room1) callconv(WINAPI) void;
+    const Fn = *const fn (?*Act, c_int, c_int, c_int, ?*Room1) callconv(.winapi) void;
     const ptr: Fn = funcPtr(0x61A0C0, Fn);
     pub inline fn call(act: ?*Act, level_id: c_int, x: c_int, y: c_int, room: ?*Room1) void {
         ptr(act, level_id, x, y, room);
@@ -226,7 +225,7 @@ pub const RemoveRoomData = struct {
 };
 
 pub const InitLevel = struct {
-    const Fn = *const fn (?*Level) callconv(WINAPI) void;
+    const Fn = *const fn (?*Level) callconv(.winapi) void;
     const ptr: Fn = funcPtr(0x6424A0, Fn);
     pub inline fn call(level: ?*Level) void {
         ptr(level);
@@ -234,7 +233,7 @@ pub const InitLevel = struct {
 };
 
 pub const GetLevelText = struct {
-    const Fn = *const fn (DWORD) callconv(WINAPI) ?*LevelTxt;
+    const Fn = *const fn (DWORD) callconv(.winapi) ?*LevelTxt;
     const ptr: Fn = funcPtr(0x61DB70, Fn);
     pub inline fn call(level_no: DWORD) ?*LevelTxt {
         return ptr(level_no);
@@ -242,7 +241,7 @@ pub const GetLevelText = struct {
 };
 
 pub const GetObjectText = struct {
-    const Fn = *const fn (DWORD) callconv(WINAPI) ?*ObjectTxt;
+    const Fn = *const fn (DWORD) callconv(.winapi) ?*ObjectTxt;
     const ptr: Fn = funcPtr(0x640E90, Fn);
     pub inline fn call(obj_no: DWORD) ?*ObjectTxt {
         return ptr(obj_no);
@@ -250,7 +249,7 @@ pub const GetObjectText = struct {
 };
 
 pub const GetItemText = struct {
-    const Fn = *const fn (DWORD) callconv(WINAPI) ?*ItemTxt;
+    const Fn = *const fn (DWORD) callconv(.winapi) ?*ItemTxt;
     const ptr: Fn = funcPtr(0x6335F0, Fn);
     pub inline fn call(item_no: DWORD) ?*ItemTxt {
         return ptr(item_no);
@@ -258,7 +257,7 @@ pub const GetItemText = struct {
 };
 
 pub const GetAct = struct {
-    const Fn = *const fn (c_int) callconv(WINAPI) DWORD;
+    const Fn = *const fn (c_int) callconv(.winapi) DWORD;
     const ptr: Fn = funcPtr(0x6427F0, Fn);
     pub inline fn call(level_id: c_int) DWORD {
         return ptr(level_id);
@@ -270,7 +269,7 @@ pub const GetAct = struct {
 // ============================================================================
 
 pub const GetScreenMode = struct {
-    const Fn = *const fn () callconv(WINAPI) DWORD;
+    const Fn = *const fn () callconv(.winapi) DWORD;
     const ptr: Fn = funcPtr(0x4F5160, Fn);
     pub inline fn call() DWORD {
         return ptr();
@@ -278,7 +277,7 @@ pub const GetScreenMode = struct {
 };
 
 pub const GetScreenModeSize = struct {
-    const Fn = *const fn (c_int, *c_int, *c_int) callconv(WINAPI) void;
+    const Fn = *const fn (c_int, *c_int, *c_int) callconv(.winapi) void;
     const ptr: Fn = funcPtr(0x4F5570, Fn);
     pub inline fn call(mode: c_int, width: *c_int, height: *c_int) void {
         ptr(mode, width, height);
@@ -306,7 +305,7 @@ pub const CheckCollisionWidth = fastcall(0x64D9B0, fn (?*Room1, i32, i32, u32, u
 // ============================================================================
 
 pub const EnumerateLocalSaves = struct {
-    const Fn = *const fn () callconv(WINAPI) DWORD;
+    const Fn = *const fn () callconv(.winapi) DWORD;
     const ptr: Fn = funcPtr(0x438F70, Fn);
     pub inline fn call() DWORD {
         return ptr();
@@ -316,7 +315,7 @@ pub const EnumerateLocalSaves = struct {
 pub const SelectedCharBnetSingleTcpIp = fastcall(0x434A00, fn (?*D2CharSelStrc, i16, DWORD, [*:0]u8) DWORD);
 
 pub const MainMenuForm = struct {
-    const Fn = *const fn () callconv(.C) void;
+    const Fn = *const fn () callconv(.c) void;
     const ptr: Fn = funcPtr(0x4336C0, Fn);
     pub inline fn call() void {
         ptr();
@@ -324,7 +323,7 @@ pub const MainMenuForm = struct {
 };
 
 pub const ClearMessageLoopFlag = struct {
-    const Fn = *const fn () callconv(WINAPI) BOOL;
+    const Fn = *const fn () callconv(.winapi) BOOL;
     const ptr: Fn = funcPtr(0x4F9190, Fn);
     pub inline fn call() bool {
         return ptr() != 0;
@@ -336,7 +335,7 @@ pub const ClearMessageLoopFlag = struct {
 // ============================================================================
 
 pub const NET_D2GS_CLIENT_IncomingReturn = struct {
-    const Fn = *const fn ([*]u8) callconv(.C) void;
+    const Fn = *const fn ([*]u8) callconv(.c) void;
     const ptr: Fn = funcPtr(0x45C900, Fn);
     pub inline fn call(bytes: [*]u8) void {
         ptr(bytes);
@@ -347,7 +346,7 @@ pub const NET_D2GS_CLIENT_IncomingReturn = struct {
 // Dialog (__fastcall)
 // ============================================================================
 
-pub const OkDialog = fastcall(0x4331C0, fn ([*:0]const u16, [*:0]const u16, [*:0]const u16, ?*const fn () callconv(.C) void) void);
+pub const OkDialog = fastcall(0x4331C0, fn ([*:0]const u16, [*:0]const u16, [*:0]const u16, ?*const fn () callconv(.c) void) void);
 
 // ============================================================================
 // Automap (__fastcall / __stdcall)
@@ -358,7 +357,7 @@ pub const NewAutomapCell = fastcall(0x457C30, fn () ?*types.AutomapCell);
 pub const AddAutomapCell = fastcall(0x457B00, fn (?*types.AutomapCell, *?*types.AutomapCell) void);
 
 pub const RevealAutomapRoom = struct {
-    const Fn = *const fn (?*types.Room1, DWORD, ?*types.AutomapLayer) callconv(WINAPI) void;
+    const Fn = *const fn (?*types.Room1, DWORD, ?*types.AutomapLayer) callconv(.winapi) void;
     const ptr: Fn = funcPtr(0x458F40, Fn);
     pub inline fn call(room1: ?*types.Room1, clip_flag: DWORD, layer: ?*types.AutomapLayer) void {
         ptr(room1, clip_flag, layer);
@@ -366,7 +365,7 @@ pub const RevealAutomapRoom = struct {
 };
 
 pub const GetAutomapSize = struct {
-    const Fn = *const fn () callconv(WINAPI) DWORD;
+    const Fn = *const fn () callconv(.winapi) DWORD;
     const ptr: Fn = funcPtr(0x45A710, Fn);
     pub inline fn call() DWORD {
         return ptr();
@@ -387,7 +386,7 @@ pub const GetMouseYOffset = fastcall(0x45AFB0, fn () i32);
 // ============================================================================
 
 pub const TestCollisionByCoordinates = struct {
-    const Fn = *const fn (?*UnitAny, c_int, c_int, DWORD) callconv(WINAPI) BOOL;
+    const Fn = *const fn (?*UnitAny, c_int, c_int, DWORD) callconv(.winapi) BOOL;
     const ptr: Fn = funcPtr(0x6229F0, Fn);
     pub inline fn call(unit: ?*UnitAny, x: c_int, y: c_int, flags: DWORD) bool {
         return ptr(unit, x, y, flags) != 0;
@@ -412,7 +411,7 @@ pub fn sendPacket(data: []const u8) void {
         : [data] "r" (ptr_val),
           [func] "r" (@as(u32, 0x478350)),
           [len] "{edi}" (len),
-        : "eax", "ecx", "edx", "memory"
+        : .{ .eax = true, .ecx = true, .edx = true, .memory = true }
     );
 }
 

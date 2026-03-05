@@ -36,15 +36,18 @@ fn init() void {
     // Fix RandTransforms.dat for LoD to colorize monsters properly
     _ = patch.writeBytes(0x4666A5, &[_]u8{0x26});
 
+    // NOP "draw all states" overlay rendering
+    _ = patch.writeNops(0x46e46f, 0x46e486 - 0x46e46f);
+
     // Fix LRUCACHE_Unlink null deref at 0x6091E5 (d2bs GameCrashFix)
     // Rewrite 18-byte unguarded unlink with null-checked version:
     //   mov ecx,[eax+10] / jecxz +0D / mov edx,[eax+0C] / test edx,edx / jz +06 / mov [ecx+0C],edx / mov [edx+10],ecx
     _ = patch.writeBytes(0x6091D6, &[_]u8{
         0x8B, 0x48, 0x10, // mov ecx, [eax+0x10]
-        0xE3, 0x0D,       // jecxz +0x0D (skip to 0x6091E8)
+        0xE3, 0x0D, // jecxz +0x0D (skip to 0x6091E8)
         0x8B, 0x50, 0x0C, // mov edx, [eax+0xC]
-        0x85, 0xD2,       // test edx, edx
-        0x74, 0x06,       // jz +0x06 (skip to 0x6091E8)
+        0x85, 0xD2, // test edx, edx
+        0x74, 0x06, // jz +0x06 (skip to 0x6091E8)
         0x89, 0x51, 0x0C, // mov [ecx+0xC], edx
         0x89, 0x4A, 0x10, // mov [edx+0x10], ecx
     });
@@ -60,6 +63,7 @@ fn deinit() void {
     patch.revertRange(0x515FB1, 1);
     patch.revertRange(0x4781AC, 5);
     patch.revertRange(0x4666A5, 1);
+    patch.revertRange(0x46e46f, 0x46e486 - 0x46e46f);
     patch.revertRange(0x6091D6, 18);
 }
 

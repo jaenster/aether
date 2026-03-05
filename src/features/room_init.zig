@@ -27,7 +27,7 @@ fn deinit() void {
     patch.revertRange(ADDR_ROOM_INIT, 6);
 }
 
-fn roomInitThunk() callconv(.Naked) void {
+fn roomInitThunk() callconv(.naked) void {
     // Replicate original 6-byte prologue then jump back
     asm volatile (
         \\push %%ebp

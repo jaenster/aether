@@ -1,6 +1,5 @@
 const std = @import("std");
 const win = std.os.windows;
-const WINAPI = win.WINAPI;
 
 const feature = @import("feature.zig");
 const game_hooks = @import("hook/game_hooks.zig");
@@ -26,6 +25,7 @@ const item_qol = @import("features/item_qol.zig");
 const input = @import("features/input.zig");
 const debug_mode = @import("features/debug_mode.zig");
 const auto_move = @import("features/auto_move.zig");
+const txt_override = @import("features/txt_override.zig");
 pub const settings = @import("features/settings.zig");
 pub const lua_engine = @import("lua/engine.zig");
 const lua_feature = @import("lua/feature.zig");
@@ -33,7 +33,7 @@ const lua_feature = @import("lua/feature.zig");
 const BOOL = win.BOOL;
 const HMODULE = win.HINSTANCE;
 
-extern "kernel32" fn DisableThreadLibraryCalls(h: HMODULE) callconv(WINAPI) BOOL;
+extern "kernel32" fn DisableThreadLibraryCalls(h: HMODULE) callconv(.winapi) BOOL;
 
 pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
     switch (reason) {
@@ -56,6 +56,7 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
             feature.register(&auto_move.hooks);
             feature.register(&omnivision.hooks);
             feature.register(&weather.hooks);
+            feature.register(&txt_override.hooks);
             feature.register(&settings.hooks);
             feature.register(&lua_feature.hooks);
 

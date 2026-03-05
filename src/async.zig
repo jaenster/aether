@@ -1,14 +1,13 @@
 const std = @import("std");
 const log = @import("log.zig");
 
-const WINAPI = std.os.windows.WINAPI;
 const LPVOID = ?*anyopaque;
 const DWORD = u32;
 
-extern "kernel32" fn ConvertThreadToFiber(param: LPVOID) callconv(WINAPI) LPVOID;
-extern "kernel32" fn CreateFiber(stack_size: DWORD, start: *const fn (LPVOID) callconv(WINAPI) void, param: LPVOID) callconv(WINAPI) LPVOID;
-extern "kernel32" fn SwitchToFiber(fiber: LPVOID) callconv(WINAPI) void;
-extern "kernel32" fn DeleteFiber(fiber: LPVOID) callconv(WINAPI) void;
+extern "kernel32" fn ConvertThreadToFiber(param: LPVOID) callconv(.winapi) LPVOID;
+extern "kernel32" fn CreateFiber(stack_size: DWORD, start: *const fn (LPVOID) callconv(.winapi) void, param: LPVOID) callconv(.winapi) LPVOID;
+extern "kernel32" fn SwitchToFiber(fiber: LPVOID) callconv(.winapi) void;
+extern "kernel32" fn DeleteFiber(fiber: LPVOID) callconv(.winapi) void;
 
 var main_fiber: LPVOID = null;
 var task_fiber: LPVOID = null;
@@ -101,7 +100,7 @@ fn cleanup() void {
     }
 }
 
-fn fiberEntry(_: LPVOID) callconv(WINAPI) void {
+fn fiberEntry(_: LPVOID) callconv(.winapi) void {
     if (task_fn) |func| {
         func();
     }

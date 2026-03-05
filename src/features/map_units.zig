@@ -71,7 +71,7 @@ fn drawItems() void {
             // Quality items (magic+) or socketed superior+
             if (idata.dwQuality > 3 or
                 (idata.dwFlags & 0x400800 != 0 and idata.dwQuality > 2 and
-                d2.functions.GetUnitStat.call(unit, 194, 0) >= 2))
+                    d2.functions.GetUnitStat.call(unit, 194, 0) >= 2))
             {
                 const qi = if (idata.dwQuality < item_rarity_color.len) idata.dwQuality else 0;
                 d2.automap.drawAutomapX(pos.x, pos.y, item_rarity_color[qi], 3.0);

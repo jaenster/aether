@@ -1,8 +1,6 @@
 const feature = @import("../feature.zig");
 const patch = @import("../hook/patch.zig");
 
-const WINAPI = @import("std").os.windows.WINAPI;
-
 // NET_D2GS_SERVER_Send_0x9C_ItemWorld — sends item-on-ground packet to client.
 // When nAction == 0 (dropped), we set the IDENTIFIED flag before sending.
 //
@@ -14,7 +12,7 @@ const ADDR_ITEM_WORLD: usize = 0x53eae0;
 const ADDR_ITEM_WORLD_REJOIN: usize = 0x53eae9;
 
 // ITEM_EditItemData_eItemFlag(pItem, eItemFlag, bSet) — __stdcall
-const EditItemFlag = *const fn (*anyopaque, u32, i32) callconv(WINAPI) i32;
+const EditItemFlag = *const fn (*anyopaque, u32, i32) callconv(.winapi) i32;
 const editItemFlag: EditItemFlag = @ptrFromInt(0x6280d0);
 const ITEMFLAG_IDENTIFIED: u32 = 4;
 
@@ -29,12 +27,12 @@ fn deinit() void {
 
 // The hook is naked because this is a __fastcall function and we need
 // to preserve ECX/EDX while accessing stack args.
-fn itemWorldHook() callconv(.Naked) void {
+fn itemWorldHook() callconv(.naked) void {
     // __fastcall layout on entry:
     //   ECX = pClient, EDX = pItem
     //   [esp+4] = nAction, [esp+8] = eItemFlag, [esp+12] = param5
     asm volatile (
-        // Save fastcall registers
+    // Save fastcall registers
         \\push %%ecx
         \\push %%edx
         // Check nAction == 0 (dropped on ground)

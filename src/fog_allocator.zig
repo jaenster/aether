@@ -1,6 +1,5 @@
 const std = @import("std");
 const win = std.os.windows;
-const WINAPI = win.WINAPI;
 const Allocator = std.mem.Allocator;
 
 const patch = @import("hook/patch.zig");
