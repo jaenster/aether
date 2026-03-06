@@ -11,17 +11,17 @@ const ADDR_SERVER_GAME_LOOP_REJOIN: usize = 0x0052d875;
 
 const LEVEL_CANYON: u32 = 46;
 const LEVEL_ARCANE: u32 = 74;
-const SUMMONER_TYPE: u32 = 1;
-const SUMMONER_CLASS: u32 = 250;
+const JOURNAL_TYPE: u32 = 2;
+const JOURNAL_CLASS: u32 = 357;
 const PORTAL_CLASS_ID: i32 = 0x3C;
 
 var captured_pGame: usize = 0;
 var portal_spawned: bool = false;
-var last_level: u32 = 0;
+var last_pGame: usize = 0;
 
 fn init() void {
     if (patch.writeJump(ADDR_SERVER_GAME_LOOP, @intFromPtr(&serverGameLoopThunk))) {
-        log.print("arcane_portal: ServerGameLoop hook installed");
+        log.print("arcane_portal: hook installed");
     } else {
         log.print("arcane_portal: HOOK FAILED");
     }
@@ -80,9 +80,10 @@ fn onServerGameLoop() void {
     const level = room2.pLevel orelse return;
     const level_no = level.dwLevelNo;
 
-    if (level_no != last_level) {
+    // Reset once per game
+    if (captured_pGame != last_pGame) {
         portal_spawned = false;
-        last_level = level_no;
+        last_pGame = captured_pGame;
     }
 
     if (level_no != LEVEL_CANYON or portal_spawned) return;
@@ -96,19 +97,19 @@ fn onServerGameLoop() void {
     const pAct: ?*d2.types.Act = @as(*?*d2.types.Act, @ptrFromInt(pDrlgAddr + 0x46C)).*;
     const act = pAct orelse return;
 
-    // Find Arcane level and Summoner preset
+    // Find Arcane level and journal preset
     const arcane_level = GetLevelAndAlloc.call(pDrlg, @as(i32, LEVEL_ARCANE)) orelse return;
     if (arcane_level.pRoom2First == null) {
         d2.functions.InitLevel.call(arcane_level);
     }
 
     const info = findSummonerRoom(arcane_level, act) orelse {
-        log.print("arcane: summoner not found");
+        log.print("arcane: journal not found");
         portal_spawned = true;
         return;
     };
 
-    // AddRoomData on Summoner's Room2 to get a Room1 in Arcane
+    // AddRoomData on journal's Room2 to get a Room1 in Arcane
     const summoner_room2 = info.room2;
     var added_room = false;
     if (summoner_room2.pRoom1 == null) {
@@ -117,7 +118,6 @@ fn onServerGameLoop() void {
     }
 
     const arcane_room1 = summoner_room2.pRoom1 orelse {
-        log.print("arcane: AddRoomData failed to create Room1");
         if (added_room) {
             d2.functions.RemoveRoomData.call(act, @as(c_int, @intCast(arcane_level.dwLevelNo)), @as(c_int, @intCast(summoner_room2.dwPosX)), @as(c_int, @intCast(summoner_room2.dwPosY)), null);
         }
@@ -125,8 +125,7 @@ fn onServerGameLoop() void {
         return;
     };
 
-    // Spawn portal FROM Arcane (at Summoner) TO Canyon
-    // LinkPortal will create the paired destination portal in Canyon near the player
+    // Spawn portal FROM Arcane (at journal) TO Canyon
     var portal_unit: ?*d2.types.UnitAny = null;
     d2.functions.SpawnPortal.call(.{
         @as(?*anyopaque, @ptrFromInt(captured_pGame)),
@@ -137,18 +136,14 @@ fn onServerGameLoop() void {
         @as(i32, @intCast(LEVEL_CANYON)),
         &portal_unit,
         PORTAL_CLASS_ID,
-        @as(i32, 1), // bIgnore=1 to skip FindSpawnLocation (we already have exact coords)
+        @as(i32, 1),
     });
 
-    // Clean up the temporary Room1
     if (added_room) {
         d2.functions.RemoveRoomData.call(act, @as(c_int, @intCast(arcane_level.dwLevelNo)), @as(c_int, @intCast(summoner_room2.dwPosX)), @as(c_int, @intCast(summoner_room2.dwPosY)), summoner_room2.pRoom1);
     }
 
-    if (portal_unit) |portal| {
-        log.hex("arcane: portal spawned id=", portal.dwUnitId);
-        log.hex("arcane: arcane x=", @as(u32, @bitCast(info.x)));
-        log.hex("arcane: arcane y=", @as(u32, @bitCast(info.y)));
+    if (portal_unit) |_| {
         log.print("arcane_portal: Portal spawned (Arcane->Canyon)");
     } else {
         log.print("arcane_portal: SpawnPortal returned null");
@@ -160,7 +155,6 @@ fn onServerGameLoop() void {
 fn findSummonerRoom(arcane_level: *d2.types.Level, act: *d2.types.Act) ?SummonerInfo {
     var r2 = arcane_level.pRoom2First;
     while (r2) |room2| : (r2 = room2.pRoom2Next) {
-        // Need AddRoomData to populate presets
         var added = false;
         if (room2.pRoom1 == null) {
             d2.functions.AddRoomData.call(act, @as(c_int, @intCast(arcane_level.dwLevelNo)), @as(c_int, @intCast(room2.dwPosX)), @as(c_int, @intCast(room2.dwPosY)), room2.pRoom1);
@@ -174,7 +168,7 @@ fn findSummonerRoom(arcane_level: *d2.types.Level, act: *d2.types.Act) ?Summoner
 
         var preset = room2.pPreset;
         while (preset) |p| : (preset = p.pPresetNext) {
-            if (p.dwType == SUMMONER_TYPE and p.dwTxtFileNo == SUMMONER_CLASS) {
+            if (p.dwType == JOURNAL_TYPE and p.dwTxtFileNo == JOURNAL_CLASS) {
                 return SummonerInfo{
                     .x = @as(i32, @intCast(room2.dwPosX * 5 + p.dwPosX)),
                     .y = @as(i32, @intCast(room2.dwPosY * 5 + p.dwPosY)),
