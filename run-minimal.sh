@@ -36,7 +36,7 @@ cp -r "$SCRIPT_DIR/scripts/"*.lua "$GAME_DIR/aether/scripts/" 2>/dev/null || tru
 
 # Launch with -nosound (no media MPQs)
 cd "$GAME_DIR"
-WINEDLLOVERRIDES="dbghelp=n" wine Game.exe -w -nosound -loaddll "$DLL_WINE_PATH" > /dev/null 2>&1 &
+WINEDLLOVERRIDES="dbghelp=n" wine Game.exe -w -nosound --headless -loaddll "$DLL_WINE_PATH" "$@" > /dev/null 2>&1 &
 
 # Wait and show log
 sleep 5

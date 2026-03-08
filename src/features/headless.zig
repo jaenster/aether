@@ -18,6 +18,11 @@ var headless_rendering: bool = false;
 pub fn enableHeadlessMode() void {
     headless_rendering = true;
 
+    // Hide the game window — NOP the ShowWindow call at 0x004F585A
+    // PUSH 1 (2B) + PUSH EAX (1B) + CALL [0x006cc4ec] (6B) = 9 bytes
+    // The HWND stays valid for the message pump, console window remains visible.
+    _ = patch.writeNops(0x004F585A, 9);
+
     // --- Renderers: nothing draws ---
     // RENDERER_DrawOutOfGameScene (0x004F98E0)
     _ = patch.writeBytes(0x004F98E0, &[_]u8{0xC3});
@@ -118,6 +123,7 @@ fn deinit() void {
     patch.revertRange(0x005186d0, 3);
     patch.revertRange(0x0043BF60, 3);
     if (headless_rendering) {
+        patch.revertRange(0x004F585A, 9);
         patch.revertRange(0x004F98E0, 1);
         patch.revertRange(0x0044C990, 3);
         patch.revertRange(0x005066C0, 5);
