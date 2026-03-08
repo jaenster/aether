@@ -8,11 +8,21 @@ pub const hooks: feature.Hooks = .{
 };
 
 var pool_attached: bool = false;
+var lua_initialized: bool = false;
+
+fn ensureInit() void {
+    if (!lua_initialized) {
+        lua_initialized = true;
+        engine.init();
+    }
+}
 
 fn gameLoop() void {
+    ensureInit();
     engine.tick();
 }
 
 fn oogLoop() void {
+    ensureInit();
     engine.oogTick();
 }

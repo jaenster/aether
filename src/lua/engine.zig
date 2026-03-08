@@ -36,16 +36,48 @@ fn fogLuaAlloc(ud: ?*anyopaque, ptr: ?*anyopaque, _: usize, nsize: usize) callco
     return @ptrCast(result);
 }
 
+fn luaPanic(state: ?*c.lua_State) callconv(.c) c_int {
+    const s = state orelse return 0;
+    const msg = c.lua_tolstring(s, -1, null);
+    if (msg) |m| {
+        log.printStr("lua: PANIC: ", std.mem.span(m));
+    } else {
+        log.print("lua: PANIC (no message)");
+    }
+    return 0;
+}
+
 pub fn init() void {
-    L = c.luaL_newstate();
+    log.print("lua: creating state");
+    L = c.lua_newstate(defaultAlloc, null);
     if (L == null) {
-        log.print("lua: failed to create state");
+        log.print("lua: newstate returned null");
         return;
     }
+    log.print("lua: state created, setting panic");
+    _ = c.lua_atpanic(L.?, luaPanic);
+    log.print("lua: opening libs");
     c.luaL_openlibs(L.?);
     registerAPI(L.?);
     log.print("lua: initialized");
     _ = loadScript("aether\\scripts\\init.lua");
+}
+
+extern "kernel32" fn GetProcessHeap() callconv(.winapi) ?*anyopaque;
+extern "kernel32" fn HeapAlloc(heap: *anyopaque, flags: u32, size: usize) callconv(.winapi) ?*anyopaque;
+extern "kernel32" fn HeapReAlloc(heap: *anyopaque, flags: u32, ptr: *anyopaque, size: usize) callconv(.winapi) ?*anyopaque;
+extern "kernel32" fn HeapFree(heap: *anyopaque, flags: u32, ptr: *anyopaque) callconv(.winapi) i32;
+
+fn defaultAlloc(_: ?*anyopaque, ptr: ?*anyopaque, _: usize, nsize: usize) callconv(.c) ?*anyopaque {
+    const heap = GetProcessHeap() orelse return null;
+    if (nsize == 0) {
+        if (ptr) |p| _ = HeapFree(heap, 0, p);
+        return null;
+    }
+    if (ptr) |p| {
+        return HeapReAlloc(heap, 0, p, nsize);
+    }
+    return HeapAlloc(heap, 0, nsize);
 }
 
 /// Swap Lua to use a FOG memory pool. Call once the game's memory system is ready.

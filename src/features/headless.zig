@@ -96,8 +96,8 @@ fn init() void {
     _ = patch.writeBytes(0x0043BF60, &[_]u8{ 0x31, 0xC0, 0xC3 });
 
     // Patch 14: CHARSEL_EnumerateLocalSaves (0x00438F70) — __stdcall, 0 args
-    // Parses save files; halts on parse errors. Stub: XOR EAX,EAX; RET (return 0).
-    _ = patch.writeBytes(0x00438F70, &[_]u8{ 0x31, 0xC0, 0xC3 });
+    // Un-stubbed: needed for auto_enter to find save files.
+    // Was: _ = patch.writeBytes(0x00438F70, &[_]u8{ 0x31, 0xC0, 0xC3 });
 
     // Hook ExitProcess to log stack trace before the game silently exits
     hookExitProcess();
@@ -152,7 +152,7 @@ fn deinit() void {
     patch.revertRange(0x00600B80, 1); // Patch 16
     patch.revertRange(0x005186d0, 3); // Patch 12: BNGatewayAccess::Load
     patch.revertRange(0x0043BF60, 3); // Patch 13
-    patch.revertRange(0x00438F70, 3); // Patch 14
+    // Patch 14 un-stubbed (no revert needed)
 }
 
 // Naked handler for Patch 1.

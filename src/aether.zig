@@ -92,8 +92,7 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
             game_hooks.install();
             log.print("aether: all hooks installed");
 
-            // Lua scripting engine
-            lua_engine.init();
+            // Lua init deferred to first game/oog loop tick (CRT not ready in DllMain on Wine)
         },
         0 => { // DLL_PROCESS_DETACH
             lua_engine.deinit();

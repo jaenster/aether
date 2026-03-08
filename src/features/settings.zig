@@ -198,6 +198,13 @@ fn mouseEvent(x: i32, y: i32, button: u8, down: bool) bool {
 // ============================================================================
 extern "kernel32" fn GetModuleFileNameA(?*anyopaque, [*]u8, u32) callconv(.winapi) u32;
 
+const HANDLE = *anyopaque;
+const INVALID_HANDLE_VALUE: HANDLE = @ptrFromInt(0xFFFFFFFF);
+extern "kernel32" fn CreateFileA(name: [*:0]const u8, access: u32, share: u32, sa: ?*anyopaque, disp: u32, flags: u32, template: ?*anyopaque) callconv(.winapi) HANDLE;
+extern "kernel32" fn ReadFile(h: HANDLE, buf: [*]u8, len: u32, read: *u32, ovl: ?*anyopaque) callconv(.winapi) i32;
+extern "kernel32" fn WriteFile(h: HANDLE, buf: [*]const u8, len: u32, written: *u32, ovl: ?*anyopaque) callconv(.winapi) i32;
+extern "kernel32" fn CloseHandle(h: HANDLE) callconv(.winapi) i32;
+
 var settings_path: [512]u8 = undefined;
 var settings_path_len: usize = 0;
 
@@ -228,12 +235,17 @@ fn init() void {
 
 fn loadSettings() void {
     const path_ptr: [*:0]const u8 = @ptrCast(&settings_path);
-    const file = std.fs.openFileAbsoluteZ(path_ptr, .{}) catch return;
-    defer file.close();
+    const GENERIC_READ: u32 = 0x80000000;
+    const OPEN_EXISTING: u32 = 3;
+    const FILE_ATTRIBUTE_NORMAL: u32 = 0x80;
+    const h = CreateFileA(path_ptr, GENERIC_READ, 0, null, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, null);
+    if (h == INVALID_HANDLE_VALUE) return;
+    defer _ = CloseHandle(h);
 
     var buf: [4096]u8 = undefined;
-    const n = file.readAll(&buf) catch return;
-    var content = buf[0..n];
+    var bytes_read: u32 = 0;
+    if (ReadFile(h, &buf, buf.len, &bytes_read, null) == 0) return;
+    var content = buf[0..bytes_read];
 
     while (content.len > 0) {
         // Find line end
@@ -254,14 +266,19 @@ fn loadSettings() void {
 
 pub fn saveSettings() void {
     const path_ptr: [*:0]const u8 = @ptrCast(&settings_path);
-    const file = std.fs.createFileAbsoluteZ(path_ptr, .{}) catch return;
-    defer file.close();
+    const GENERIC_WRITE: u32 = 0x40000000;
+    const CREATE_ALWAYS: u32 = 2;
+    const FILE_ATTRIBUTE_NORMAL: u32 = 0x80;
+    const h = CreateFileA(path_ptr, GENERIC_WRITE, 0, null, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, null);
+    if (h == INVALID_HANDLE_VALUE) return;
+    defer _ = CloseHandle(h);
 
     inline for (entries) |entry| {
         const name = comptime wideToAscii(entry.label);
         var buf: [128]u8 = undefined;
         const line = std.fmt.bufPrint(&buf, "{s}: {d}\n", .{ name, @as(u32, if (entry.setting.*) 1 else 0) }) catch "";
-        file.writeAll(line) catch {};
+        var written: u32 = 0;
+        _ = WriteFile(h, line.ptr, @intCast(line.len), &written, null);
     }
 }
 
