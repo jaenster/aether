@@ -25,9 +25,16 @@ rm -f "$GAME_DIR/aether_log.txt"
 mkdir -p "$GAME_DIR/aether/scripts"
 cp -r "$SCRIPT_DIR/scripts/"*.lua "$GAME_DIR/aether/scripts/" 2>/dev/null || true
 
-# Launch — pass through extra flags (e.g. -spawn for spawn capture)
+# Auto-detect headless when using minimal install (no d2char.mpq = no sound/video MPQs)
+EXTRA_FLAGS=""
+if [ ! -f "$GAME_DIR/d2char.mpq" ]; then
+    EXTRA_FLAGS="--headless"
+    echo "Auto-detected minimal install, enabling --headless"
+fi
+
+# Launch — pass through extra flags (e.g. -spawn for spawn capture, --headless)
 cd "$GAME_DIR"
-WINEDLLOVERRIDES="dbghelp=n" wine Game.exe -w -ns -loaddll "$DLL_WINE_PATH" "$@" > /dev/null 2>&1 &
+WINEDLLOVERRIDES="dbghelp=n" wine Game.exe -w -ns -loaddll "$DLL_WINE_PATH" $EXTRA_FLAGS "$@" > /dev/null 2>&1 &
 
 # Wait and show log
 sleep 5

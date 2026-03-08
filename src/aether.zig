@@ -64,8 +64,11 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
             _ = DisableThreadLibraryCalls(hModule);
             crash_handler.install();
 
-            // Register features — headless must be first (patches before any DC6 loading)
-            feature.register(&headless.hooks);
+            // Register features
+            if (hasFlag("-headless")) {
+                feature.register(&headless.hooks);
+                log.print("aether: headless mode enabled");
+            }
             feature.register(&misc.hooks);
             feature.register(&map_reveal.hooks);
             feature.register(&map_units.hooks);
@@ -80,7 +83,7 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
             feature.register(&settings.hooks);
             feature.register(&esc_menu.hooks);
             //feature.register(&arcane_portal.hooks);
-            if (hasFlag("spawn")) {
+            if (hasFlag("-spawn")) {
                 feature.register(&spawn_capture.hooks);
                 log.print("aether: spawn capture enabled");
             }
