@@ -37,7 +37,7 @@ const Entry = struct {
 };
 
 // D2 uses wide strings with color codes: \xff\x63\x32 = ÿc2 = green, ÿc1 = red
-const entries = [_]Entry{
+pub const entries = [_]Entry{
     .{ .label = toW("Reveal Map"), .setting = &reveal_map },
     .{ .label = toW("Show Monsters"), .setting = &show_monsters },
     .{ .label = toW("Show Items"), .setting = &show_items },
@@ -252,7 +252,7 @@ fn loadSettings() void {
     }
 }
 
-fn saveSettings() void {
+pub fn saveSettings() void {
     const path_ptr: [*:0]const u8 = @ptrCast(&settings_path);
     const file = std.fs.createFileAbsoluteZ(path_ptr, .{}) catch return;
     defer file.close();

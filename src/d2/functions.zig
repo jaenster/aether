@@ -286,6 +286,10 @@ pub const GetScreenModeSize = struct {
 
 pub const GetUiFlag = fastcall(0x4538D0, fn (DWORD) DWORD);
 
+pub const EscMenuShowMenu = fastcall(0x47E090, fn (i32, i32) void);
+
+pub const ImageLoadDC6Ex = fastcall(0x4788B0, fn ([*:0]const u8, DWORD) ?*anyopaque);
+
 // ============================================================================
 // Room / Collision — game engine functions for teleport validation
 // ============================================================================
@@ -487,3 +491,29 @@ pub fn sendSelectSkill(skill_id: u16, left: bool) void {
     // bytes 5-8: owner ID = 0xFFFFFFFF for natural skills
     sendPacket(&buf);
 }
+
+// ============================================================================
+// Quest (__fastcall)
+// ============================================================================
+
+/// GetQuestState: check a single quest bit.
+/// ECX=pBitBuffer, EDX=questId (0-based), stack=stateId (bit within quest's 16-bit block)
+/// Returns 1 if the bit is set, 0 otherwise.
+pub const GetQuestState = fastcall(0x0065C310, fn (?*anyopaque, u32, u32) i32);
+
+// ============================================================================
+// Portal / Object creation (__fastcall)
+// ============================================================================
+
+/// OBJECT_CreateTombPortal: creates the Arcane→Canyon portal.
+/// Internally calls SelectUnkownArkaneThingId to pick the right tomb portal class ID.
+/// ECX=pGame, EDX=pRoom, stack: nMonStatsId (ignored), nPosX, nPosY, bUseMonStats
+pub const CreateTombPortal = fastcall(0x0054F430, fn (?*anyopaque, ?*anyopaque, i32, i32, i32, i32) ?*UnitAny);
+
+/// SERVER_SpawnPortal: creates a portal to any destination level.
+/// ECX=pGame, EDX=pUnit, stack: pRoom, nX, nY, eDestLevel, ppPortal (out), nClassId, bIgnore
+pub const SpawnPortal = fastcall(0x0056D130, fn (?*anyopaque, ?*UnitAny, ?*anyopaque, i32, i32, i32, ?*?*UnitAny, i32, i32) void);
+
+/// FindSpawnableLocation: scans outward from pPoint for a walkable tile.
+/// ECX=pRoom (Room1), EDX=pPoint (in/out POINT*), stack: nScanRadius, eCollisionFlags, ppRoomOut, dwTag, nMaxIter
+pub const FindSpawnableLocation = fastcall(0x00545340, fn (?*anyopaque, *[2]i32, u32, u32, *?*anyopaque, u32, i32) void);

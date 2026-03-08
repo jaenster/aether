@@ -14,7 +14,6 @@ const log = @import("log.zig");
 
 // Features
 const headless = @import("features/headless.zig");
-const screen_info = @import("features/screen_info.zig");
 const omnivision = @import("features/omnivision.zig");
 const weather = @import("features/weather.zig");
 const misc = @import("features/misc.zig");
@@ -27,6 +26,8 @@ const debug_mode = @import("features/debug_mode.zig");
 const auto_move = @import("features/auto_move.zig");
 const txt_override = @import("features/txt_override.zig");
 pub const settings = @import("features/settings.zig");
+const esc_menu = @import("features/esc_menu.zig");
+const arcane_portal = @import("features/arcane_portal.zig");
 pub const lua_engine = @import("lua/engine.zig");
 const lua_feature = @import("lua/feature.zig");
 
@@ -45,7 +46,6 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
 
             // Register features — headless must be first (patches before any DC6 loading)
             feature.register(&headless.hooks);
-            feature.register(&screen_info.hooks);
             feature.register(&misc.hooks);
             feature.register(&map_reveal.hooks);
             feature.register(&map_units.hooks);
@@ -58,6 +58,8 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
             feature.register(&weather.hooks);
             feature.register(&txt_override.hooks);
             feature.register(&settings.hooks);
+            feature.register(&esc_menu.hooks);
+            feature.register(&arcane_portal.hooks);
             feature.register(&lua_feature.hooks);
 
             // Init features, then install hooks
