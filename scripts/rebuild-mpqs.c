@@ -9,37 +9,31 @@
 #include <sys/stat.h>
 #include <StormLib.h>
 
-// File patterns we want to keep (case-insensitive prefix/suffix matching)
+// Blacklist approach: include everything except audio/video.
+// We can iteratively exclude more categories once we confirm what's safe to skip.
 static bool is_essential(const char *filename) {
-    // Data tables (.bin files in excel/)
-    if (strcasestr(filename, "data\\global\\excel\\") && strcasestr(filename, ".bin"))
-        return true;
+    // Exclude sound effects
+    if (strcasestr(filename, ".wav"))
+        return false;
 
-    // String tables
-    if (strcasestr(filename, ".tbl"))
-        return true;
+    // Exclude video files
+    if (strcasestr(filename, ".bik"))
+        return false;
 
-    // D2 data files (animdata.d2, expfield.d2, etc.)
-    if (strcasestr(filename, ".d2") && strcasestr(filename, "data\\global\\"))
-        return true;
+    // Exclude music
+    if (strcasestr(filename, "\\music\\"))
+        return false;
 
-    // Palettes (pal.dat and pal.pl2 — both required for act palette loading)
-    if (strcasestr(filename, "data\\global\\palette\\"))
-        return true;
+    // Exclude speech/voice
+    if (strcasestr(filename, "\\speech\\"))
+        return false;
 
-    // Fonts (DC6 font sprites — needed for text rendering)
-    if (strcasestr(filename, "data\\local\\font\\"))
-        return true;
+    // Exclude sfx
+    if (strcasestr(filename, "\\sfx\\"))
+        return false;
 
-    // Level presets (DS1 files only — DT1 tile graphics are stubbed)
-    if (strcasestr(filename, ".ds1"))
-        return true;
-
-    // UI sprites (buttons, backgrounds, cursors, popups)
-    if (strcasestr(filename, "data\\global\\ui\\"))
-        return true;
-
-    return false;
+    // Include everything else
+    return true;
 }
 
 static int copy_file(HANDLE src_mpq, HANDLE dst_mpq, const char *filename) {
@@ -107,9 +101,9 @@ static int rebuild_mpq(const char *src_path, const char *dst_path) {
         SFileFindClose(hFind);
     }
 
-    // Create destination MPQ (estimate max 2048 files)
+    // Create destination MPQ — hash table must be large enough for all files
     HANDLE dst_mpq;
-    if (!SFileCreateArchive(dst_path, MPQ_CREATE_ARCHIVE_V1, 4096, &dst_mpq)) {
+    if (!SFileCreateArchive(dst_path, MPQ_CREATE_ARCHIVE_V1, 16384, &dst_mpq)) {
         fprintf(stderr, "  Cannot create: %s (error %d)\n", dst_path, SErrGetLastError());
         SFileCloseArchive(src_mpq);
         return -1;

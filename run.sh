@@ -13,9 +13,8 @@ DLL_WINE_PATH="Z:$(echo "$SCRIPT_DIR/zig-out/bin/Aether.dll" | tr '/' '\\')"
 # Build
 zig build -Doptimize=ReleaseSmall
 
-# Kill previous instance
-pkill -9 -f "start.exe.*Game.exe" 2>/dev/null || true
-pkill -9 -f '\\Game.exe' 2>/dev/null || true
+# Kill previous Wine Game.exe (avoid killing Ghidra workers that also match Game.exe)
+pkill -9 -f "wine.*Game.exe" 2>/dev/null || true
 wineserver --kill 2>/dev/null || true
 sleep 2
 
