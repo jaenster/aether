@@ -40,9 +40,9 @@ echo "=== Rebuilding MPQs ==="
 
 # Copy Game.exe and required DLLs
 echo ""
-echo "Copying Game.exe and dependencies..."
-cp "$SRC/Game.exe" "$DST/Game.exe"
-for dll in binkw32.dll SmackW32.dll ijl11.dll; do
+echo "Copying Game.exe as minimal.exe and dependencies..."
+cp "$SRC/Game.exe" "$DST/minimal.exe"
+for dll in binkw32.dll SmackW32.dll ijl11.dll D2.LNG; do
     if [ -f "$SRC/$dll" ]; then
         cp "$SRC/$dll" "$DST/$dll"
     else

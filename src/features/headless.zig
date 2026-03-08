@@ -1,6 +1,5 @@
 const std = @import("std");
 const win = std.os.windows;
-const WINAPI = win.WINAPI;
 const feature = @import("../feature.zig");
 const patch = @import("../hook/patch.zig");
 const log = @import("../log.zig");
@@ -62,18 +61,41 @@ fn init() void {
     _ = patch.writeBytes(0x00505550, &[_]u8{0xC3});
 
     // Patch 10: DrawAnim (0x005003A0) — __fastcall, 1 arg in ECX
-    // Draws animated DC6 images; asserts on form type then deref NULL DC6. Stub: RET.
-    _ = patch.writeBytes(0x005003A0, &[_]u8{0xC3});
+    // Draws/hit-tests animated images; asserts on type and dereferences frame tables.
+    // In headless mode nothing to draw — stub: XOR EAX,EAX; RET (return 0).
+    _ = patch.writeBytes(0x005003A0, &[_]u8{ 0x31, 0xC0, 0xC3 });
 
-    // Patch 11: Draw(D2WinAnimImage) (0x005005B0) — __fastcall, 1 arg in ECX
-    // Anim image draw; deref NULL frame table at +0x9A. Stub: RET.
-    _ = patch.writeBytes(0x005005B0, &[_]u8{0xC3});
+    // Patch 11: IMAGE_GetFramesCount (0x006019F0) — __stdcall, 1 arg
+    // Called with NULL pDC6 when frame table entries fail to load.
+    // Redirect to null-safe handler that returns 0 on NULL input.
+    const getframes_handler = @intFromPtr(&imageGetFramesCountGuard);
+    const getframes_jmp = patch.calcRelAddr(0x006019F0, getframes_handler, 5);
+    const getframes_bytes: [4]u8 = @bitCast(getframes_jmp);
+    // Write JMP rel32 (E9) + NOP to fill 6 bytes (replaces PUSH EBP; MOV EBP,ESP; MOV EAX,[EBP+8])
+    _ = patch.writeBytes(0x006019F0, &[_]u8{ 0xE9, getframes_bytes[0], getframes_bytes[1], getframes_bytes[2], getframes_bytes[3], 0x90 });
 
-    // Patch 12: BnetLoadAndReturn (0x0051C180) — __stdcall, 0 args
-    // Loads Battle.net gateway list from registry; halts on malformed data. Stub: RET.
-    _ = patch.writeBytes(0x0051C180, &[_]u8{0xC3});
+    // Patch 17: InitRoomTiles (0x0066EC10) — __fastcall, 2 reg + 4 stack args
+    // Processes DT1 tiles for rooms; asserts on missing tile data. Stub: RET 0x10.
+    _ = patch.writeBytes(0x0066EC10, &[_]u8{ 0xC2, 0x10, 0x00 });
 
-    // Patch 13: CHARSEL_EnumerateLocalSaves (0x00438F70) — __stdcall, 0 args
+    // Patch 15: InitCache (0x00642A30) — __fastcall, 2 args
+    // Tile cache init; halts when no tile projects loaded (we stub tile loading). Stub: RET.
+    _ = patch.writeBytes(0x00642A30, &[_]u8{0xC3});
+
+    // Patch 16: PALETTE_InitItemPalettes (0x00600B80) — 0 args
+    // Loads item palette transform files; halts if missing. Stub: RET.
+    _ = patch.writeBytes(0x00600B80, &[_]u8{0xC3});
+
+    // Patch 12: BNGatewayAccess::Load (0x005186d0) — __stdcall, 1 arg
+    // Loads Realms.bin + gateway list from registry; halts if Realms.bin missing.
+    // Stubbing Load covers all 3 callers (BnetLoadAndReturn, GetBnetIp, UpdateGatewaysFromIni).
+    _ = patch.writeBytes(0x005186d0, &[_]u8{ 0xC2, 0x04, 0x00 });
+
+    // Patch 13: CLIENT_ConnectToBattleNet (0x0043BF60) — __stdcall, 0 args
+    // Tries to connect to bnet; crashes on uninitialized UI. Stub: XOR EAX,EAX; RET.
+    _ = patch.writeBytes(0x0043BF60, &[_]u8{ 0x31, 0xC0, 0xC3 });
+
+    // Patch 14: CHARSEL_EnumerateLocalSaves (0x00438F70) — __stdcall, 0 args
     // Parses save files; halts on parse errors. Stub: XOR EAX,EAX; RET (return 0).
     _ = patch.writeBytes(0x00438F70, &[_]u8{ 0x31, 0xC0, 0xC3 });
 
@@ -83,8 +105,8 @@ fn init() void {
     log.print("headless: all patches applied");
 }
 
-extern "kernel32" fn GetModuleHandleA(name: ?[*:0]const u8) callconv(WINAPI) ?win.HINSTANCE;
-extern "kernel32" fn GetProcAddress(h: win.HINSTANCE, name: [*:0]const u8) callconv(WINAPI) ?*anyopaque;
+extern "kernel32" fn GetModuleHandleA(name: ?[*:0]const u8) callconv(.winapi) ?win.HINSTANCE;
+extern "kernel32" fn GetProcAddress(h: win.HINSTANCE, name: [*:0]const u8) callconv(.winapi) ?*anyopaque;
 
 var exit_process_original: [5]u8 = undefined;
 var exit_process_addr: usize = 0;
@@ -102,14 +124,14 @@ fn hookExitProcess() void {
     _ = patch.writeJump(exit_process_addr, @intFromPtr(&exitProcessInterceptor));
 }
 
-fn exitProcessInterceptor(exit_code: u32) callconv(WINAPI) noreturn {
+fn exitProcessInterceptor(exit_code: u32) callconv(.winapi) noreturn {
     log.print("headless: ExitProcess called!");
     crash_handler.logStackTrace("ExitProcess");
     log.hex("headless: exit code ", exit_code);
 
     // Restore original ExitProcess bytes and call real
     _ = patch.writeBytes(exit_process_addr, &exit_process_original);
-    const realExitProcess: *const fn (u32) callconv(WINAPI) noreturn = @ptrFromInt(exit_process_addr);
+    const realExitProcess: *const fn (u32) callconv(.winapi) noreturn = @ptrFromInt(exit_process_addr);
     realExitProcess(exit_code);
 }
 
@@ -123,10 +145,14 @@ fn deinit() void {
     patch.revertRange(0x005137E0, 3); // Patch 7
     patch.revertRange(0x005136F0, 1); // Patch 8
     patch.revertRange(0x00505550, 1); // Patch 9
-    patch.revertRange(0x005003A0, 1); // Patch 10
-    patch.revertRange(0x005005B0, 1); // Patch 11
-    patch.revertRange(0x0051C180, 1); // Patch 12
-    patch.revertRange(0x00438F70, 3); // Patch 13
+    patch.revertRange(0x005003A0, 3); // Patch 10: DrawAnim stub
+    patch.revertRange(0x006019F0, 6); // Patch 11: IMAGE_GetFramesCount null guard
+    patch.revertRange(0x0066EC10, 3); // Patch 17: InitRoomTiles
+    patch.revertRange(0x00642A30, 1); // Patch 15: InitCache
+    patch.revertRange(0x00600B80, 1); // Patch 16
+    patch.revertRange(0x005186d0, 3); // Patch 12: BNGatewayAccess::Load
+    patch.revertRange(0x0043BF60, 3); // Patch 13
+    patch.revertRange(0x00438F70, 3); // Patch 14
 }
 
 // Naked handler for Patch 1.
@@ -142,6 +168,28 @@ fn celcmpNullHandler() callconv(.naked) void {
         \\pop %%esi
         \\pop %%ebp
         \\ret $0x18
+    );
+}
+
+// Null-safe wrapper for IMAGE_GetFramesCount (0x006019F0).
+// Original: PUSH EBP; MOV EBP,ESP; MOV EAX,[EBP+8]; CMP [EAX],6 ...
+// If pDC6 (arg1) is NULL, return 0 instead of crashing on dereference.
+// Replayed prologue: 6 bytes (55 8B EC 8B 45 08), resume at 0x006019F6.
+fn imageGetFramesCountGuard() callconv(.naked) void {
+    asm volatile (
+        \\push %%ebp
+        \\mov %%esp, %%ebp
+        \\mov 0x08(%%ebp), %%eax
+        \\test %%eax, %%eax
+        \\jnz 1f
+        // NULL pDC6: return 0 frames
+        \\xor %%eax, %%eax
+        \\pop %%ebp
+        \\ret $0x04
+        \\1:
+        // Non-NULL: resume original at CMP [EAX],6 (0x006019F6)
+        \\push $0x006019F6
+        \\ret
     );
 }
 

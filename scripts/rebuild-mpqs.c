@@ -19,8 +19,8 @@ static bool is_essential(const char *filename) {
     if (strcasestr(filename, ".tbl"))
         return true;
 
-    // Animation data
-    if (strcasestr(filename, "animdata.d2"))
+    // D2 data files (animdata.d2, expfield.d2, etc.)
+    if (strcasestr(filename, ".d2") && strcasestr(filename, "data\\global\\"))
         return true;
 
     // Palettes (pal.dat and pal.pl2 — both required for act palette loading)
@@ -33,6 +33,10 @@ static bool is_essential(const char *filename) {
 
     // Level presets (DS1 files only — DT1 tile graphics are stubbed)
     if (strcasestr(filename, ".ds1"))
+        return true;
+
+    // UI sprites (buttons, backgrounds, cursors, popups)
+    if (strcasestr(filename, "data\\global\\ui\\"))
         return true;
 
     return false;
@@ -105,7 +109,7 @@ static int rebuild_mpq(const char *src_path, const char *dst_path) {
 
     // Create destination MPQ (estimate max 2048 files)
     HANDLE dst_mpq;
-    if (!SFileCreateArchive(dst_path, MPQ_CREATE_ARCHIVE_V1, 2048, &dst_mpq)) {
+    if (!SFileCreateArchive(dst_path, MPQ_CREATE_ARCHIVE_V1, 4096, &dst_mpq)) {
         fprintf(stderr, "  Cannot create: %s (error %d)\n", dst_path, SErrGetLastError());
         SFileCloseArchive(src_mpq);
         return -1;
