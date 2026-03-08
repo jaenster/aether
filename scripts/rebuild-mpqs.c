@@ -24,6 +24,64 @@ static bool is_essential(const char *filename) {
     return true;
 }
 
+// DT1 file format:
+//   [0x00] int32  version1 (7)
+//   [0x04] int32  version2 (6)
+//   [0x08] 260 bytes unused
+//   [0x10C] int32 num_blocks (tile count)
+//   [0x110] int32 block_headers_offset (= 0x114)
+//   [0x114] block headers: num_blocks * 96 bytes each
+//     Per block header (96 bytes):
+//       [+0x00] int32 direction
+//       [+0x04] int16 roof_y
+//       [+0x06] byte  sound
+//       [+0x07] byte  animated
+//       [+0x08] int32 size_y
+//       [+0x0C] int32 size_x
+//       [+0x10] 4 bytes unused
+//       [+0x14] int32 orientation
+//       [+0x18] int32 main_index
+//       [+0x1C] int32 sub_index
+//       [+0x20] int32 frame
+//       [+0x24] 4 bytes unknown
+//       [+0x28] 25 bytes floor_flags (COLLISION DATA - needed for server)
+//       [+0x41] 7 bytes unused
+//       [+0x48] int32 data_ptr (offset to pixel data within file)
+//       [+0x4C] int32 data_length
+//       [+0x50] int32 num_sub_blocks
+//       [+0x54] 12 bytes unused
+// After headers: pixel sub-block data (RENDERING ONLY - not needed)
+
+static int strip_dt1(void *buf, DWORD size, void **out_buf, DWORD *out_size) {
+    if (size < 0x114) return 0;
+    unsigned char *data = (unsigned char *)buf;
+
+    int32_t num_blocks;
+    memcpy(&num_blocks, data + 0x10C, 4);
+    if (num_blocks < 0 || num_blocks > 10000) return 0;
+
+    // New size: file header (0x114) + block headers only
+    DWORD header_size = 0x114 + num_blocks * 96;
+    if (header_size > size) return 0;
+
+    unsigned char *stripped = malloc(header_size);
+    if (!stripped) return 0;
+    memcpy(stripped, data, header_size);
+
+    // Zero out pixel data references in each block header
+    for (int i = 0; i < num_blocks; i++) {
+        unsigned char *block = stripped + 0x114 + i * 96;
+        int32_t zero = 0;
+        memcpy(block + 0x48, &zero, 4);  // data_ptr = 0
+        memcpy(block + 0x4C, &zero, 4);  // data_length = 0
+        memcpy(block + 0x50, &zero, 4);  // num_sub_blocks = 0
+    }
+
+    *out_buf = stripped;
+    *out_size = header_size;
+    return 1;
+}
+
 static int copy_file(HANDLE src_mpq, HANDLE dst_mpq, const char *filename) {
     HANDLE hFile;
     if (!SFileOpenFileEx(src_mpq, filename, 0, &hFile)) {
@@ -51,19 +109,32 @@ static int copy_file(HANDLE src_mpq, HANDLE dst_mpq, const char *filename) {
     }
     SFileCloseFile(hFile);
 
+    // Strip pixel data from .dt1 files (keep headers + collision flags only)
+    void *write_buf = buf;
+    DWORD write_size = size;
+    void *stripped = NULL;
+    if (strcasestr(filename, ".dt1")) {
+        if (strip_dt1(buf, size, &stripped, &write_size)) {
+            write_buf = stripped;
+        }
+    }
+
     // Add to destination MPQ (ZLIB compressed)
-    if (!SFileCreateFile(dst_mpq, filename, 0, size, 0, MPQ_FILE_COMPRESS | MPQ_FILE_REPLACEEXISTING, &hFile)) {
+    if (!SFileCreateFile(dst_mpq, filename, 0, write_size, 0, MPQ_FILE_COMPRESS | MPQ_FILE_REPLACEEXISTING, &hFile)) {
+        free(stripped);
         free(buf);
         return 0;
     }
 
-    if (!SFileWriteFile(hFile, buf, size, MPQ_COMPRESSION_ZLIB)) {
+    if (!SFileWriteFile(hFile, write_buf, write_size, MPQ_COMPRESSION_ZLIB)) {
         SFileFinishFile(hFile);
+        free(stripped);
         free(buf);
         return 0;
     }
 
     SFileFinishFile(hFile);
+    free(stripped);
     free(buf);
     return 1;
 }
@@ -156,7 +227,7 @@ int main(int argc, char **argv) {
     snprintf(dst_path, sizeof(dst_path), "%s/d2exp.mpq", dst_dir);
     rebuild_mpq(src_path, dst_path);
 
-    // Copy Patch_D2.mpq as-is (small, uses obfuscated filenames)
+    // Copy Patch_D2.mpq verbatim (2MB, hash-addressed obfuscated files)
     printf("Copying Patch_D2.mpq (verbatim)...\n");
     snprintf(src_path, sizeof(src_path), "%s/Patch_D2.mpq", src_dir);
     snprintf(dst_path, sizeof(dst_path), "%s/Patch_D2.mpq", dst_dir);

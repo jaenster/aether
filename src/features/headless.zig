@@ -51,6 +51,8 @@ pub fn enableHeadlessMode() void {
     // --- Missing media files ---
     // D2WINPAL_LoadPaletteFiles (0x004FB1E0) — stdcall 2 args
     _ = patch.writeBytes(0x004FB1E0, &[_]u8{ 0x31, 0xC0, 0xC2, 0x08, 0x00 });
+    // TILECMP_Generate25SubTiles (0x00609AA0) — extracts pixel data for rendering
+    _ = patch.writeBytes(0x00609AA0, &[_]u8{0xC3});
     // D2COMP_LoadAllItemPalettes (0x00505550)
     _ = patch.writeBytes(0x00505550, &[_]u8{0xC3});
     // PALETTE_InitItemPalettes (0x00600B80)
@@ -124,6 +126,7 @@ fn deinit() void {
         patch.revertRange(0x00438560, 1);
         patch.revertRange(0x00439210, 3);
         patch.revertRange(0x004FB1E0, 5);
+        patch.revertRange(0x00609AA0, 1);
         patch.revertRange(0x004565E0, 1);
         patch.revertRange(0x0044F017, 6);
         patch.revertRange(0x0044F28B, 6);
