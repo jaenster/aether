@@ -21,7 +21,8 @@ sleep 2
 # Clear log
 rm -f "$GAME_DIR/aether_log.txt"
 
-# Copy Lua scripts
+# Copy DLLs and Lua scripts
+cp "$SCRIPT_DIR/zig-out/bin/dbghelp.dll" "$GAME_DIR/"
 mkdir -p "$GAME_DIR/aether/scripts"
 cp -r "$SCRIPT_DIR/scripts/"*.lua "$GAME_DIR/aether/scripts/" 2>/dev/null || true
 

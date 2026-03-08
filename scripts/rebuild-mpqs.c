@@ -9,30 +9,15 @@
 #include <sys/stat.h>
 #include <StormLib.h>
 
-// Blacklist approach: include everything except audio/video.
-// We can iteratively exclude more categories once we confirm what's safe to skip.
+// Headless server: exclude all rendering assets and media.
+// Renderers are stubbed so no sprites/fonts/UI are drawn.
 static bool is_essential(const char *filename) {
-    // Exclude sound effects
+    if (strcasestr(filename, ".dc6"))
+        return false;
     if (strcasestr(filename, ".wav"))
         return false;
-
-    // Exclude video files
     if (strcasestr(filename, ".bik"))
         return false;
-
-    // Exclude music
-    if (strcasestr(filename, "\\music\\"))
-        return false;
-
-    // Exclude speech/voice
-    if (strcasestr(filename, "\\speech\\"))
-        return false;
-
-    // Exclude sfx
-    if (strcasestr(filename, "\\sfx\\"))
-        return false;
-
-    // Include everything else
     return true;
 }
 
@@ -199,6 +184,24 @@ int main(int argc, char **argv) {
     for (int i = 0; media_mpqs[i]; i++) {
         snprintf(dst_path, sizeof(dst_path), "%s/%s", dst_dir, media_mpqs[i]);
         create_empty_mpq(dst_path);
+    }
+
+    // Copy required DLLs that Game.exe imports
+    printf("Copying required DLLs...\n");
+    const char *required_dlls[] = { "binkw32.dll", "smackw32.dll", "ijl11.dll", NULL };
+    for (int i = 0; required_dlls[i]; i++) {
+        snprintf(src_path, sizeof(src_path), "%s/%s", src_dir, required_dlls[i]);
+        snprintf(dst_path, sizeof(dst_path), "%s/%s", dst_dir, required_dlls[i]);
+        FILE *in = fopen(src_path, "rb");
+        if (!in) { fprintf(stderr, "  Warning: %s not found\n", src_path); continue; }
+        FILE *out = fopen(dst_path, "wb");
+        if (!out) { fclose(in); continue; }
+        char buf[65536];
+        size_t n;
+        while ((n = fread(buf, 1, sizeof(buf), in)) > 0) fwrite(buf, 1, n, out);
+        fclose(out);
+        fclose(in);
+        printf("  %s: copied\n", required_dlls[i]);
     }
 
     printf("\nDone. Copy Game.exe to %s to complete.\n", dst_dir);
