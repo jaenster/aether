@@ -96,6 +96,11 @@ pub fn tick() void {
     callGlobal("onTick");
 }
 
+// Called each OOG (out-of-game) loop tick
+pub fn oogTick() void {
+    callGlobal("onOogTick");
+}
+
 // Call a global Lua function by name, no args, no returns
 pub fn callGlobal(name: [*:0]const u8) void {
     const state = L orelse return;
@@ -124,7 +129,7 @@ const d2 = struct {
 };
 
 fn registerAPI(state: LuaState) void {
-    c.lua_createtable(state, 0, 8);
+    c.lua_createtable(state, 0, 16);
 
     setFunc(state, "log", luaLog);
     setFunc(state, "getPlayerPos", luaGetPlayerPos);
@@ -132,6 +137,7 @@ fn registerAPI(state: LuaState) void {
     setFunc(state, "getPlayerHP", luaGetPlayerHP);
     setFunc(state, "getPlayerMaxHP", luaGetPlayerMaxHP);
     setFunc(state, "getAllocStats", luaGetAllocStats);
+    setFunc(state, "isInGame", luaIsInGame);
 
     c.lua_setglobal(state, "aether");
 }
@@ -198,6 +204,14 @@ fn luaGetAllocStats(state: ?*c.lua_State) callconv(.c) c_int {
     c.lua_pushinteger(s, @intCast(lua_free_count));
     c.lua_pushboolean(s, @intFromBool(using_fog_pool));
     return 3;
+}
+
+// aether.isInGame() -> bool
+fn luaIsInGame(state: ?*c.lua_State) callconv(.c) c_int {
+    const s = state orelse return 0;
+    const player = d2.globals.playerUnit().*;
+    c.lua_pushboolean(s, @intFromBool(player != null));
+    return 1;
 }
 
 fn pushNil1(s: *c.lua_State) c_int {

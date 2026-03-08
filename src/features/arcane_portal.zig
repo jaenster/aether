@@ -19,16 +19,25 @@ var captured_pGame: usize = 0;
 var portal_spawned: bool = false;
 var last_pGame: usize = 0;
 
+
+
 fn init() void {
     if (patch.writeJump(ADDR_SERVER_GAME_LOOP, @intFromPtr(&serverGameLoopThunk))) {
-        log.print("arcane_portal: hook installed");
+        log.print("arcane_portal: game loop hooked");
     } else {
-        log.print("arcane_portal: HOOK FAILED");
+        log.print("arcane_portal: game loop HOOK FAILED");
+    }
+    // Hook SERVER_SpawnPortal: allow our call, block the rest
+    if (patch.writeJump(ADDR_SPAWN_PORTAL, @intFromPtr(&spawnPortalHook))) {
+        log.print("arcane_portal: SpawnPortal hooked");
+    } else {
+        log.print("arcane_portal: SpawnPortal HOOK FAILED");
     }
 }
 
 fn deinit() void {
     patch.revertRange(ADDR_SERVER_GAME_LOOP, 5);
+    patch.revertRange(ADDR_SPAWN_PORTAL, 5);
 }
 
 fn serverGameLoopThunk() callconv(.naked) void {
@@ -84,6 +93,7 @@ fn onServerGameLoop() void {
     if (captured_pGame != last_pGame) {
         portal_spawned = false;
         last_pGame = captured_pGame;
+
     }
 
     if (level_no != LEVEL_CANYON or portal_spawned) return;
@@ -150,6 +160,38 @@ fn onServerGameLoop() void {
     }
 
     portal_spawned = true;
+}
+
+// SERVER_SpawnPortal at 0x0056D130
+// Prologue: push ebp; mov ebp,esp; sub esp,0x10 (6 bytes)
+const ADDR_SPAWN_PORTAL: usize = 0x0056D130;
+const ADDR_SPAWN_PORTAL_REJOIN: usize = 0x0056D136;
+
+/// Hook SERVER_SpawnPortal: allow when portal_spawned==false, block when true.
+/// __fastcall — ECX=pGame, EDX=pPlayer, stack args follow.
+fn spawnPortalHook() callconv(.naked) void {
+    asm volatile (
+        \\cmpb $0, %[flag]
+        \\jne 1f
+        :
+        : [flag] "m" (portal_spawned),
+    );
+    // Not yet spawned — run original prologue and continue
+    asm volatile (
+        \\push %%ebp
+        \\mov %%esp, %%ebp
+        \\sub $0x10, %%esp
+        \\jmp *%[rejoin]
+        :
+        : [rejoin] "{eax}" (ADDR_SPAWN_PORTAL_REJOIN),
+    );
+    // Already spawned — return without creating portal
+    // __fastcall with 7 stack params = 28 bytes to clean
+    asm volatile (
+        \\1:
+        \\xor %%eax, %%eax
+        \\ret $28
+    );
 }
 
 fn findSummonerRoom(arcane_level: *d2.types.Level, act: *d2.types.Act) ?SummonerInfo {

@@ -11,12 +11,15 @@ const patch = @import("../hook/patch.zig");
 //   sub esp, 0x18     (83 EC 18)
 //
 // We overwrite with a JMP to our naked thunk, which:
-// 1. Saves ECX/EDX (fastcall args)
+// 1. Captures pGame from ECX to a public global
 // 2. Executes the original prologue
 // 3. Jumps back to the original function body at +6
 
 const ADDR_ROOM_INIT: usize = 0x542b40;
 const ADDR_ROOM_INIT_REJOIN: usize = 0x542b46;
+
+// Captured pGame pointer — available to other features
+pub var pGame: usize = 0;
 
 fn init() void {
     _ = patch.writeJump(ADDR_ROOM_INIT, @intFromPtr(&roomInitThunk));
@@ -28,6 +31,10 @@ fn deinit() void {
 }
 
 fn roomInitThunk() callconv(.naked) void {
+    // Save pGame (ECX) to global — memory operand, no register allocation
+    asm volatile ("mov %%ecx, %[out]"
+        : [out] "=m" (pGame),
+    );
     // Replicate original 6-byte prologue then jump back
     asm volatile (
         \\push %%ebp
