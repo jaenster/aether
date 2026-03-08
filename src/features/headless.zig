@@ -25,9 +25,28 @@ pub fn enableHeadlessMode() void {
     _ = patch.writeBytes(0x0044C990, &[_]u8{ 0xC2, 0x04, 0x00 });
 
     // --- Char select without DC6 sprites ---
-    // SAVEFILE_ParseSaveData (0x00438AD0) — only called from char select UI.
-    // Parses save files + creates visual sprites. Just ret since we don't render.
-    _ = patch.writeBytes(0x00438AD0, &[_]u8{0xC3});
+    // AllocCharSelectComponent (0x005066C0) — return NULL. Stdcall 4 args.
+    _ = patch.writeBytes(0x005066C0, &[_]u8{ 0x31, 0xC0, 0xC2, 0x10, 0x00 });
+    // In SAVEFILE_ParseSaveData, after AllocCharSelectComponent returns NULL:
+    // skip the ERROR_Halt and 3 animation calls, jump to list building code.
+    // Patch the JNZ at 0x00438D8B (2 bytes) + overwrite halt PUSH (5 bytes total).
+    const skip_handler = @intFromPtr(&parseSaveSkipAnimHandler);
+    const skip_jmp = patch.calcRelAddr(0x00438D8B, skip_handler, 5);
+    const skip_bytes: [4]u8 = @bitCast(skip_jmp);
+    _ = patch.writeBytes(0x00438D8B, &[_]u8{ 0xE9, skip_bytes[0], skip_bytes[1], skip_bytes[2], skip_bytes[3] });
+    // D2COMP_DestroyCompositeUnit (0x005041b0) — halts on NULL, make it return instead.
+    // At 0x005041BC: replace ERROR_Halt with POP ESI; POP ECX; POP EBP; RET 8
+    _ = patch.writeBytes(0x005041BC, &[_]u8{ 0x5E, 0x59, 0x5D, 0xC2, 0x08, 0x00 });
+    // DRAW_LocalCharsInSelectionScreen0 (0x00438560) — char list display
+    _ = patch.writeBytes(0x00438560, &[_]u8{0xC3});
+    // CHARSEL_UpdateSelectedCharDisplay (0x00439210) — char display update
+    _ = patch.writeBytes(0x00439210, &[_]u8{ 0x31, 0xC0, 0xC3 });
+
+    // Draw_UI_LoadGame (0x004565E0) — loading screen UI, fastcall 1 arg
+    _ = patch.writeBytes(0x004565E0, &[_]u8{0xC3});
+    // NOP out CurrentDrawFunction calls in CLIENT_GameLoopFrame
+    _ = patch.writeBytes(0x0044F017, &[_]u8{ 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 });
+    _ = patch.writeBytes(0x0044F28B, &[_]u8{ 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 });
 
     // --- Missing media files ---
     // D2COMP_LoadAllItemPalettes (0x00505550)
@@ -97,7 +116,14 @@ fn deinit() void {
     if (headless_rendering) {
         patch.revertRange(0x004F98E0, 1);
         patch.revertRange(0x0044C990, 3);
-        patch.revertRange(0x00438AD0, 1);
+        patch.revertRange(0x005066C0, 5);
+        patch.revertRange(0x00438D8B, 5);
+        patch.revertRange(0x005041BC, 6);
+        patch.revertRange(0x00438560, 1);
+        patch.revertRange(0x00439210, 3);
+        patch.revertRange(0x004565E0, 1);
+        patch.revertRange(0x0044F017, 6);
+        patch.revertRange(0x0044F28B, 6);
         patch.revertRange(0x00505550, 1);
         patch.revertRange(0x00600B80, 1);
         patch.revertRange(0x005137E0, 3);
@@ -127,6 +153,23 @@ fn imageGetFramesCountGuard() callconv(.naked) void {
         \\ret $0x04
         \\1:
         \\push $0x006019F6
+        \\ret
+    );
+}
+
+// SAVEFILE_ParseSaveData: after the NULL check at 0x00438D89 (CMP EAX,EDI),
+// if NULL: skip halt + 3 animation calls, jump to list building at 0x00438DD6.
+// if non-NULL: jump to 0x00438DAC (original animation setup path).
+fn parseSaveSkipAnimHandler() callconv(.naked) void {
+    asm volatile (
+        \\test %%eax, %%eax
+        \\jnz 1f
+        // NULL: skip halt and animation calls
+        \\push $0x00438DD6
+        \\ret
+        \\1:
+        // Non-NULL: continue with animation setup
+        \\push $0x00438DAC
         \\ret
     );
 }

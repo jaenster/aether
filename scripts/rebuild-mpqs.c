@@ -188,7 +188,7 @@ int main(int argc, char **argv) {
 
     // Copy required DLLs that Game.exe imports
     printf("Copying required DLLs...\n");
-    const char *required_dlls[] = { "binkw32.dll", "smackw32.dll", "ijl11.dll", NULL };
+    const char *required_dlls[] = { "binkw32.dll", "smackw32.dll", "ijl11.dll", "D2.LNG", NULL };
     for (int i = 0; required_dlls[i]; i++) {
         snprintf(src_path, sizeof(src_path), "%s/%s", src_dir, required_dlls[i]);
         snprintf(dst_path, sizeof(dst_path), "%s/%s", dst_dir, required_dlls[i]);
