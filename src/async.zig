@@ -14,6 +14,10 @@ var task_fiber: LPVOID = null;
 var task_fn: ?*const fn () void = null;
 var task_done: bool = false;
 
+pub fn getMainFiber() LPVOID {
+    return main_fiber;
+}
+
 pub fn init() void {
     main_fiber = ConvertThreadToFiber(null);
     if (main_fiber == null) {

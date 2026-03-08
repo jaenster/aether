@@ -27,6 +27,8 @@ const txt_override = @import("features/txt_override.zig");
 pub const settings = @import("features/settings.zig");
 const esc_menu = @import("features/esc_menu.zig");
 const arcane_portal = @import("features/arcane_portal.zig");
+const spawn_capture = @import("features/spawn_capture.zig");
+const auto_enter = @import("features/auto_enter.zig");
 pub const lua_engine = @import("lua/engine.zig");
 const lua_feature = @import("lua/feature.zig");
 
@@ -34,6 +36,24 @@ const BOOL = win.BOOL;
 const HMODULE = win.HINSTANCE;
 
 extern "kernel32" fn DisableThreadLibraryCalls(h: HMODULE) callconv(.winapi) BOOL;
+extern "kernel32" fn GetCommandLineA() callconv(.winapi) [*:0]const u8;
+
+fn hasFlag(comptime flag: []const u8) bool {
+    const cmdline: [*:0]const u8 = GetCommandLineA();
+    var i: usize = 0;
+    while (cmdline[i] != 0) : (i += 1) {
+        if (cmdline[i] == '-') {
+            var j: usize = 0;
+            while (j < flag.len and cmdline[i + 1 + j] != 0) : (j += 1) {
+                if (cmdline[i + 1 + j] != flag[j]) break;
+            } else {
+                const after = cmdline[i + 1 + flag.len];
+                if (after == 0 or after == ' ' or after == '\t') return true;
+            }
+        }
+    }
+    return false;
+}
 
 pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
     switch (reason) {
@@ -57,7 +77,12 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
             feature.register(&txt_override.hooks);
             feature.register(&settings.hooks);
             feature.register(&esc_menu.hooks);
-            feature.register(&arcane_portal.hooks);
+            //feature.register(&arcane_portal.hooks);
+            if (hasFlag("spawn")) {
+                feature.register(&spawn_capture.hooks);
+                log.print("aether: spawn capture enabled");
+            }
+            feature.register(&auto_enter.hooks);
             feature.register(&lua_feature.hooks);
 
             // Init features, then install hooks

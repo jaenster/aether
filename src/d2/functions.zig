@@ -86,7 +86,7 @@ fn ArgsArray(comptime FnType: type) type {
     return [if (n > 0) n else 1]u32;
 }
 
-fn fastcall(comptime addr: u32, comptime FnType: type) type {
+pub fn fastcall(comptime addr: u32, comptime FnType: type) type {
     const info = @typeInfo(FnType).@"fn";
     const params = info.params;
     const n = params.len;

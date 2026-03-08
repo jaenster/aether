@@ -26,9 +26,9 @@ rm -f "$GAME_DIR/aether_log.txt"
 mkdir -p "$GAME_DIR/aether/scripts"
 cp -r "$SCRIPT_DIR/scripts/"*.lua "$GAME_DIR/aether/scripts/" 2>/dev/null || true
 
-# Launch
+# Launch — pass through extra flags (e.g. -spawn for spawn capture)
 cd "$GAME_DIR"
-WINEDLLOVERRIDES="dbghelp=n" wine Game.exe -w -loaddll "$DLL_WINE_PATH" > /dev/null 2>&1 &
+WINEDLLOVERRIDES="dbghelp=n" wine Game.exe -w -ns -loaddll "$DLL_WINE_PATH" "$@" > /dev/null 2>&1 &
 
 # Wait and show log
 sleep 5
