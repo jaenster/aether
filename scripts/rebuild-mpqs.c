@@ -12,12 +12,15 @@
 // Headless server: exclude all rendering assets and media.
 // Renderers are stubbed so no sprites/fonts/UI are drawn.
 static bool is_essential(const char *filename) {
-    if (strcasestr(filename, ".dc6"))
-        return false;
-    if (strcasestr(filename, ".wav"))
-        return false;
-    if (strcasestr(filename, ".bik"))
-        return false;
+    // Rendering assets — renderers are stubbed, nothing draws
+    if (strcasestr(filename, ".dc6"))  return false;  // sprites
+    if (strcasestr(filename, ".dcc"))  return false;  // animated sprites
+    if (strcasestr(filename, ".cof"))  return false;  // animation descriptors
+    if (strcasestr(filename, ".pl2"))  return false;  // palettes
+    if (strcasestr(filename, ".pcx"))  return false;  // images
+    // Audio/video
+    if (strcasestr(filename, ".wav"))  return false;
+    if (strcasestr(filename, ".bik"))  return false;
     return true;
 }
 
