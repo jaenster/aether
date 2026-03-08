@@ -36,16 +36,48 @@ fn fogLuaAlloc(ud: ?*anyopaque, ptr: ?*anyopaque, _: usize, nsize: usize) callco
     return @ptrCast(result);
 }
 
+fn luaPanic(state: ?*c.lua_State) callconv(.c) c_int {
+    const s = state orelse return 0;
+    const msg = c.lua_tolstring(s, -1, null);
+    if (msg) |m| {
+        log.printStr("lua: PANIC: ", std.mem.span(m));
+    } else {
+        log.print("lua: PANIC (no message)");
+    }
+    return 0;
+}
+
 pub fn init() void {
-    L = c.luaL_newstate();
+    log.print("lua: creating state");
+    L = c.lua_newstate(defaultAlloc, null);
     if (L == null) {
-        log.print("lua: failed to create state");
+        log.print("lua: newstate returned null");
         return;
     }
+    log.print("lua: state created, setting panic");
+    _ = c.lua_atpanic(L.?, luaPanic);
+    log.print("lua: opening libs");
     c.luaL_openlibs(L.?);
     registerAPI(L.?);
     log.print("lua: initialized");
     _ = loadScript("aether\\scripts\\init.lua");
+}
+
+extern "kernel32" fn GetProcessHeap() callconv(.winapi) ?*anyopaque;
+extern "kernel32" fn HeapAlloc(heap: *anyopaque, flags: u32, size: usize) callconv(.winapi) ?*anyopaque;
+extern "kernel32" fn HeapReAlloc(heap: *anyopaque, flags: u32, ptr: *anyopaque, size: usize) callconv(.winapi) ?*anyopaque;
+extern "kernel32" fn HeapFree(heap: *anyopaque, flags: u32, ptr: *anyopaque) callconv(.winapi) i32;
+
+fn defaultAlloc(_: ?*anyopaque, ptr: ?*anyopaque, _: usize, nsize: usize) callconv(.c) ?*anyopaque {
+    const heap = GetProcessHeap() orelse return null;
+    if (nsize == 0) {
+        if (ptr) |p| _ = HeapFree(heap, 0, p);
+        return null;
+    }
+    if (ptr) |p| {
+        return HeapReAlloc(heap, 0, p, nsize);
+    }
+    return HeapAlloc(heap, 0, nsize);
 }
 
 /// Swap Lua to use a FOG memory pool. Call once the game's memory system is ready.
@@ -96,6 +128,11 @@ pub fn tick() void {
     callGlobal("onTick");
 }
 
+// Called each OOG (out-of-game) loop tick
+pub fn oogTick() void {
+    callGlobal("onOogTick");
+}
+
 // Call a global Lua function by name, no args, no returns
 pub fn callGlobal(name: [*:0]const u8) void {
     const state = L orelse return;
@@ -124,7 +161,7 @@ const d2 = struct {
 };
 
 fn registerAPI(state: LuaState) void {
-    c.lua_createtable(state, 0, 8);
+    c.lua_createtable(state, 0, 16);
 
     setFunc(state, "log", luaLog);
     setFunc(state, "getPlayerPos", luaGetPlayerPos);
@@ -132,6 +169,7 @@ fn registerAPI(state: LuaState) void {
     setFunc(state, "getPlayerHP", luaGetPlayerHP);
     setFunc(state, "getPlayerMaxHP", luaGetPlayerMaxHP);
     setFunc(state, "getAllocStats", luaGetAllocStats);
+    setFunc(state, "isInGame", luaIsInGame);
 
     c.lua_setglobal(state, "aether");
 }
@@ -198,6 +236,14 @@ fn luaGetAllocStats(state: ?*c.lua_State) callconv(.c) c_int {
     c.lua_pushinteger(s, @intCast(lua_free_count));
     c.lua_pushboolean(s, @intFromBool(using_fog_pool));
     return 3;
+}
+
+// aether.isInGame() -> bool
+fn luaIsInGame(state: ?*c.lua_State) callconv(.c) c_int {
+    const s = state orelse return 0;
+    const player = d2.globals.playerUnit().*;
+    c.lua_pushboolean(s, @intFromBool(player != null));
+    return 1;
 }
 
 fn pushNil1(s: *c.lua_State) c_int {

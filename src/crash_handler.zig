@@ -309,6 +309,7 @@ const MB_ICONERROR: DWORD = 0x10;
 const MB_OK: DWORD = 0x0;
 
 const EXCEPTION_CONTINUE_SEARCH: LONG = 0;
+const EXCEPTION_CONTINUE_EXECUTION: LONG = -1;
 
 // Exceptions to ignore (not real crashes)
 const EXCEPTION_BREAKPOINT: DWORD = 0x80000003;
@@ -335,6 +336,23 @@ fn handler(info: *EXCEPTION_POINTERS) callconv(.winapi) LONG {
     if (!isFatalException(code)) return EXCEPTION_CONTINUE_SEARCH;
 
     const tid = GetCurrentThreadId();
+
+    // Spawn capture recovery — if a protected call crashes, restore setjmp context
+    if (tid == main_thread_id) {
+        const sc = @import("features/spawn_capture.zig");
+        if (sc.spawn_protected) {
+            sc.spawn_protected = false;
+            const ctx = info.ContextRecord;
+            ctx.Ebx = sc.jmp_buf[0];
+            ctx.Esi = sc.jmp_buf[1];
+            ctx.Edi = sc.jmp_buf[2];
+            ctx.Ebp = sc.jmp_buf[3];
+            ctx.Esp = sc.jmp_buf[4];
+            ctx.Eip = sc.jmp_buf[5];
+            ctx.Eax = 1; // non-zero = setjmp recovery path
+            return EXCEPTION_CONTINUE_EXECUTION;
+        }
+    }
 
     // Non-main thread crash — log full details then kill the thread.
     if (tid != main_thread_id) {
@@ -370,6 +388,29 @@ fn handler(info: *EXCEPTION_POINTERS) callconv(.winapi) LONG {
 
     // Kill the process — don't let the game's own crash handler run
     ExitProcess(1);
+}
+
+/// Walk the EBP chain from current frame and log a stack trace.
+pub fn logStackTrace(label: []const u8) void {
+    const h = log.openLogHandle() orelse return;
+    defer log.closeHandle(h);
+
+    log.writeRawHandle(h, label);
+    log.writeRawHandle(h, " stack trace:\r\n");
+
+    var ebp: usize = @frameAddress();
+    var depth: usize = 0;
+    while (ebp != 0 and depth < 20) : (depth += 1) {
+        if (ebp < 0x10000 or ebp > 0x7FFFFFFF) break;
+        const frame: [*]const usize = @ptrFromInt(ebp);
+        const ret_addr = frame[1];
+        if (ret_addr == 0) break;
+        log.writeRawHandle(h, "  ");
+        var addr_buf: [64]u8 = undefined;
+        log.writeRawHandle(h, fmtAddr(ret_addr, &addr_buf));
+        log.writeRawHandle(h, "\r\n");
+        ebp = frame[0];
+    }
 }
 
 pub fn install() void {

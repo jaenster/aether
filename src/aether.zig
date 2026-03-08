@@ -13,7 +13,7 @@ const crash_handler = @import("crash_handler.zig");
 const log = @import("log.zig");
 
 // Features
-const screen_info = @import("features/screen_info.zig");
+const headless = @import("features/headless.zig");
 const omnivision = @import("features/omnivision.zig");
 const weather = @import("features/weather.zig");
 const misc = @import("features/misc.zig");
@@ -26,6 +26,10 @@ const debug_mode = @import("features/debug_mode.zig");
 const auto_move = @import("features/auto_move.zig");
 const txt_override = @import("features/txt_override.zig");
 pub const settings = @import("features/settings.zig");
+const esc_menu = @import("features/esc_menu.zig");
+const arcane_portal = @import("features/arcane_portal.zig");
+const spawn_capture = @import("features/spawn_capture.zig");
+const auto_enter = @import("features/auto_enter.zig");
 pub const lua_engine = @import("lua/engine.zig");
 const lua_feature = @import("lua/feature.zig");
 
@@ -33,6 +37,24 @@ const BOOL = win.BOOL;
 const HMODULE = win.HINSTANCE;
 
 extern "kernel32" fn DisableThreadLibraryCalls(h: HMODULE) callconv(.winapi) BOOL;
+extern "kernel32" fn GetCommandLineA() callconv(.winapi) [*:0]const u8;
+
+fn hasFlag(comptime flag: []const u8) bool {
+    const cmdline: [*:0]const u8 = GetCommandLineA();
+    var i: usize = 0;
+    while (cmdline[i] != 0) : (i += 1) {
+        if (cmdline[i] == '-') {
+            var j: usize = 0;
+            while (j < flag.len and cmdline[i + 1 + j] != 0) : (j += 1) {
+                if (cmdline[i + 1 + j] != flag[j]) break;
+            } else {
+                const after = cmdline[i + 1 + flag.len];
+                if (after == 0 or after == ' ' or after == '\t') return true;
+            }
+        }
+    }
+    return false;
+}
 
 pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
     switch (reason) {
@@ -42,8 +64,12 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
             _ = DisableThreadLibraryCalls(hModule);
             crash_handler.install();
 
-            // Register features — isolating crash
-            feature.register(&screen_info.hooks);
+            // Register features
+            feature.register(&headless.hooks); // null guards + ExitProcess hook (always)
+            if (hasFlag("-headless")) {
+                headless.enableHeadlessMode();
+                log.print("aether: headless rendering disabled");
+            }
             feature.register(&misc.hooks);
             feature.register(&map_reveal.hooks);
             feature.register(&map_units.hooks);
@@ -56,6 +82,13 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
             feature.register(&weather.hooks);
             feature.register(&txt_override.hooks);
             feature.register(&settings.hooks);
+            feature.register(&esc_menu.hooks);
+            //feature.register(&arcane_portal.hooks);
+            if (hasFlag("-spawn")) {
+                feature.register(&spawn_capture.hooks);
+                log.print("aether: spawn capture enabled");
+            }
+            feature.register(&auto_enter.hooks);
             feature.register(&lua_feature.hooks);
 
             // Init features, then install hooks
@@ -63,8 +96,7 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
             game_hooks.install();
             log.print("aether: all hooks installed");
 
-            // Lua scripting engine
-            lua_engine.init();
+            // Lua init deferred to first game/oog loop tick (CRT not ready in DllMain on Wine)
         },
         0 => { // DLL_PROCESS_DETACH
             lua_engine.deinit();
