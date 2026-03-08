@@ -189,12 +189,17 @@ int main(int argc, char **argv) {
         }
     }
 
-    // Create empty stubs for sound MPQs
-    printf("Creating empty sound MPQ stubs...\n");
-    snprintf(dst_path, sizeof(dst_path), "%s/d2sfx.mpq", dst_dir);
-    create_empty_mpq(dst_path);
-    snprintf(dst_path, sizeof(dst_path), "%s/d2speech.mpq", dst_dir);
-    create_empty_mpq(dst_path);
+    // Create empty stubs for all media MPQs the game expects
+    printf("Creating empty media MPQ stubs...\n");
+    const char *media_mpqs[] = {
+        "d2sfx.mpq", "d2speech.mpq", "d2char.mpq",
+        "d2music.mpq", "d2Xmusic.mpq", "d2Xtalk.mpq", "d2Xvideo.mpq",
+        NULL
+    };
+    for (int i = 0; media_mpqs[i]; i++) {
+        snprintf(dst_path, sizeof(dst_path), "%s/%s", dst_dir, media_mpqs[i]);
+        create_empty_mpq(dst_path);
+    }
 
     printf("\nDone. Copy Game.exe to %s to complete.\n", dst_dir);
     return 0;

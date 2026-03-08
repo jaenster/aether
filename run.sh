@@ -25,9 +25,9 @@ rm -f "$GAME_DIR/aether_log.txt"
 mkdir -p "$GAME_DIR/aether/scripts"
 cp -r "$SCRIPT_DIR/scripts/"*.lua "$GAME_DIR/aether/scripts/" 2>/dev/null || true
 
-# Auto-detect headless when using minimal install (no d2char.mpq = no sound/video MPQs)
+# Auto-detect headless when using minimal install (marker file)
 EXTRA_FLAGS=""
-if [ ! -f "$GAME_DIR/d2char.mpq" ]; then
+if [ -f "$GAME_DIR/.minimal" ]; then
     EXTRA_FLAGS="--headless"
     echo "Auto-detected minimal install, enabling --headless"
 fi

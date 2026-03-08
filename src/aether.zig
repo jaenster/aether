@@ -65,9 +65,10 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
             crash_handler.install();
 
             // Register features
+            feature.register(&headless.hooks); // null guards + ExitProcess hook (always)
             if (hasFlag("-headless")) {
-                feature.register(&headless.hooks);
-                log.print("aether: headless mode enabled");
+                headless.enableHeadlessMode();
+                log.print("aether: headless rendering disabled");
             }
             feature.register(&misc.hooks);
             feature.register(&map_reveal.hooks);
