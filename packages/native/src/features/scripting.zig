@@ -20,12 +20,14 @@ fn ensureInit() void {
     }
     log.print("scripting: SM engine initialized");
 
+    log.print("scripting: creating context...");
     var eng = &engine.?;
     const ctx = eng.createContext();
     if (ctx == null) {
         log.print("scripting: failed to create OOG context");
         return;
     }
+    log.print("scripting: context created");
     eng.oog_context = ctx;
 
     if (eng.eval(ctx.?, "1+1")) |result| {

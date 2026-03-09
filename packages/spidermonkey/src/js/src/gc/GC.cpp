@@ -6976,36 +6976,17 @@ void GCRuntime::onOutOfMallocMemory(const AutoLockGC& lock) {
   decommitAllWithoutUnlocking(lock);
 }
 
-// Trace helper for GC debugging
-#include <windows.h>
-static void gc_trace(const char* step) {
-    HANDLE hFile = CreateFileA("aether_sm_debug.txt",
-        FILE_APPEND_DATA, FILE_SHARE_READ, NULL, OPEN_ALWAYS,
-        FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hFile != INVALID_HANDLE_VALUE) {
-        DWORD written;
-        WriteFile(hFile, step, static_cast<DWORD>(strlen(step)), &written, NULL);
-        WriteFile(hFile, "\r\n", 2, &written, NULL);
-        CloseHandle(hFile);
-    }
-}
-
 void GCRuntime::minorGC(JS::gcreason::Reason reason, gcstats::PhaseKind phase) {
-  gc_trace("      minorGC: enter");
   MOZ_ASSERT(!JS::CurrentThreadIsHeapBusy());
 
-  if (TlsContext.get()->suppressGC) { gc_trace("      minorGC: suppressed"); return; }
+  if (TlsContext.get()->suppressGC) return;
 
-  gc_trace("      minorGC: AutoPhase...");
   gcstats::AutoPhase ap(rt->gc.stats(), phase);
-  gc_trace("      minorGC: AutoPhase done");
 
   nursery().clearMinorGCRequest();
-  gc_trace("      minorGC: nursery().collect...");
   TraceLoggerThread* logger = TraceLoggerForCurrentThread();
   AutoTraceLog logMinorGC(logger, TraceLogger_MinorGC);
   nursery().collect(reason);
-  gc_trace("      minorGC: nursery().collect done");
   MOZ_ASSERT(nursery().isEmpty());
 
   blocksToFreeAfterMinorGC.ref().freeAll();
@@ -7014,13 +6995,11 @@ void GCRuntime::minorGC(JS::gcreason::Reason reason, gcstats::PhaseKind phase) {
   if (rt->hasZealMode(ZealMode::CheckHeapAfterGC)) CheckHeapAfterGC(rt);
 #endif
 
-  gc_trace("      minorGC: AutoLockGC...");
   {
     AutoLockGC lock(rt);
     for (ZonesIter zone(rt, WithAtoms); !zone.done(); zone.next())
       maybeAllocTriggerZoneGC(zone, lock);
   }
-  gc_trace("      minorGC: done");
 }
 
 JS::AutoDisableGenerationalGC::AutoDisableGenerationalGC(JSContext* cx)

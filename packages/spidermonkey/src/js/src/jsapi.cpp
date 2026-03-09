@@ -482,46 +482,25 @@ JS_PUBLIC_API JS::ContextOptions& JS::ContextOptionsRef(JSContext* cx) {
   return cx->options();
 }
 
-#include <windows.h>
-static void sm_trace(const char* step) {
-    HANDLE hFile = CreateFileA("aether_sm_debug.txt",
-        FILE_APPEND_DATA, FILE_SHARE_READ, NULL, OPEN_ALWAYS,
-        FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hFile != INVALID_HANDLE_VALUE) {
-        DWORD written;
-        WriteFile(hFile, step, static_cast<DWORD>(strlen(step)), &written, NULL);
-        WriteFile(hFile, "\r\n", 2, &written, NULL);
-        CloseHandle(hFile);
-    }
-}
-
 JS_PUBLIC_API bool JS::InitSelfHostedCode(JSContext* cx) {
   MOZ_RELEASE_ASSERT(!cx->runtime()->hasInitializedSelfHosting(),
                      "JS::InitSelfHostedCode() called more than once");
 
-  sm_trace("  InitSelfHostedCode: enter");
   AutoNoteSingleThreadedRegion anstr;
 
   JSRuntime* rt = cx->runtime();
 
   JSAutoRequest ar(cx);
-  sm_trace("  InitSelfHostedCode: initializeAtoms...");
   if (!rt->initializeAtoms(cx)) return false;
-  sm_trace("  InitSelfHostedCode: initializeAtoms OK");
 
 #ifndef JS_CODEGEN_NONE
-  sm_trace("  InitSelfHostedCode: getJitRuntime...");
   if (!rt->getJitRuntime(cx)) return false;
-  sm_trace("  InitSelfHostedCode: getJitRuntime OK");
 #endif
 
-  sm_trace("  InitSelfHostedCode: initSelfHosting...");
   if (!rt->initSelfHosting(cx)) return false;
-  sm_trace("  InitSelfHostedCode: initSelfHosting OK");
 
   if (!rt->parentRuntime && !rt->transformToPermanentAtoms(cx)) return false;
 
-  sm_trace("  InitSelfHostedCode: done");
   return true;
 }
 

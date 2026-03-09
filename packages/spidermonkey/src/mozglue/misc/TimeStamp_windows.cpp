@@ -468,7 +468,7 @@ MFBT_API void TimeStamp::Startup() {
     return;
   }
 
-  sHasStableTSC = forceQPC || HasStableTSC();
+  sHasStableTSC = true;
   LOG(("TimeStamp: HasStableTSC=%d", sHasStableTSC));
 
   sFrequencyPerSec = freq.QuadPart;

@@ -2653,46 +2653,20 @@ static bool VerifyGlobalNames(JSContext* cx, Handle<GlobalObject*> shg) {
   return true;
 }
 
-#include <windows.h>
-static void sh_trace(const char* step) {
-    HANDLE hFile = CreateFileA("aether_sm_debug.txt",
-        FILE_APPEND_DATA, FILE_SHARE_READ, NULL, OPEN_ALWAYS,
-        FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hFile != INVALID_HANDLE_VALUE) {
-        DWORD written;
-        WriteFile(hFile, step, static_cast<DWORD>(strlen(step)), &written, NULL);
-        WriteFile(hFile, "\r\n", 2, &written, NULL);
-        CloseHandle(hFile);
-    }
-}
-static void sh_trace_int(const char* prefix, uint32_t val) {
-    char buf[128];
-    snprintf(buf, sizeof(buf), "%s%u", prefix, val);
-    sh_trace(buf);
-}
-
 bool JSRuntime::initSelfHosting(JSContext* cx) {
   MOZ_ASSERT(!selfHostingGlobal_);
-  sh_trace("    initSelfHosting: enter");
 
   if (cx->runtime()->parentRuntime) {
     selfHostingGlobal_ = cx->runtime()->parentRuntime->selfHostingGlobal_;
     return true;
   }
 
-  // Suppress GC during init — the evictNursery path hangs under Wine/Rosetta
-  // because gcstats::AutoPhase calls TimeStamp::Now() which enters a code path
-  // that blocks. The nursery is empty at init time, so suppressing is safe.
-  sh_trace("    initSelfHosting: suppressGC + AutoDisableGenerationalGC...");
   cx->suppressGC++;
-  JS::AutoDisableGenerationalGC disable(cx);
-  cx->suppressGC--;
-  sh_trace("    initSelfHosting: AutoDisableGenerationalGC done");
 
-  sh_trace("    initSelfHosting: createSelfHostingGlobal...");
+  JS::AutoDisableGenerationalGC disable(cx);
+
   Rooted<GlobalObject*> shg(cx, JSRuntime::createSelfHostingGlobal(cx));
-  if (!shg) { sh_trace("    initSelfHosting: createSelfHostingGlobal FAILED"); return false; }
-  sh_trace("    initSelfHosting: createSelfHostingGlobal OK");
+  if (!shg) { cx->suppressGC--; return false; }
 
   JSAutoCompartment ac(cx, shg);
   AutoSelfHostingErrorReporter errorReporter(cx);
@@ -2703,43 +2677,23 @@ bool JSRuntime::initSelfHosting(JSContext* cx) {
   RootedValue rv(cx);
 
   uint32_t srcLen = GetRawScriptsSize();
-  sh_trace_int("    initSelfHosting: srcLen=", srcLen);
-
   const unsigned char* compressed = compressedSources;
   uint32_t compressedLen = GetCompressedSize();
-  sh_trace_int("    initSelfHosting: compressedLen=", compressedLen);
 
   ScopedJSFreePtr<char> src(
       selfHostingGlobal_->zone()->pod_malloc<char>(srcLen));
-  if (!src) { sh_trace("    initSelfHosting: malloc failed"); return false; }
-  sh_trace("    initSelfHosting: decompress...");
+  if (!src) { cx->suppressGC--; return false; }
   if (!DecompressString(compressed, compressedLen,
                         reinterpret_cast<unsigned char*>(src.get()), srcLen)) {
-    sh_trace("    initSelfHosting: decompress FAILED");
+    cx->suppressGC--;
     return false;
   }
-  sh_trace("    initSelfHosting: decompress OK");
 
-  // Log first 80 chars of decompressed source
-  {
-    char preview[81];
-    uint32_t n = srcLen < 80 ? srcLen : 80;
-    memcpy(preview, src.get(), n);
-    preview[n] = '\0';
-    sh_trace("    initSelfHosting: src preview:");
-    sh_trace(preview);
-  }
+  if (!Evaluate(cx, options, src, srcLen, &rv)) { cx->suppressGC--; return false; }
 
-  sh_trace("    initSelfHosting: Evaluate...");
-  if (!Evaluate(cx, options, src, srcLen, &rv)) {
-    sh_trace("    initSelfHosting: Evaluate FAILED");
-    return false;
-  }
-  sh_trace("    initSelfHosting: Evaluate OK");
+  if (!VerifyGlobalNames(cx, shg)) { cx->suppressGC--; return false; }
 
-  if (!VerifyGlobalNames(cx, shg)) return false;
-
-  sh_trace("    initSelfHosting: done");
+  cx->suppressGC--;
   return true;
 }
 

@@ -62,16 +62,27 @@ JSObject* js::InitViaClassSpec(JSContext* cx, Handle<JSObject*> obj) {
   MOZ_CRASH("InitViaClassSpec() should not be called.");
 }
 
-static const ProtoTableEntry protoTable[JSProto_LIMIT] = {
-#define INIT_FUNC(name, init, clasp) {clasp, init},
-#define INIT_FUNC_DUMMY(name, init, clasp) {nullptr, nullptr},
-    JS_FOR_PROTOTYPES(INIT_FUNC, INIT_FUNC_DUMMY)
+// Zig's COFF linker places all-relocation-initialized data in .bss (all raw
+// bytes are zero before relocation), so pointer initializers are lost.
+// Work around by initializing at runtime.
+static ProtoTableEntry protoTable[JSProto_LIMIT];
+
+static void EnsureProtoTable() {
+  static bool initialized = false;
+  if (initialized) return;
+  initialized = true;
+#define INIT_FUNC(name, init, clasp) \
+  protoTable[JSProto_##name] = {clasp, init};
+#define INIT_FUNC_DUMMY(name, init, clasp) \
+  protoTable[JSProto_##name] = {nullptr, nullptr};
+  JS_FOR_PROTOTYPES(INIT_FUNC, INIT_FUNC_DUMMY)
 #undef INIT_FUNC_DUMMY
 #undef INIT_FUNC
-};
+}
 
 JS_FRIEND_API const js::Class* js::ProtoKeyToClass(JSProtoKey key) {
   MOZ_ASSERT(key < JSProto_LIMIT);
+  EnsureProtoTable();
   return protoTable[key].clasp;
 }
 
@@ -137,6 +148,7 @@ TypedObjectModuleObject& js::GlobalObject::getTypedObjectModule() const {
   // the class js::InitFoo hook, defined in a JSProtoKey-keyed table at the
   // top of this file. The other lives in the ClassSpec for classes that
   // define it. Classes may use one or the other, but not both.
+  EnsureProtoTable();
   ClassInitializerOp init = protoTable[key].init;
   if (init == InitViaClassSpec) init = nullptr;
 
@@ -528,11 +540,16 @@ static bool InitBareBuiltinCtor(JSContext* cx, Handle<GlobalObject*> global,
                                 JSProtoKey protoKey) {
   MOZ_ASSERT(cx->runtime()->isSelfHostingGlobal(global));
   const Class* clasp = ProtoKeyToClass(protoKey);
-  RootedObject proto(cx);
-  proto = clasp->specCreatePrototypeHook()(cx, protoKey);
+  if (!clasp) return false;
+
+  auto protoHook = clasp->specCreatePrototypeHook();
+  if (!protoHook) return false;
+  RootedObject proto(cx, protoHook(cx, protoKey));
   if (!proto) return false;
 
-  RootedObject ctor(cx, clasp->specCreateConstructorHook()(cx, protoKey));
+  auto ctorHook = clasp->specCreateConstructorHook();
+  if (!ctorHook) return false;
+  RootedObject ctor(cx, ctorHook(cx, protoKey));
   if (!ctor) return false;
 
   return GlobalObject::initBuiltinConstructor(cx, global, protoKey, ctor,
@@ -548,7 +565,8 @@ static bool InitBareBuiltinCtor(JSContext* cx, Handle<GlobalObject*> global,
     JSContext* cx, Handle<GlobalObject*> global,
     const JSFunctionSpec* builtins) {
   // Define a top-level property 'undefined' with the undefined value.
-  if (!DefineDataProperty(cx, global, cx->names().undefined,
+  PropertyName* undefinedName = cx->names().undefined;
+  if (!DefineDataProperty(cx, global, undefinedName,
                           UndefinedHandleValue,
                           JSPROP_PERMANENT | JSPROP_READONLY)) {
     return false;
@@ -607,12 +625,13 @@ static bool InitBareBuiltinCtor(JSContext* cx, Handle<GlobalObject*> global,
     return false;
   }
 
-  return InitBareBuiltinCtor(cx, global, JSProto_Array) &&
-         InitBareBuiltinCtor(cx, global, JSProto_TypedArray) &&
-         InitBareBuiltinCtor(cx, global, JSProto_Uint8Array) &&
-         InitBareBuiltinCtor(cx, global, JSProto_Int32Array) &&
-         InitBareSymbolCtor(cx, global) &&
-         DefineFunctions(cx, global, builtins, AsIntrinsic);
+  if (!InitBareBuiltinCtor(cx, global, JSProto_Array)) return false;
+  if (!InitBareBuiltinCtor(cx, global, JSProto_TypedArray)) return false;
+  if (!InitBareBuiltinCtor(cx, global, JSProto_Uint8Array)) return false;
+  if (!InitBareBuiltinCtor(cx, global, JSProto_Int32Array)) return false;
+  if (!InitBareSymbolCtor(cx, global)) return false;
+  if (!DefineFunctions(cx, global, builtins, AsIntrinsic)) return false;
+  return true;
 }
 
 /* static */ bool GlobalObject::isRuntimeCodeGenEnabled(
