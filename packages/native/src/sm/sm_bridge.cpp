@@ -59,8 +59,30 @@ static int write_error_msg(const char* msg, char* buf, int buf_len) {
 
 // ── Lifecycle ─────────────────────────────────────────────────────────
 
+static void debug_log(const char* msg) {
+    HANDLE hFile = CreateFileA("aether_sm_debug.txt",
+        FILE_APPEND_DATA, FILE_SHARE_READ, NULL, OPEN_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile != INVALID_HANDLE_VALUE) {
+        DWORD written;
+        WriteFile(hFile, msg, static_cast<DWORD>(strlen(msg)), &written, NULL);
+        WriteFile(hFile, "\r\n", 2, &written, NULL);
+        CloseHandle(hFile);
+    }
+}
+
+// Disable helper threads — single-threaded embedding, no off-thread compilation needed
+namespace js { void DisableExtraThreads(); }
+
 int sm_init(void) {
-    if (!JS_Init()) return -1;
+    debug_log("sm_init: calling JS_Init...");
+    if (!JS_Init()) {
+        debug_log("sm_init: JS_Init failed");
+        return -1;
+    }
+    debug_log("sm_init: JS_Init succeeded");
+    js::DisableExtraThreads();
+    debug_log("sm_init: extra threads disabled");
     return 0;
 }
 
@@ -90,26 +112,36 @@ void* sm_create_context(void* runtime) {
         ? static_cast<size_t>(rh->heap_limit_mb) * 1024 * 1024
         : 64 * 1024 * 1024;
 
+    debug_log("create_context: JS_NewContext...");
     JSContext* cx = JS_NewContext(max_bytes);
-    if (!cx) return nullptr;
+    if (!cx) { debug_log("create_context: JS_NewContext failed"); return nullptr; }
+    debug_log("create_context: JS_NewContext OK");
 
     JS_SetNativeStackQuota(cx, 512 * 1024);
 
+    JS_SetParallelParsingEnabled(cx, false);
+    JS_SetOffthreadIonCompilationEnabled(cx, false);
+
+    debug_log("create_context: InitSelfHostedCode...");
     if (!JS::InitSelfHostedCode(cx)) {
+        debug_log("create_context: InitSelfHostedCode failed");
         JS_DestroyContext(cx);
         return nullptr;
     }
+    debug_log("create_context: InitSelfHostedCode OK");
 
     auto* ch = new ContextHandle();
     ch->cx = cx;
 
     JSAutoRequest ar(cx);
 
+    debug_log("create_context: JS_NewGlobalObject...");
     JS::CompartmentOptions options;
     JS::RootedObject global(cx,
         JS_NewGlobalObject(cx, &global_class, nullptr,
                            JS::FireOnNewGlobalHook, options));
     if (!global) {
+        debug_log("create_context: JS_NewGlobalObject failed");
         JS_DestroyContext(cx);
         delete ch;
         return nullptr;

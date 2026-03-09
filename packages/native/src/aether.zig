@@ -88,10 +88,7 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
                 log.print("aether: spawn capture enabled");
             }
             feature.register(&auto_enter.hooks);
-            if (hasFlag("-scripting")) {
-                feature.register(&scripting.hooks);
-                log.print("aether: scripting engine enabled");
-            }
+            feature.register(&scripting.hooks);
             // Init features, then install hooks
             feature.initAll();
             game_hooks.install();

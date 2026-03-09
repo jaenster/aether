@@ -87,6 +87,7 @@ pub fn build(b: *std.Build) void {
     aether.linkSystemLibrary("winmm");
     aether.linkSystemLibrary("advapi32");
     aether.linkSystemLibrary("psapi");
+    aether.linkSystemLibrary("mswsock");
     aether.linkLibCpp();
 
     b.installArtifact(aether);

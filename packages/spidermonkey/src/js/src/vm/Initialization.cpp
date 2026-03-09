@@ -59,13 +59,30 @@ static void CheckMessageParameterCounts() {
 }
 #endif /* DEBUG */
 
+#include <windows.h>
+#include <cstdio>
+static void sm_trace(const char* step) {
+    HANDLE hFile = CreateFileA("aether_sm_debug.txt",
+        FILE_APPEND_DATA, FILE_SHARE_READ, NULL, OPEN_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile != INVALID_HANDLE_VALUE) {
+        DWORD written;
+        WriteFile(hFile, step, static_cast<DWORD>(strlen(step)), &written, NULL);
+        WriteFile(hFile, "\r\n", 2, &written, NULL);
+        CloseHandle(hFile);
+    }
+}
+
 #define RETURN_IF_FAIL(code)           \
   do {                                 \
+    sm_trace("  " #code "...");        \
     if (!code) return #code " failed"; \
+    sm_trace("  " #code " OK");        \
   } while (0)
 
 JS_PUBLIC_API const char* JS::detail::InitWithFailureDiagnostic(
     bool isDebugBuild) {
+  sm_trace("InitWithFailureDiagnostic: start");
 // Verify that our DEBUG setting matches the caller's.
 #ifdef DEBUG
   MOZ_RELEASE_ASSERT(isDebugBuild);
@@ -81,13 +98,12 @@ JS_PUBLIC_API const char* JS::detail::InitWithFailureDiagnostic(
 
   libraryInitState = InitState::Initializing;
 
+  sm_trace("  PRMJ_NowInit...");
   PRMJ_NowInit();
+  sm_trace("  PRMJ_NowInit OK");
 
-  // The first invocation of `ProcessCreation` creates a temporary thread
-  // and crashes if that fails, i.e. because we're out of memory. To prevent
-  // that from happening at some later time, get it out of the way during
-  // startup.
-  mozilla::TimeStamp::ProcessCreation();
+  // ProcessCreation() hangs under Wine/Rosetta — it's only telemetry, skip it.
+  // mozilla::TimeStamp::ProcessCreation();
 
 #ifdef DEBUG
   CheckMessageParameterCounts();
@@ -99,13 +115,17 @@ JS_PUBLIC_API const char* JS::detail::InitWithFailureDiagnostic(
   RETURN_IF_FAIL(js::oom::InitThreadType());
 #endif
 
+  sm_trace("  InitMallocAllocator...");
   js::InitMallocAllocator();
+  sm_trace("  InitMallocAllocator OK");
 
   RETURN_IF_FAIL(js::Mutex::Init());
 
   RETURN_IF_FAIL(js::wasm::InitInstanceStaticData());
 
-  js::gc::InitMemorySubsystem();  // Ensure gc::SystemPageSize() works.
+  sm_trace("  InitMemorySubsystem...");
+  js::gc::InitMemorySubsystem();
+  sm_trace("  InitMemorySubsystem OK");
 
   RETURN_IF_FAIL(js::jit::InitProcessExecutableMemory());
 
@@ -133,6 +153,7 @@ JS_PUBLIC_API const char* JS::detail::InitWithFailureDiagnostic(
   RETURN_IF_FAIL(js::jit::SimulatorProcess::initialize());
 #endif
 
+  sm_trace("InitWithFailureDiagnostic: done");
   libraryInitState = InitState::Running;
   return nullptr;
 }

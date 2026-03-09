@@ -3,8 +3,14 @@ const log = @import("../log.zig");
 const Engine = @import("../sm/engine.zig").Engine;
 
 var engine: ?Engine = null;
+var initialized: bool = false;
 
-fn init() void {
+/// Deferred init — can't run during DllMain (loader lock blocks thread creation).
+/// Called on the first game/oog loop tick instead.
+fn ensureInit() void {
+    if (initialized) return;
+    initialized = true;
+
     log.print("scripting: initializing SpiderMonkey engine...");
     engine = Engine.init(96);
     if (engine.?.runtime == null) {
@@ -38,19 +44,20 @@ fn deinit() void {
 }
 
 fn gameLoop() void {
+    ensureInit();
     if (engine) |*eng| {
         eng.pumpMicrotasks();
     }
 }
 
 fn oogLoop() void {
+    ensureInit();
     if (engine) |*eng| {
         eng.pumpMicrotasks();
     }
 }
 
 pub const hooks = feature.Hooks{
-    .init = &init,
     .deinit = &deinit,
     .gameLoop = &gameLoop,
     .oogLoop = &oogLoop,
