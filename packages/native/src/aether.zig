@@ -30,8 +30,6 @@ const esc_menu = @import("features/esc_menu.zig");
 const arcane_portal = @import("features/arcane_portal.zig");
 const spawn_capture = @import("features/spawn_capture.zig");
 const auto_enter = @import("features/auto_enter.zig");
-pub const lua_engine = @import("lua/engine.zig");
-const lua_feature = @import("lua/feature.zig");
 
 const BOOL = win.BOOL;
 const HMODULE = win.HINSTANCE;
@@ -89,17 +87,12 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
                 log.print("aether: spawn capture enabled");
             }
             feature.register(&auto_enter.hooks);
-            feature.register(&lua_feature.hooks);
-
             // Init features, then install hooks
             feature.initAll();
             game_hooks.install();
             log.print("aether: all hooks installed");
-
-            // Lua init deferred to first game/oog loop tick (CRT not ready in DllMain on Wine)
         },
         0 => { // DLL_PROCESS_DETACH
-            lua_engine.deinit();
             game_hooks.uninstall();
             feature.deinitAll();
         },
