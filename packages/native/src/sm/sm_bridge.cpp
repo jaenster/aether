@@ -8,6 +8,8 @@
 #include <windows.h>
 
 #include "jsapi.h"
+#include "js/Initialization.h"
+#include "js/Conversions.h"
 #include "js/GCAPI.h"
 
 #include <cstring>

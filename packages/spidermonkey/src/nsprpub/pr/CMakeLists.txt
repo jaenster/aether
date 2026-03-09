@@ -67,6 +67,7 @@ set(NSPR_SRCS
   "${CMAKE_CURRENT_SOURCE_DIR}/src/misc/prtpool.c"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/misc/prtrace.c"
 
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/threads/nspr_stubs.c"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/threads/prcmon.c"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/threads/prdump.c"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/threads/prmon.c"

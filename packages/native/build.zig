@@ -38,7 +38,7 @@ pub fn build(b: *std.Build) void {
 
     // --- SpiderMonkey (pre-built static lib from packages/spidermonkey) ---
     // Build with: packages/spidermonkey/build-mozjs.sh
-    const sm = std.Build.LazyPath{ .cwd_relative = "packages/spidermonkey" };
+    const sm = std.Build.LazyPath{ .cwd_relative = "../spidermonkey" };
     const sm_build = sm.path(b, "build");
     const sm_include = sm.path(b, "build/include");
     const sm_src = sm.path(b, "src");
@@ -55,12 +55,28 @@ pub fn build(b: *std.Build) void {
     aether.addObjectFile(sm_build.path(b, "src/modules/fdlibm/libfdlibm.a"));
 
     // SM bridge — the only C++ we compile ourselves
+    const sm_generated = sm.path(b, "generated");
     aether.addCSourceFiles(.{
         .files = &.{"src/sm/sm_bridge.cpp"},
-        .flags = &.{ "-std=c++17", "-w" },
+        .flags = &.{
+            "-std=c++17",
+            "-w",
+            "-DWIN32",
+            "-D_WIN32",
+            "-DXP_WIN",
+            "-DSTATIC_JS_API",
+            "-DIMPL_MFBT",
+            "-DJS_CODEGEN_X86",
+            "-DJS_CPU_X86",
+            "-DJS_NUNBOX32",
+            "-DJSGC_INCREMENTAL",
+            "-DNOMINMAX",
+        },
     });
     aether.addIncludePath(sm_include);
+    aether.addIncludePath(sm_generated);
     aether.addIncludePath(sm_src.path(b, "js/src"));
+    aether.addIncludePath(sm_src.path(b, "js/public"));
     aether.addIncludePath(sm_src.path(b, "mfbt/src"));
     aether.addIncludePath(sm_src.path(b, "nsprpub/pr/include"));
     aether.addIncludePath(sm_src.path(b, "memory/mozalloc"));

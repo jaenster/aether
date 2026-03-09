@@ -1,0 +1,24 @@
+{
+  "name": "@aether/daemon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch",
+    "test": "tsc -p tsconfig.test.json && node --test dist/test/e2e.test.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0",
+    "@swc/core": "^1.4.0",
+    "chokidar": "^3.6.0",
+    "enhanced-resolve": "^5.16.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/ws": "^8.5.10",
+    "@types/node": "^20.11.0"
+  }
+}
