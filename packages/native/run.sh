@@ -33,6 +33,14 @@ if [ -f "$GAME_DIR/.minimal" ]; then
     echo "Auto-detected minimal install, enabling --headless"
 fi
 
+# Daemon connection — auto-set if daemon is running on default port
+if [ -z "$AETHER_DAEMON" ]; then
+    if nc -z 127.0.0.1 13119 2>/dev/null; then
+        export AETHER_DAEMON="127.0.0.1:13119"
+        echo "Auto-detected daemon on $AETHER_DAEMON"
+    fi
+fi
+
 # Launch — pass through extra flags (e.g. -spawn for spawn capture, --headless)
 cd "$GAME_DIR"
 WINEDLLOVERRIDES="dbghelp=n" wine Game.exe -w -ns -loaddll "$DLL_WINE_PATH" $EXTRA_FLAGS "$@" > /dev/null 2>&1 &

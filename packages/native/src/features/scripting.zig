@@ -2,10 +2,13 @@ const feature = @import("../feature.zig");
 const log = @import("../log.zig");
 const Engine = @import("../sm/engine.zig").Engine;
 const bindings = @import("../sm/bindings.zig");
+const DaemonConnection = @import("../net/daemon.zig").DaemonConnection;
 
 var engine: ?Engine = null;
+var daemon: DaemonConnection = .{};
 var initialized: bool = false;
 var tested_bindings: bool = false;
+var daemon_enabled: bool = false;
 
 /// Deferred init — can't run during DllMain (loader lock blocks thread creation).
 /// Called on the first game/oog loop tick instead.
@@ -38,9 +41,15 @@ fn ensureInit() void {
     } else {
         log.print("scripting: eval failed");
     }
+
+    // Initialize daemon connection (if AETHER_DAEMON is set)
+    daemon_enabled = daemon.init();
 }
 
 fn deinit() void {
+    if (daemon_enabled) {
+        daemon.deinit();
+    }
     if (engine) |*eng| {
         eng.deinit();
         engine = null;
@@ -52,6 +61,13 @@ fn gameLoop() void {
     ensureInit();
     const eng = &(engine orelse return);
     eng.pumpMicrotasks();
+
+    // Drive daemon connection
+    if (daemon_enabled) {
+        if (daemon.tick()) |msg| {
+            handleDaemonMessage(eng, msg);
+        }
+    }
 
     // One-shot test: verify native bindings work in-game
     if (!tested_bindings and feature.in_game) {
@@ -74,6 +90,21 @@ fn oogLoop() void {
     if (engine) |*eng| {
         eng.pumpMicrotasks();
     }
+
+    // Drive daemon connection in OOG too
+    if (daemon_enabled) {
+        if (daemon.tick()) |msg| {
+            if (engine) |*eng| {
+                handleDaemonMessage(eng, msg);
+            }
+        }
+    }
+}
+
+fn handleDaemonMessage(eng: *Engine, msg: []const u8) void {
+    _ = eng;
+    log.printStr("daemon msg: ", msg);
+    // TODO: handle file:response, file:invalidate, script:reload, etc.
 }
 
 pub const hooks = feature.Hooks{
