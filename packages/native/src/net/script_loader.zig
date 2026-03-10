@@ -83,8 +83,7 @@ pub const ScriptLoader = struct {
                 continue;
             };
 
-            if (eng.eval(ctx, decoded)) |result| {
-                _ = result;
+            if (eng.eval(ctx, decoded)) |_| {
                 count += 1;
             } else {
                 log.printStr("loader: eval failed for ", path);
@@ -93,7 +92,7 @@ pub const ScriptLoader = struct {
 
         self.modules_loaded = count;
         self.state = .loaded;
-        log.print("loader: script loaded");
+        log.hex("loader: modules loaded=", count);
     }
 
     /// Handle file:invalidate — triggers a reload

@@ -45,13 +45,15 @@ typedef int (*sm_native_fn)(void* context, unsigned argc, void* vp);
 SM_API int      sm_register_native_fn(void* context, const char* name, sm_native_fn fn, unsigned nargs);
 
 // Argument/return helpers for native callbacks
-SM_API double   sm_arg_double(void* vp, unsigned idx);
-SM_API int      sm_arg_int32(void* vp, unsigned idx);
-SM_API void     sm_ret_double(void* vp, double val);
-SM_API void     sm_ret_int32(void* vp, int val);
-SM_API void     sm_ret_string(void* context, void* vp, const char* str, int len);
-SM_API void     sm_ret_bool(void* vp, int val);
-SM_API void     sm_ret_undefined(void* vp);
+// argc must match the actual call's argument count for correct JS::CallArgs layout.
+SM_API double   sm_arg_double(unsigned argc, void* vp, unsigned idx);
+SM_API int      sm_arg_int32(unsigned argc, void* vp, unsigned idx);
+SM_API int      sm_arg_string(void* context, unsigned argc, void* vp, unsigned idx, char* buf, int buf_len);
+SM_API void     sm_ret_double(unsigned argc, void* vp, double val);
+SM_API void     sm_ret_int32(unsigned argc, void* vp, int val);
+SM_API void     sm_ret_string(void* context, unsigned argc, void* vp, const char* str, int len);
+SM_API void     sm_ret_bool(unsigned argc, void* vp, int val);
+SM_API void     sm_ret_undefined(unsigned argc, void* vp);
 
 // Diagnostics
 SM_API int      sm_get_heap_used(void* runtime);

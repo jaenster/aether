@@ -239,8 +239,8 @@ int sm_register_native_fn(void* context, const char* name, sm_native_fn fn, unsi
 
 // ── Argument/return helpers ──────────────────────────────────────────
 
-double sm_arg_double(void* vp, unsigned idx) {
-    JS::CallArgs args = JS::CallArgsFromVp(0, static_cast<JS::Value*>(vp));
+double sm_arg_double(unsigned argc, void* vp, unsigned idx) {
+    JS::CallArgs args = JS::CallArgsFromVp(argc, static_cast<JS::Value*>(vp));
     if (idx < args.length() && args[idx].isDouble())
         return args[idx].toDouble();
     if (idx < args.length() && args[idx].isInt32())
@@ -248,8 +248,8 @@ double sm_arg_double(void* vp, unsigned idx) {
     return 0.0;
 }
 
-int sm_arg_int32(void* vp, unsigned idx) {
-    JS::CallArgs args = JS::CallArgsFromVp(0, static_cast<JS::Value*>(vp));
+int sm_arg_int32(unsigned argc, void* vp, unsigned idx) {
+    JS::CallArgs args = JS::CallArgsFromVp(argc, static_cast<JS::Value*>(vp));
     if (idx < args.length() && args[idx].isInt32())
         return args[idx].toInt32();
     if (idx < args.length() && args[idx].isDouble())
@@ -257,19 +257,37 @@ int sm_arg_int32(void* vp, unsigned idx) {
     return 0;
 }
 
-void sm_ret_double(void* vp, double val) {
-    JS::CallArgs args = JS::CallArgsFromVp(0, static_cast<JS::Value*>(vp));
+int sm_arg_string(void* context, unsigned argc, void* vp, unsigned idx, char* buf, int buf_len) {
+    auto* cx = static_cast<JSContext*>(context);
+    JS::CallArgs args = JS::CallArgsFromVp(argc, static_cast<JS::Value*>(vp));
+    if (idx >= args.length()) return 0;
+
+    JSString* str = JS::ToString(cx, args[idx]);
+    if (!str) return 0;
+
+    JSAutoByteString bytes(cx, str);
+    if (!bytes.ptr()) return 0;
+
+    int len = static_cast<int>(strlen(bytes.ptr()));
+    int n = (len < buf_len - 1) ? len : (buf_len - 1);
+    memcpy(buf, bytes.ptr(), n);
+    buf[n] = '\0';
+    return n;
+}
+
+void sm_ret_double(unsigned argc, void* vp, double val) {
+    JS::CallArgs args = JS::CallArgsFromVp(argc, static_cast<JS::Value*>(vp));
     args.rval().setDouble(val);
 }
 
-void sm_ret_int32(void* vp, int val) {
-    JS::CallArgs args = JS::CallArgsFromVp(0, static_cast<JS::Value*>(vp));
+void sm_ret_int32(unsigned argc, void* vp, int val) {
+    JS::CallArgs args = JS::CallArgsFromVp(argc, static_cast<JS::Value*>(vp));
     args.rval().setInt32(val);
 }
 
-void sm_ret_string(void* context, void* vp, const char* str, int len) {
+void sm_ret_string(void* context, unsigned argc, void* vp, const char* str, int len) {
     auto* cx = static_cast<JSContext*>(context);
-    JS::CallArgs args = JS::CallArgsFromVp(0, static_cast<JS::Value*>(vp));
+    JS::CallArgs args = JS::CallArgsFromVp(argc, static_cast<JS::Value*>(vp));
     JSString* s = JS_NewStringCopyN(cx, str, static_cast<size_t>(len));
     if (s)
         args.rval().setString(s);
@@ -277,13 +295,13 @@ void sm_ret_string(void* context, void* vp, const char* str, int len) {
         args.rval().setUndefined();
 }
 
-void sm_ret_bool(void* vp, int val) {
-    JS::CallArgs args = JS::CallArgsFromVp(0, static_cast<JS::Value*>(vp));
+void sm_ret_bool(unsigned argc, void* vp, int val) {
+    JS::CallArgs args = JS::CallArgsFromVp(argc, static_cast<JS::Value*>(vp));
     args.rval().setBoolean(val != 0);
 }
 
-void sm_ret_undefined(void* vp) {
-    JS::CallArgs args = JS::CallArgsFromVp(0, static_cast<JS::Value*>(vp));
+void sm_ret_undefined(unsigned argc, void* vp) {
+    JS::CallArgs args = JS::CallArgsFromVp(argc, static_cast<JS::Value*>(vp));
     args.rval().setUndefined();
 }
 
