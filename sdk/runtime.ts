@@ -4,6 +4,8 @@ import {
   meGetCharName,
   clickMap, move as nativeMove, selectSkill, castSkillAt,
   getUIFlag as nativeGetUIFlag, say as nativeSay,
+  getExits as nativeGetExits,
+  findPath as nativeFindPath,
 } from "diablo:native"
 import { ServiceContainer, type BotToken } from "./service.ts"
 import { PlayerUnit, Monster, ItemUnit, ObjectUnit, Missile, Tile } from "./unit.ts"
@@ -30,6 +32,12 @@ export interface Game {
   useSkill(skillId: number, x: number, y: number): void
   say(msg: string): void
   getUIFlag(flag: number): boolean
+
+  /** Get level exits from DRLG RoomTile data. Returns {area, x, y}[]. */
+  getExits(): { area: number, x: number, y: number }[]
+
+  /** A* pathfind from current position to (x,y). Returns path nodes. */
+  findPath(x: number, y: number): { x: number, y: number }[]
 
   delay(ms: number): Generator<void>
   log(...args: any[]): void
@@ -89,6 +97,22 @@ export const game: Game = {
   },
   say(msg: string) { nativeSay(msg) },
   getUIFlag(flag: number) { return nativeGetUIFlag(flag) },
+
+  getExits() {
+    const raw = nativeGetExits()
+    if (!raw) return []
+    return raw.split(',').map(function(entry: string) {
+      const parts = entry.split(':')
+      return { area: parseInt(parts[0], 10), x: parseInt(parts[1], 10), y: parseInt(parts[2], 10) }
+    })
+  },
+
+  findPath(x: number, y: number) {
+    const raw = nativeFindPath(x, y)
+    if (!raw) return []
+    const arr = JSON.parse(raw) as number[][]
+    return arr.map(function(p: number[]) { return { x: p[0], y: p[1] } })
+  },
 
   *delay(ms: number) {
     const start = getTickCount()

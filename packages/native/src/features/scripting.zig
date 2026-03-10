@@ -114,7 +114,7 @@ fn gameLoop() void {
     // Tick the bot generator each game frame
     if (loader.state == .loaded) {
         const ctx = eng.oog_context orelse return;
-        if (eng.eval(ctx, "__onTick()")) |_| {} else {
+        if (eng.eval(ctx, "typeof __onTick === 'function' && __onTick()")) |_| {} else {
             log.print("scripting: __onTick error");
         }
     }

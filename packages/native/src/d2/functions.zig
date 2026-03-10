@@ -455,22 +455,29 @@ pub fn castRunTo(x: u16, y: u16) void {
 /// ClickMap: __fastcall(clickType, screenX, screenY, flags)
 pub const ClickMap = fastcall(0x462D00, fn (i32, i32, i32, u8) void);
 
-/// DRLG_WorldToScreenShift5 — transforms world coords to absolute screen coords in-place.
-/// Isometric: x = worldX - worldY, y = (worldX + worldY) / 2
-pub const MapToAbsScreen = fastcall(0x643510, fn (*i32, *i32) void);
-
-/// Viewport offset globals (MouseXOffset / MouseYOffset)
+/// Viewport offset globals
 pub const ViewportX: *i32 = @ptrFromInt(0x7A520C);
 pub const ViewportY: *i32 = @ptrFromInt(0x7A5208);
 
+/// Mouse position globals — must be zeroed before ClickMap (d2bs pattern)
+pub const MouseX: *i32 = @ptrFromInt(0x7A6AB0);
+pub const MouseY: *i32 = @ptrFromInt(0x7A6AAC);
+
 /// Click at world coordinates by converting to screen space.
+/// Isometric: screen_x = (wx - wy) * 16, screen_y = (wx + wy) * 8
+/// Then subtract viewport offset. Zero mouse before ClickMap (d2bs pattern).
 pub fn clickAtWorld(click_type: i32, world_x: i32, world_y: i32) void {
-    var sx = world_x;
-    var sy = world_y;
-    MapToAbsScreen.call(.{ &sx, &sy });
+    var sx = (world_x - world_y) * 16;
+    var sy = (world_x + world_y) * 8;
     sx -= ViewportX.*;
     sy -= ViewportY.*;
-    ClickMap.call(.{ click_type, sx, sy, 0 });
+    const saved_mx = MouseX.*;
+    const saved_my = MouseY.*;
+    MouseX.* = 0;
+    MouseY.* = 0;
+    ClickMap.call(.{ click_type, sx, sy, 0x08 });
+    MouseX.* = saved_mx;
+    MouseY.* = saved_my;
 }
 
 // ============================================================================

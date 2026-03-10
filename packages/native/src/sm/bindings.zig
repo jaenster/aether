@@ -8,6 +8,7 @@ const globals = @import("../d2/globals.zig");
 const types = @import("../d2/types.zig");
 const feature = @import("../feature.zig");
 const units = @import("units.zig");
+const walk_reducer = @import("../pathing/walk_reducer.zig");
 
 // SM arg/ret helpers — argc required for correct JS::CallArgs layout
 fn argInt32(argc: c_uint, vp: ?*anyopaque, idx: c_uint) i32 {
@@ -388,22 +389,22 @@ fn jsMeGetCharName(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) 
 
 fn jsClickMap(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const click_type = argInt32(argc, vp, 0);
-    const shift = argInt32(argc, vp, 1);
     const x = argInt32(argc, vp, 2);
     const y = argInt32(argc, vp, 3);
     d2.clickAtWorld(click_type, x, y);
-    _ = shift;
     retUndefined(argc, vp);
     return 1;
 }
 
 fn jsMove(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
-    const x: u32 = @bitCast(argInt32(argc, vp, 0));
-    const y: u32 = @bitCast(argInt32(argc, vp, 1));
-    d2.sendRunToLocation(@intCast(x & 0xFFFF), @intCast(y & 0xFFFF));
+    const x = argInt32(argc, vp, 0);
+    const y = argInt32(argc, vp, 1);
+    // clickType=0 = left click down (proven working via clickScreen test)
+    d2.clickAtWorld(0, x, y);
     retUndefined(argc, vp);
     return 1;
 }
+
 
 fn jsSelectSkill(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const hand = argInt32(argc, vp, 0);
@@ -417,6 +418,24 @@ fn jsCastSkillAt(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_i
     const x: u32 = @bitCast(argInt32(argc, vp, 0));
     const y: u32 = @bitCast(argInt32(argc, vp, 1));
     d2.castRightSkillAt(@intCast(x & 0xFFFF), @intCast(y & 0xFFFF));
+    retUndefined(argc, vp);
+    return 1;
+}
+
+fn jsInteract(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const unit_type = argInt32(argc, vp, 0);
+    const unit_id = argInt32(argc, vp, 1);
+    // Packet 0x13: Entity interaction (dwType, dwId)
+    d2.SendIntInt.call(.{ 0x13, unit_type, unit_id });
+    retUndefined(argc, vp);
+    return 1;
+}
+
+fn jsRunToEntity(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const unit_type = argInt32(argc, vp, 0);
+    const unit_id = argInt32(argc, vp, 1);
+    // Packet 0x04: Run to entity (dwType, dwId)
+    d2.SendIntInt.call(.{ 0x04, unit_type, unit_id });
     retUndefined(argc, vp);
     return 1;
 }
@@ -442,6 +461,85 @@ fn jsSay(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
         d2.sendPacket(pkt[0 .. 3 + slen + 1]);
     }
     retUndefined(argc, vp);
+    return 1;
+}
+
+// ── Pathfinding ─────────────────────────────────────────────────────
+
+/// A* pathfind from current position to (x, y). Returns JSON: [[x,y],[x,y],...]
+fn jsFindPath(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const player = globals.playerUnit().* orelse { retString(cx, argc, vp, "[]"); return 1; };
+    const ppath = player.pPath orelse { retString(cx, argc, vp, "[]"); return 1; };
+    const sx: i32 = @intCast(ppath.xPos);
+    const sy: i32 = @intCast(ppath.yPos);
+    const ex = argInt32(argc, vp, 0);
+    const ey = argInt32(argc, vp, 1);
+
+    const wp_count = walk_reducer.findPath(sx, sy, ex, ey);
+    if (wp_count == 0) { retString(cx, argc, vp, "[]"); return 1; }
+
+    var buf: [8192]u8 = undefined;
+    var pos: usize = 0;
+    buf[0] = '[';
+    pos = 1;
+    var i: u32 = 0;
+    while (i < wp_count) : (i += 1) {
+        const wp = walk_reducer.waypoints[i];
+        const written = std.fmt.bufPrint(buf[pos..], "{s}[{d},{d}]", .{
+            if (i > 0) @as([]const u8, ",") else @as([]const u8, ""),
+            wp.x, wp.y,
+        }) catch break;
+        pos += written.len;
+    }
+    buf[pos] = ']';
+    pos += 1;
+    retString(cx, argc, vp, buf[0..pos]);
+    return 1;
+}
+
+// ── Map/exit bindings ───────────────────────────────────────────────
+
+/// Get level exits by walking Room2 RoomTile list.
+/// Returns comma-separated "area:x:y" entries.
+fn jsGetExits(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const player = globals.playerUnit().* orelse { retString(cx, argc, vp, ""); return 1; };
+    const path = player.pPath orelse { retString(cx, argc, vp, ""); return 1; };
+    const room1 = path.pRoom1 orelse { retString(cx, argc, vp, ""); return 1; };
+    const my_room2 = room1.pRoom2 orelse { retString(cx, argc, vp, ""); return 1; };
+    const level = my_room2.pLevel orelse { retString(cx, argc, vp, ""); return 1; };
+    const my_level = level.dwLevelNo;
+
+    var buf: [512]u8 = undefined;
+    var pos: usize = 0;
+
+    // Walk all rooms in this level, check their RoomTile links
+    var room_it = level.pRoom2First;
+    while (room_it) |room| : (room_it = room.pRoom2Next) {
+        const room_level = room.pLevel orelse continue;
+        if (room_level.dwLevelNo != my_level) continue;
+
+        var tile: ?*types.RoomTile = room.pRoomTiles;
+        while (tile) |t| : (tile = t.pNext) {
+            const dest_room2 = t.pRoom2 orelse continue;
+            const dest_level = dest_room2.pLevel orelse continue;
+            const dest_area = dest_level.dwLevelNo;
+            // Position: center of the SOURCE room (where the warp tile is)
+            const tile_x = room.dwPosX * 5 + room.dwSizeX * 5 / 2;
+            const tile_y = room.dwPosY * 5 + room.dwSizeY * 5 / 2;
+
+            // Append "area:x:y,"
+            if (pos > 0 and pos < buf.len) {
+                buf[pos] = ',';
+                pos += 1;
+            }
+            const written = std.fmt.bufPrint(buf[pos..], "{d}:{d}:{d}", .{
+                dest_area, tile_x, tile_y,
+            }) catch break;
+            pos += written.len;
+        }
+    }
+
+    retString(cx, argc, vp, buf[0..pos]);
     return 1;
 }
 
@@ -503,6 +601,11 @@ const bindings = [_]Binding{
     .{ .name = "castSkillAt", .func = &jsCastSkillAt, .nargs = 2 },
     .{ .name = "getUIFlag", .func = &jsGetUIFlag, .nargs = 1 },
     .{ .name = "say", .func = &jsSay, .nargs = 1 },
+    .{ .name = "interact", .func = &jsInteract, .nargs = 2 },
+    .{ .name = "runToEntity", .func = &jsRunToEntity, .nargs = 2 },
+    // Map & pathfinding
+    .{ .name = "getExits", .func = &jsGetExits, .nargs = 0 },
+    .{ .name = "findPath", .func = &jsFindPath, .nargs = 2 },
 };
 
 /// Comptime-generated ES module source for "diablo:native".
