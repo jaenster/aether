@@ -64,7 +64,7 @@ const Point = struct {
 // ── Module-level state (class members) ──
 
 var act: ?*Act = null;
-var level: ?*Level = null;
+pub var level: ?*Level = null;
 
 pub var pos_x: u32 = 0;
 pub var pos_y: u32 = 0;

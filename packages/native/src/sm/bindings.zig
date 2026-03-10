@@ -9,6 +9,7 @@ const types = @import("../d2/types.zig");
 const feature = @import("../feature.zig");
 const units = @import("units.zig");
 const walk_reducer = @import("../pathing/walk_reducer.zig");
+const act_map = @import("../pathing/act_map.zig");
 
 // SM arg/ret helpers — argc required for correct JS::CallArgs layout
 fn argInt32(argc: c_uint, vp: ?*anyopaque, idx: c_uint) i32 {
@@ -466,6 +467,24 @@ fn jsSay(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
 
 // ── Pathfinding ─────────────────────────────────────────────────────
 
+/// Ensure act_map is initialized for the current level. Called before pathfinding.
+fn ensureActMap() void {
+    const player = globals.playerUnit().* orelse return;
+    const path = player.pPath orelse return;
+    const room1 = path.pRoom1 orelse return;
+    const room2 = room1.pRoom2 orelse return;
+    const lvl = room2.pLevel orelse return;
+    const player_act = player.pAct orelse return;
+
+    // Check if act_map is already initialized for this level
+    if (act_map.level) |current| {
+        if (current.dwLevelNo == lvl.dwLevelNo) return;
+    }
+
+    act_map.cleanup();
+    act_map.init(player_act, lvl);
+}
+
 /// A* pathfind from current position to (x, y). Returns JSON: [[x,y],[x,y],...]
 fn jsFindPath(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const player = globals.playerUnit().* orelse { retString(cx, argc, vp, "[]"); return 1; };
@@ -475,6 +494,7 @@ fn jsFindPath(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int
     const ex = argInt32(argc, vp, 0);
     const ey = argInt32(argc, vp, 1);
 
+    ensureActMap();
     const wp_count = walk_reducer.findPath(sx, sy, ex, ey);
     if (wp_count == 0) { retString(cx, argc, vp, "[]"); return 1; }
 

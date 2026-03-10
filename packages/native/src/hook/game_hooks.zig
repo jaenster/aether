@@ -1,5 +1,6 @@
 const patch = @import("patch.zig");
 const feature = @import("../feature.zig");
+const globals = @import("../d2/globals.zig");
 const d2 = struct {
     const functions = @import("../d2/functions.zig");
 };
@@ -41,6 +42,7 @@ const ADDR_DRAW_CURSOR: usize = 0x004684C0;
 // --- Logic ---
 
 fn hookGameLoop() callconv(.c) void {
+    feature.in_game = globals.playerUnit().* != null;
     feature.dispatchGameLoop();
 }
 
