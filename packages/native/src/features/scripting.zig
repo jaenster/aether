@@ -3,15 +3,16 @@ const log = @import("../log.zig");
 const Engine = @import("../sm/engine.zig").Engine;
 const bindings = @import("../sm/bindings.zig");
 const DaemonConnection = @import("../net/daemon.zig").DaemonConnection;
+const ScriptLoader = @import("../net/script_loader.zig").ScriptLoader;
 
 var engine: ?Engine = null;
 var daemon: DaemonConnection = .{};
+var loader: ScriptLoader = .{};
 var initialized: bool = false;
 var tested_bindings: bool = false;
 var daemon_enabled: bool = false;
+var loader_enabled: bool = false;
 
-/// Deferred init — can't run during DllMain (loader lock blocks thread creation).
-/// Called on the first game/oog loop tick instead.
 fn ensureInit() void {
     if (initialized) return;
     initialized = true;
@@ -33,7 +34,6 @@ fn ensureInit() void {
     log.print("scripting: context created");
     eng.oog_context = ctx;
 
-    // Register native game bindings
     _ = bindings.registerAll(eng, ctx);
 
     if (eng.eval(ctx, "1+1")) |result| {
@@ -42,14 +42,14 @@ fn ensureInit() void {
         log.print("scripting: eval failed");
     }
 
-    // Initialize daemon connection (if AETHER_DAEMON is set)
     daemon_enabled = daemon.init();
+    if (daemon_enabled) {
+        loader_enabled = loader.init();
+    }
 }
 
 fn deinit() void {
-    if (daemon_enabled) {
-        daemon.deinit();
-    }
+    if (daemon_enabled) daemon.deinit();
     if (engine) |*eng| {
         eng.deinit();
         engine = null;
@@ -57,19 +57,28 @@ fn deinit() void {
     log.print("scripting: shutdown");
 }
 
-fn gameLoop() void {
+fn tickCommon() void {
     ensureInit();
     const eng = &(engine orelse return);
     eng.pumpMicrotasks();
 
+    if (!daemon_enabled) return;
+
     // Drive daemon connection
-    if (daemon_enabled) {
-        if (daemon.tick()) |msg| {
-            handleDaemonMessage(eng, msg);
-        }
+    if (daemon.tick()) |msg| {
+        handleDaemonMessage(eng, msg);
     }
 
-    // One-shot test: verify native bindings work in-game
+    // Request entry script once daemon is ready
+    if (loader_enabled and loader.state == .idle and daemon.isReady()) {
+        loader.requestEntry(&daemon);
+    }
+}
+
+fn gameLoop() void {
+    tickCommon();
+    const eng = &(engine orelse return);
+
     if (!tested_bindings and feature.in_game) {
         tested_bindings = true;
         const ctx = eng.oog_context orelse return;
@@ -86,25 +95,18 @@ fn gameLoop() void {
 }
 
 fn oogLoop() void {
-    ensureInit();
-    if (engine) |*eng| {
-        eng.pumpMicrotasks();
-    }
-
-    // Drive daemon connection in OOG too
-    if (daemon_enabled) {
-        if (daemon.tick()) |msg| {
-            if (engine) |*eng| {
-                handleDaemonMessage(eng, msg);
-            }
-        }
-    }
+    tickCommon();
 }
 
 fn handleDaemonMessage(eng: *Engine, msg: []const u8) void {
-    _ = eng;
-    log.printStr("daemon msg: ", msg);
-    // TODO: handle file:response, file:invalidate, script:reload, etc.
+    const ctx = eng.oog_context orelse return;
+
+    // Script loader handles file:response and file:invalidate
+    const prev_state = loader.state;
+    loader.handleMessage(msg, eng, ctx);
+    if (loader.state != prev_state) return;
+
+    if (loader.handleInvalidate(msg)) return;
 }
 
 pub const hooks = feature.Hooks{
