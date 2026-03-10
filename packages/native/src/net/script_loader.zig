@@ -47,9 +47,9 @@ pub const ScriptLoader = struct {
     }
 
     /// Handle a daemon message — check if it's a file:response for us.
-    /// If it is, eval all modules in the given engine context.
+    /// Accepts both solicited responses (waiting_response) and daemon-pushed hot-reloads (loaded).
     pub fn handleMessage(self: *ScriptLoader, msg: []const u8, eng: *Engine, ctx: *anyopaque) void {
-        if (self.state != .waiting_response) return;
+        if (self.state != .waiting_response and self.state != .loaded) return;
 
         // Check if this is a file:response
         if (!json.hasStringValue(msg, "type", "file:response")) return;
@@ -90,9 +90,14 @@ pub const ScriptLoader = struct {
             }
         }
 
+        const is_reload = self.state == .loaded;
         self.modules_loaded = count;
         self.state = .loaded;
-        log.hex("loader: modules loaded=", count);
+        if (is_reload) {
+            log.hex("loader: hot-reloaded modules=", count);
+        } else {
+            log.hex("loader: modules loaded=", count);
+        }
     }
 
     /// Handle file:invalidate — triggers a reload

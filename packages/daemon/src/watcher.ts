@@ -1,5 +1,6 @@
 import { watch, type FSWatcher } from "chokidar";
 import type { AetherServer } from "./server.js";
+import type { Filesystem } from "./filesystem.js";
 import { invalidate as invalidateTranspiler } from "./transpiler.js";
 
 export class Watcher {
@@ -11,6 +12,7 @@ export class Watcher {
   constructor(
     private server: AetherServer,
     private scriptRoot: string,
+    private filesystem: Filesystem,
   ) {}
 
   start(): void {
@@ -51,16 +53,12 @@ export class Watcher {
 
     if (paths.length === 0) return;
 
+    // Invalidate transpiler cache for changed files
     invalidateTranspiler(paths);
 
     console.log(`Files changed: ${paths.join(", ")}`);
-    this.server.broadcast(
-      {
-        type: "file:invalidate",
-        paths,
-      },
-      undefined,
-      "game",
-    );
+
+    // Re-bundle and push to all subscribed game clients
+    this.filesystem.reloadSubscribers();
   }
 }

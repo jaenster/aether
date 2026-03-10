@@ -1,1 +1,2 @@
-log("hello from test.ts!");
+log("HOT RELOAD WORKS! v2");
+log("inGame=" + inGame());

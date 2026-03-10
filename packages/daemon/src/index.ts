@@ -48,9 +48,9 @@ function main(): void {
 
   new Registry(server);
   new Router(server);
-  new Filesystem(server, opts.scripts);
+  const filesystem = new Filesystem(server, opts.scripts);
 
-  const watcher = new Watcher(server, opts.scripts);
+  const watcher = new Watcher(server, opts.scripts, filesystem);
 
   server.start();
   watcher.start();

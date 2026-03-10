@@ -3,7 +3,16 @@ import { resolve as resolvePath } from "node:path";
 import { bundle } from "./bundler.js";
 import type { AetherServer, ConnectedClient } from "./server.js";
 
+interface ClientSubscription {
+  clientId: string;
+  requestId: string;
+  path: string;
+  absPath: string;
+}
+
 export class Filesystem {
+  private subscriptions = new Map<string, ClientSubscription>();
+
   constructor(
     private server: AetherServer,
     private scriptRoot: string,
@@ -28,7 +37,6 @@ export class Filesystem {
 
     const absPath = resolvePath(this.scriptRoot, path);
 
-    // Security: ensure resolved path is under scriptRoot
     if (!absPath.startsWith(resolvePath(this.scriptRoot))) {
       client.ws.send(JSON.stringify({
         type: "file:response",
@@ -39,6 +47,18 @@ export class Filesystem {
       return;
     }
 
+    // Track this client's entry point for hot-reload
+    this.subscriptions.set(client.id, {
+      clientId: client.id,
+      requestId: id,
+      path,
+      absPath,
+    });
+
+    this.serveBundle(client, id, path, absPath);
+  }
+
+  private serveBundle(client: ConnectedClient, id: string, path: string, absPath: string): void {
     if (!existsSync(absPath)) {
       client.ws.send(JSON.stringify({
         type: "file:response",
@@ -67,6 +87,33 @@ export class Filesystem {
         message: error.message,
       }));
     }
+  }
+
+  /**
+   * Re-serve bundles to all subscribed game clients.
+   * Called by the watcher after file changes are detected.
+   */
+  reloadSubscribers(): void {
+    for (const sub of this.subscriptions.values()) {
+      const client = this.server.getClient(sub.clientId);
+      if (!client || client.ws.readyState !== 1) {
+        this.subscriptions.delete(sub.clientId);
+        continue;
+      }
+      console.log(`Hot-reloading ${sub.path} for ${client.name}`);
+      this.serveBundle(client, sub.requestId, sub.path, sub.absPath);
+    }
+  }
+
+  /**
+   * Remove subscription when a client disconnects.
+   */
+  removeClient(clientId: string): void {
+    this.subscriptions.delete(clientId);
+  }
+
+  get subscriberCount(): number {
+    return this.subscriptions.size;
   }
 
   private handleRawRequest(client: ConnectedClient, msg: Record<string, unknown>): void {
