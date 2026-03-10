@@ -9,6 +9,8 @@
 #include "js/GCAPI.h"
 
 #include <cstring>
+#include <vector>
+#include <string>
 
 // ── Internal types ────────────────────────────────────────────────────
 
@@ -18,9 +20,18 @@ struct RuntimeHandle {
     int heap_limit_mb;
 };
 
+struct ModuleEntry {
+    std::string specifier;
+    JS::PersistentRootedObject module;
+    ModuleEntry(JSContext* cx, const std::string& spec, JSObject* mod)
+        : specifier(spec), module(cx, mod) {}
+};
+
 struct ContextHandle {
     JSContext* cx;
     JS::PersistentRootedObject global;
+    std::vector<ModuleEntry*> modules;
+    bool module_system_init = false;
 };
 
 static const JSClassOps global_classOps = {
@@ -142,6 +153,9 @@ void* sm_create_context(void* runtime) {
 void sm_destroy_context(void* context) {
     auto* ch = static_cast<ContextHandle*>(context);
     if (ch) {
+        for (auto* entry : ch->modules)
+            delete entry;
+        ch->modules.clear();
         ch->global.reset();
         JS_DestroyContext(ch->cx);
         delete ch;
@@ -303,6 +317,278 @@ void sm_ret_bool(unsigned argc, void* vp, int val) {
 void sm_ret_undefined(unsigned argc, void* vp) {
     JS::CallArgs args = JS::CallArgsFromVp(argc, static_cast<JS::Value*>(vp));
     args.rval().setUndefined();
+}
+
+// ── Module system ────────────────────────────────────────────────────
+
+// Find a module in the registry by specifier
+static ModuleEntry* find_module(ContextHandle* ch, const char* spec, size_t spec_len) {
+    for (auto* entry : ch->modules) {
+        if (entry->specifier.size() == spec_len &&
+            memcmp(entry->specifier.data(), spec, spec_len) == 0)
+            return entry;
+    }
+    return nullptr;
+}
+
+// Dirname: return everything up to and including the last '/'
+static std::string path_dirname(const std::string& path) {
+    auto pos = path.rfind('/');
+    if (pos == std::string::npos) return "./";
+    return path.substr(0, pos + 1);
+}
+
+// Normalize path: collapse "foo/../" and "./" segments
+static std::string path_normalize(const std::string& path) {
+    // Split on '/'
+    std::vector<std::string> parts;
+    size_t start = 0;
+    bool absolute = false;
+    if (!path.empty() && path[0] == '/') {
+        absolute = true;
+        start = 1;
+    }
+    for (size_t i = start; i <= path.size(); i++) {
+        if (i == path.size() || path[i] == '/') {
+            std::string seg = path.substr(start, i - start);
+            start = i + 1;
+            if (seg == "." || seg.empty()) continue;
+            if (seg == ".." && !parts.empty() && parts.back() != "..") {
+                parts.pop_back();
+            } else {
+                parts.push_back(seg);
+            }
+        }
+    }
+    std::string result;
+    if (absolute) result = "/";
+    for (size_t i = 0; i < parts.size(); i++) {
+        if (i > 0) result += "/";
+        result += parts[i];
+    }
+    return result;
+}
+
+// Resolve hook — called by SM60 during ModuleInstantiate
+static bool module_resolve_hook(JSContext* cx, unsigned argc, JS::Value* vp) {
+    JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
+
+    // Get ContextHandle from reserved slot
+    JSObject* callee = &args.callee();
+    const JS::Value& privval = js::GetFunctionNativeReserved(callee, 0);
+    auto* ch = reinterpret_cast<ContextHandle*>(
+        static_cast<uintptr_t>(privval.toPrivateUint32()));
+
+    // arg0 = referencing module (or undefined), arg1 = specifier string
+    JS::RootedObject refModule(cx);
+    if (args[0].isObject())
+        refModule = &args[0].toObject();
+
+    JSString* specStr = args[1].toString();
+    JSAutoByteString specBytes(cx, specStr);
+    if (!specBytes.ptr()) {
+        JS_ReportErrorASCII(cx, "module resolve: failed to get specifier string");
+        return false;
+    }
+
+    std::string specifier = specBytes.ptr();
+
+    // Resolution logic
+    if (specifier.find("diablo:") == 0) {
+        // Exact lookup for built-in modules
+    } else if (specifier.find("./") == 0 || specifier.find("../") == 0) {
+        // Relative path — resolve against referencing module's path
+        if (refModule) {
+            JS::Value hostDefined = JS::GetModuleHostDefinedField(refModule);
+            if (hostDefined.isString()) {
+                JSAutoByteString refPath(cx, hostDefined.toString());
+                if (refPath.ptr()) {
+                    std::string dir = path_dirname(refPath.ptr());
+                    std::string resolved = path_normalize(dir + specifier);
+                    // Ensure result starts with "./" to match daemon specifiers
+                    if (resolved.find("./") != 0 && resolved.find("../") != 0 &&
+                        resolved.find("diablo:") != 0 && resolved.find("/") != 0) {
+                        resolved = "./" + resolved;
+                    }
+                    specifier = resolved;
+                }
+            }
+        }
+    }
+    // Bare specifiers: exact lookup
+
+    auto* entry = find_module(ch, specifier.data(), specifier.size());
+    if (!entry) {
+        std::string err = "Cannot resolve module '";
+        err += specifier;
+        err += "'";
+        JS_ReportErrorASCII(cx, "%s", err.c_str());
+        return false;
+    }
+
+    args.rval().setObject(*entry->module);
+    return true;
+}
+
+int sm_module_init(void* context) {
+    auto* ch = static_cast<ContextHandle*>(context);
+    if (!ch) return -1;
+    if (ch->module_system_init) return 0;
+
+    JSContext* cx = ch->cx;
+    JSAutoRequest ar(cx);
+    JSAutoCompartment ac(cx, ch->global);
+
+    // Create resolve hook function with ContextHandle in reserved slot
+    JSFunction* hookFn = js::NewFunctionWithReserved(cx, module_resolve_hook, 2, 0,
+                                                      "moduleResolveHook");
+    if (!hookFn) return -1;
+
+    JSObject* hookObj = JS_GetFunctionObject(hookFn);
+    js::SetFunctionNativeReserved(hookObj, 0,
+        JS::PrivateUint32Value(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(ch))));
+
+    JS::RootedFunction rootedHook(cx, hookFn);
+    JS::SetModuleResolveHook(cx, rootedHook);
+
+    ch->module_system_init = true;
+    return 0;
+}
+
+int sm_module_compile(void* context,
+                      const char* specifier, int spec_len,
+                      const char* source, int source_len,
+                      char* err_buf, int err_buf_len) {
+    auto* ch = static_cast<ContextHandle*>(context);
+    if (!ch) return write_error_msg("null context", err_buf, err_buf_len);
+
+    JSContext* cx = ch->cx;
+    JSAutoRequest ar(cx);
+    JSAutoCompartment ac(cx, ch->global);
+
+    // Convert UTF-8 source to char16_t (ASCII widening)
+    size_t srcLen = static_cast<size_t>(source_len);
+    char16_t stackBuf[65536];
+    char16_t* wideBuf = stackBuf;
+    bool heapAlloc = false;
+    if (srcLen > sizeof(stackBuf) / sizeof(char16_t)) {
+        wideBuf = static_cast<char16_t*>(js_malloc(srcLen * sizeof(char16_t)));
+        if (!wideBuf) return write_error_msg("out of memory", err_buf, err_buf_len);
+        heapAlloc = true;
+    }
+    for (size_t i = 0; i < srcLen; i++)
+        wideBuf[i] = static_cast<char16_t>(static_cast<unsigned char>(source[i]));
+
+    // CompileModule takes ownership when using GiveOwnership, but we use NoOwnership
+    // so we can manage the buffer ourselves
+    JS::SourceBufferHolder srcBufHolder(wideBuf, srcLen,
+        heapAlloc ? JS::SourceBufferHolder::GiveOwnership
+                  : JS::SourceBufferHolder::NoOwnership);
+
+    JS::CompileOptions opts(cx);
+    std::string specStr(specifier, spec_len);
+    opts.setFileAndLine(specStr.c_str(), 1);
+
+    JS::RootedObject moduleObj(cx);
+    if (!JS::CompileModule(cx, opts, srcBufHolder, &moduleObj)) {
+        if (JS_IsExceptionPending(cx)) {
+            JS::RootedValue exc(cx);
+            if (JS_GetPendingException(cx, &exc)) {
+                JS_ClearPendingException(cx);
+                JSString* exc_str = JS::ToString(cx, exc);
+                if (exc_str) {
+                    JSAutoByteString bytes(cx, exc_str);
+                    if (bytes.ptr())
+                        return write_error_msg(bytes.ptr(), err_buf, err_buf_len);
+                }
+            }
+        }
+        return write_error_msg("module compile failed", err_buf, err_buf_len);
+    }
+
+    // Set HostDefined field to the specifier (used for relative resolution)
+    JSString* specJsStr = JS_NewStringCopyN(cx, specifier, spec_len);
+    if (specJsStr) {
+        JS::SetModuleHostDefinedField(moduleObj, JS::StringValue(specJsStr));
+    }
+
+    // Register in our module list
+    auto* entry = new ModuleEntry(cx, specStr, moduleObj);
+    ch->modules.push_back(entry);
+
+    return 0;
+}
+
+int sm_module_instantiate(void* context,
+                          const char* entry_spec, int spec_len,
+                          char* err_buf, int err_buf_len) {
+    auto* ch = static_cast<ContextHandle*>(context);
+    if (!ch) return write_error_msg("null context", err_buf, err_buf_len);
+
+    auto* entry = find_module(ch, entry_spec, spec_len);
+    if (!entry) return write_error_msg("entry module not found", err_buf, err_buf_len);
+
+    JSContext* cx = ch->cx;
+    JSAutoRequest ar(cx);
+    JSAutoCompartment ac(cx, ch->global);
+
+    JS::RootedObject mod(cx, entry->module);
+    if (!JS::ModuleInstantiate(cx, mod)) {
+        if (JS_IsExceptionPending(cx)) {
+            JS::RootedValue exc(cx);
+            if (JS_GetPendingException(cx, &exc)) {
+                JS_ClearPendingException(cx);
+                JSString* exc_str = JS::ToString(cx, exc);
+                if (exc_str) {
+                    JSAutoByteString bytes(cx, exc_str);
+                    if (bytes.ptr())
+                        return write_error_msg(bytes.ptr(), err_buf, err_buf_len);
+                }
+            }
+        }
+        return write_error_msg("module instantiate failed", err_buf, err_buf_len);
+    }
+    return 0;
+}
+
+int sm_module_evaluate(void* context,
+                       const char* entry_spec, int spec_len,
+                       char* err_buf, int err_buf_len) {
+    auto* ch = static_cast<ContextHandle*>(context);
+    if (!ch) return write_error_msg("null context", err_buf, err_buf_len);
+
+    auto* entry = find_module(ch, entry_spec, spec_len);
+    if (!entry) return write_error_msg("entry module not found", err_buf, err_buf_len);
+
+    JSContext* cx = ch->cx;
+    JSAutoRequest ar(cx);
+    JSAutoCompartment ac(cx, ch->global);
+
+    JS::RootedObject mod(cx, entry->module);
+    if (!JS::ModuleEvaluate(cx, mod)) {
+        if (JS_IsExceptionPending(cx)) {
+            JS::RootedValue exc(cx);
+            if (JS_GetPendingException(cx, &exc)) {
+                JS_ClearPendingException(cx);
+                JSString* exc_str = JS::ToString(cx, exc);
+                if (exc_str) {
+                    JSAutoByteString bytes(cx, exc_str);
+                    if (bytes.ptr())
+                        return write_error_msg(bytes.ptr(), err_buf, err_buf_len);
+                }
+            }
+        }
+        return write_error_msg("module evaluate failed", err_buf, err_buf_len);
+    }
+    return 0;
+}
+
+void sm_module_clear(void* context) {
+    auto* ch = static_cast<ContextHandle*>(context);
+    if (!ch) return;
+    for (auto* entry : ch->modules)
+        delete entry;
+    ch->modules.clear();
 }
 
 // ── GC pump ──────────────────────────────────────────────────────────

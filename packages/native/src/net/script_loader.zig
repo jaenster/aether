@@ -3,6 +3,7 @@ const log = @import("../log.zig");
 const DaemonConnection = @import("daemon.zig").DaemonConnection;
 const json = @import("json.zig");
 const Engine = @import("../sm/engine.zig").Engine;
+const bindings = @import("../sm/bindings.zig");
 
 const DWORD = u32;
 extern "kernel32" fn GetEnvironmentVariableA(name: [*:0]const u8, buf: [*]u8, size: DWORD) callconv(.winapi) DWORD;
@@ -47,12 +48,11 @@ pub const ScriptLoader = struct {
     }
 
     /// Handle a daemon message — check if it's a file:response for us.
-    /// Accepts both solicited responses (waiting_response) and daemon-pushed hot-reloads (loaded).
-    pub fn handleMessage(self: *ScriptLoader, msg: []const u8, eng: *Engine, ctx: *anyopaque) void {
-        if (self.state != .waiting_response and self.state != .loaded) return;
+    /// On hot-reload (state == .loaded), returns true to signal context recreation needed.
+    pub fn handleMessage(self: *ScriptLoader, msg: []const u8, eng: *Engine, ctx: *anyopaque) bool {
+        if (self.state != .waiting_response and self.state != .loaded and self.state != .failed) return false;
 
-        // Check if this is a file:response
-        if (!json.hasStringValue(msg, "type", "file:response")) return;
+        if (!json.hasStringValue(msg, "type", "file:response")) return false;
 
         // Check for error
         if (json.getString(msg, "error")) |err| {
@@ -61,36 +61,82 @@ pub const ScriptLoader = struct {
                 log.printStr("loader: ", m);
             }
             self.state = .failed;
-            return;
+            return false;
         }
 
-        // Get modules array and eval each one
+        const is_reload = self.state == .loaded;
+
+        // Init module system
+        if (!eng.moduleInit(ctx)) {
+            log.print("loader: module init failed");
+            self.state = .failed;
+            return false;
+        }
+
+        // Compile diablo:native built-in module
+        if (eng.moduleCompile(ctx, "diablo:native", bindings.native_module_source)) |err| {
+            log.printStr("loader: diablo:native compile failed: ", err);
+            self.state = .failed;
+            return false;
+        }
+
+        // Get entry specifier
+        const entry_spec = json.getString(msg, "entry") orelse {
+            log.print("loader: no entry specifier in response");
+            self.state = .failed;
+            return false;
+        };
+
+        // Compile each module from the response
         var modules = json.getArray(msg, "modules") orelse {
             log.print("loader: no modules in response");
             self.state = .failed;
-            return;
+            return false;
         };
 
         var count: u32 = 0;
         while (modules.next()) |module_json| {
             const source = json.getString(module_json, "source") orelse continue;
-            const path = json.getString(module_json, "path") orelse "unknown";
+            const specifier = json.getString(module_json, "specifier") orelse continue;
 
-            // Decode JSON-escaped source into a buffer for eval
+            // Decode JSON-escaped source
             var decode_buf: [65536]u8 = undefined;
             const decoded = json.decodeString(source, &decode_buf) orelse {
-                log.printStr("loader: decode failed for ", path);
+                log.printStr("loader: decode failed for ", specifier);
                 continue;
             };
 
-            if (eng.eval(ctx, decoded)) |_| {
-                count += 1;
-            } else {
-                log.printStr("loader: eval failed for ", path);
+            if (eng.moduleCompile(ctx, specifier, decoded)) |err| {
+                log.printStr("loader: compile failed for ", specifier);
+                log.printStr("loader: ", err);
+                self.state = .failed;
+                return false;
             }
+            count += 1;
         }
 
-        const is_reload = self.state == .loaded;
+        // Decode the entry specifier (it's JSON-escaped too)
+        var entry_buf: [256]u8 = undefined;
+        const entry_decoded = json.decodeString(entry_spec, &entry_buf) orelse {
+            log.print("loader: failed to decode entry specifier");
+            self.state = .failed;
+            return false;
+        };
+
+        // Instantiate — resolves all import dependencies
+        if (eng.moduleInstantiate(ctx, entry_decoded)) |err| {
+            log.printStr("loader: instantiate failed: ", err);
+            self.state = .failed;
+            return false;
+        }
+
+        // Evaluate — executes the module graph
+        if (eng.moduleEvaluate(ctx, entry_decoded)) |err| {
+            log.printStr("loader: evaluate failed: ", err);
+            self.state = .failed;
+            return false;
+        }
+
         self.modules_loaded = count;
         self.state = .loaded;
         if (is_reload) {
@@ -98,14 +144,6 @@ pub const ScriptLoader = struct {
         } else {
             log.hex("loader: modules loaded=", count);
         }
-    }
-
-    /// Handle file:invalidate — triggers a reload
-    pub fn handleInvalidate(self: *ScriptLoader, msg: []const u8) bool {
-        if (!json.hasStringValue(msg, "type", "file:invalidate")) return false;
-        log.print("loader: file invalidated, will reload");
-        self.state = .idle;
-        self.modules_loaded = 0;
-        return true;
+        return is_reload;
     }
 };

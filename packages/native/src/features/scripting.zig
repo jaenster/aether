@@ -57,6 +57,24 @@ fn deinit() void {
     log.print("scripting: shutdown");
 }
 
+/// Destroy the current context and create a fresh one with bindings re-registered.
+/// Used for hot-reload since SM60 module graphs are immutable.
+fn recreateContext() void {
+    var eng = &(engine orelse return);
+    if (eng.oog_context) |ctx| {
+        eng.destroyContext(ctx);
+        eng.oog_context = null;
+    }
+
+    const ctx = eng.createContext() orelse {
+        log.print("scripting: failed to recreate context");
+        return;
+    };
+    eng.oog_context = ctx;
+    _ = bindings.registerAll(eng, ctx);
+    log.print("scripting: context recreated for hot-reload");
+}
+
 fn tickCommon() void {
     ensureInit();
     const eng = &(engine orelse return);
@@ -92,6 +110,14 @@ fn gameLoop() void {
             log.printStr("scripting: ", result);
         }
     }
+
+    // Tick the bot generator each game frame
+    if (loader.state == .loaded) {
+        const ctx = eng.oog_context orelse return;
+        if (eng.eval(ctx, "__onTick()")) |_| {} else {
+            log.print("scripting: __onTick error");
+        }
+    }
 }
 
 fn oogLoop() void {
@@ -101,12 +127,18 @@ fn oogLoop() void {
 fn handleDaemonMessage(eng: *Engine, msg: []const u8) void {
     const ctx = eng.oog_context orelse return;
 
-    // Script loader handles file:response and file:invalidate
-    const prev_state = loader.state;
-    loader.handleMessage(msg, eng, ctx);
-    if (loader.state != prev_state) return;
+    // Check if this is a hot-reload (loader already in .loaded state)
+    const is_reload = loader.state == .loaded;
 
-    if (loader.handleInvalidate(msg)) return;
+    // If it's a reload, recreate context first
+    if (is_reload and @import("../net/json.zig").hasStringValue(msg, "type", "file:response")) {
+        recreateContext();
+        const new_ctx = eng.oog_context orelse return;
+        _ = loader.handleMessage(msg, eng, new_ctx);
+        return;
+    }
+
+    _ = loader.handleMessage(msg, eng, ctx);
 }
 
 pub const hooks = feature.Hooks{

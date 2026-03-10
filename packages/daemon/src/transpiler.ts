@@ -15,7 +15,7 @@ const SWC_OPTIONS = {
       tsx: false,
       decorators: true,
     },
-    target: "es2020" as const,
+    target: "es2015" as const,
   },
   module: {
     type: "es6" as const,

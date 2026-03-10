@@ -70,13 +70,14 @@ export class Filesystem {
     }
 
     try {
-      const modules = bundle(absPath);
+      const result = bundle(absPath, this.scriptRoot);
       client.ws.send(JSON.stringify({
         type: "file:response",
         id,
-        modules,
+        entry: result.entry,
+        modules: result.modules,
       }));
-      console.log(`Served bundle for ${path} (${modules.length} modules)`);
+      console.log(`Served bundle for ${path} (${result.modules.length} modules, entry=${result.entry})`);
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       const isResolve = error.message.includes("Cannot find") || error.message.includes("Cannot resolve");

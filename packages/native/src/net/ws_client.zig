@@ -75,10 +75,10 @@ pub const WsClient = struct {
     host: [64]u8 = .{0} ** 64,
     host_len: usize = 0,
     port: u16 = 0,
-    recv_buf: [8192]u8 = undefined,
+    recv_buf: [131072]u8 = undefined,
     recv_len: usize = 0,
     // Buffered frame assembly
-    frame_buf: [65536]u8 = undefined,
+    frame_buf: [131072]u8 = undefined,
     frame_len: usize = 0,
     wsa_initialized: bool = false,
     handshake_sent: bool = false,

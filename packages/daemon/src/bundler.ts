@@ -1,9 +1,10 @@
 import { transpile } from "./transpiler.js";
 import { resolveModule } from "./resolver.js";
 import { readFileSync } from "node:fs";
-import { resolve as resolvePath } from "node:path";
+import { resolve as resolvePath, relative as relativePath, dirname } from "node:path";
 
 export interface ModuleInfo {
+  specifier: string;
   path: string;
   source: string;
   deps: string[];
@@ -12,22 +13,28 @@ export interface ModuleInfo {
 /**
  * Bundle an entry point: resolve all dependencies, transpile .ts → .js,
  * return modules in topological (dependency-first) order.
+ * scriptRoot is used to compute specifiers (root-relative paths).
  */
-export function bundle(entryPath: string): ModuleInfo[] {
+export function bundle(entryPath: string, scriptRoot?: string): { entry: string; modules: ModuleInfo[] } {
   const absEntry = resolvePath(entryPath);
+  const root = scriptRoot ? resolvePath(scriptRoot) : dirname(absEntry);
   const modules = new Map<string, ModuleInfo>();
   const visiting = new Set<string>();
+  const specifierOverrides = new Map<string, string>();
 
-  walk(absEntry, modules, visiting);
+  walk(absEntry, root, modules, visiting, specifierOverrides);
 
-  // Topological sort — dependencies before dependents
-  return topologicalSort(modules);
+  const sorted = topologicalSort(modules);
+  const entrySpec = "./" + relativePath(root, absEntry);
+  return { entry: entrySpec, modules: sorted };
 }
 
 function walk(
   filePath: string,
+  scriptRoot: string,
   modules: Map<string, ModuleInfo>,
   visiting: Set<string>,
+  specifierOverrides: Map<string, string>,
 ): void {
   if (modules.has(filePath)) return;
   if (visiting.has(filePath)) return; // circular dependency — skip
@@ -47,15 +54,21 @@ function walk(
   for (const spec of importSpecifiers) {
     const resolved = resolveModule(spec, filePath);
     if (resolved === null) {
-      // diablo2:* — keep as-is, resolved client-side
+      // diablo:native — keep as-is, resolved client-side
       deps.push(spec);
       continue;
     }
-    deps.push(resolved);
-    walk(resolved, modules, visiting);
+    deps.push(resolved.path);
+    if (resolved.specifierOverride) {
+      specifierOverrides.set(resolved.path, resolved.specifierOverride);
+    }
+    walk(resolved.path, scriptRoot, modules, visiting, specifierOverrides);
   }
 
-  modules.set(filePath, { path: filePath, source, deps });
+  // Use override specifier if one was assigned, otherwise compute from path
+  const specifier = specifierOverrides.get(filePath)
+    ?? "./" + relativePath(scriptRoot, filePath);
+  modules.set(filePath, { specifier, path: filePath, source, deps });
   visiting.delete(filePath);
 }
 

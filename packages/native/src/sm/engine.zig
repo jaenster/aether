@@ -73,6 +73,67 @@ pub const Engine = struct {
         if (self.game_context) |ctx| c.sm_pump_gc(ctx);
     }
 
+    pub fn moduleInit(_: *Engine, ctx: *anyopaque) bool {
+        return c.sm_module_init(ctx) == 0;
+    }
+
+    pub fn moduleCompile(_: *Engine, ctx: *anyopaque, specifier: []const u8, source: []const u8) ?[]const u8 {
+        var err_buf: [2048]u8 = undefined;
+        const result = c.sm_module_compile(
+            ctx,
+            specifier.ptr,
+            @intCast(specifier.len),
+            source.ptr,
+            @intCast(source.len),
+            &err_buf,
+            err_buf.len,
+        );
+        if (result < 0) {
+            const err_msg = std.mem.sliceTo(@as([*:0]const u8, @ptrCast(&err_buf)), 0);
+            log.printStr("sm module compile error: ", err_msg);
+            return err_msg;
+        }
+        return null;
+    }
+
+    pub fn moduleInstantiate(_: *Engine, ctx: *anyopaque, entry_spec: []const u8) ?[]const u8 {
+        var err_buf: [2048]u8 = undefined;
+        const result = c.sm_module_instantiate(
+            ctx,
+            entry_spec.ptr,
+            @intCast(entry_spec.len),
+            &err_buf,
+            err_buf.len,
+        );
+        if (result < 0) {
+            const err_msg = std.mem.sliceTo(@as([*:0]const u8, @ptrCast(&err_buf)), 0);
+            log.printStr("sm module instantiate error: ", err_msg);
+            return err_msg;
+        }
+        return null;
+    }
+
+    pub fn moduleEvaluate(_: *Engine, ctx: *anyopaque, entry_spec: []const u8) ?[]const u8 {
+        var err_buf: [2048]u8 = undefined;
+        const result = c.sm_module_evaluate(
+            ctx,
+            entry_spec.ptr,
+            @intCast(entry_spec.len),
+            &err_buf,
+            err_buf.len,
+        );
+        if (result < 0) {
+            const err_msg = std.mem.sliceTo(@as([*:0]const u8, @ptrCast(&err_buf)), 0);
+            log.printStr("sm module evaluate error: ", err_msg);
+            return err_msg;
+        }
+        return null;
+    }
+
+    pub fn moduleClear(_: *Engine, ctx: *anyopaque) void {
+        c.sm_module_clear(ctx);
+    }
+
     pub fn heapUsed(self: *Engine) usize {
         const rt = self.runtime orelse return 0;
         return @intCast(c.sm_get_heap_used(rt));

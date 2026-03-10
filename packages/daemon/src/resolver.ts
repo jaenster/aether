@@ -1,26 +1,59 @@
-import { resolve as resolvePath, dirname, join } from "node:path";
+import { resolve as resolvePath, relative as relativePath, dirname, join } from "node:path";
 import { existsSync, readFileSync, statSync } from "node:fs";
+
+// SDK root — aether/sdk/ relative to this package
+const SDK_ROOT = resolvePath(dirname(new URL(import.meta.url).pathname), "../../../sdk");
+
+export interface ResolveResult {
+  path: string;
+  /** If set, use this as the module specifier instead of the computed relative path */
+  specifierOverride?: string;
+}
 
 /**
  * Resolve an import specifier to an absolute file path.
- * Returns null if the specifier should be resolved client-side (diablo2:*).
+ * Returns null if the specifier should be resolved client-side (diablo:native).
+ * Returns a ResolveResult for file-backed modules.
  * Throws if the module cannot be found.
  */
-export function resolveModule(specifier: string, fromPath: string): string | null {
-  // diablo2:* modules are resolved client-side
-  if (specifier.startsWith("diablo2:")) {
+export function resolveModule(specifier: string, fromPath: string): ResolveResult | null {
+  // diablo:native is resolved client-side (compiled into DLL)
+  if (specifier === "diablo:native") {
     return null;
+  }
+
+  // diablo:game → SDK barrel (bundled + sent to client)
+  if (specifier === "diablo:game") {
+    const sdkEntry = join(SDK_ROOT, "game.ts");
+    if (!existsSync(sdkEntry)) {
+      throw new Error(`SDK not found: ${sdkEntry}`);
+    }
+    return { path: sdkEntry, specifierOverride: "diablo:game" };
   }
 
   const fromDir = dirname(fromPath);
 
   // Relative imports
   if (specifier.startsWith("./") || specifier.startsWith("../")) {
-    return resolveRelative(specifier, fromDir);
+    const resolved = resolveRelative(specifier, fromDir);
+    // SDK files get simplified specifiers so SM60 module resolution works.
+    // diablo:game's dirname is "./" so relative imports resolve to "./filename.ts".
+    const override = getSdkSpecifierOverride(resolved);
+    return override ? { path: resolved, specifierOverride: override } : { path: resolved };
   }
 
   // Bare specifiers — walk node_modules
-  return resolveNodeModules(specifier, fromDir);
+  return { path: resolveNodeModules(specifier, fromDir) };
+}
+
+/**
+ * If a file is inside the SDK directory, return a specifier that matches
+ * SM60's resolution from diablo:game (dirname="./").
+ */
+function getSdkSpecifierOverride(absPath: string): string | undefined {
+  if (!absPath.startsWith(SDK_ROOT)) return undefined;
+  const rel = relativePath(SDK_ROOT, absPath);
+  return "./" + rel;
 }
 
 function resolveRelative(specifier: string, fromDir: string): string {

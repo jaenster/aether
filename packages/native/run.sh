@@ -41,6 +41,11 @@ if [ -z "$AETHER_DAEMON" ]; then
     fi
 fi
 
+# Script entry point
+if [ -z "$AETHER_ENTRY" ]; then
+    export AETHER_ENTRY="main.ts"
+fi
+
 # Launch — pass through extra flags (e.g. -spawn for spawn capture, --headless)
 cd "$GAME_DIR"
 WINEDLLOVERRIDES="dbghelp=n" wine Game.exe -w -ns -loaddll "$DLL_WINE_PATH" $EXTRA_FLAGS "$@" > /dev/null 2>&1 &

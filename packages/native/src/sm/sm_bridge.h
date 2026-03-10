@@ -55,6 +55,20 @@ SM_API void     sm_ret_string(void* context, unsigned argc, void* vp, const char
 SM_API void     sm_ret_bool(unsigned argc, void* vp, int val);
 SM_API void     sm_ret_undefined(unsigned argc, void* vp);
 
+// Module system
+SM_API int      sm_module_init(void* context);
+SM_API int      sm_module_compile(void* context,
+                                  const char* specifier, int spec_len,
+                                  const char* source, int source_len,
+                                  char* err_buf, int err_buf_len);
+SM_API int      sm_module_instantiate(void* context,
+                                      const char* entry_spec, int spec_len,
+                                      char* err_buf, int err_buf_len);
+SM_API int      sm_module_evaluate(void* context,
+                                   const char* entry_spec, int spec_len,
+                                   char* err_buf, int err_buf_len);
+SM_API void     sm_module_clear(void* context);
+
 // Diagnostics
 SM_API int      sm_get_heap_used(void* runtime);
 SM_API int      sm_get_heap_limit(void* runtime);
