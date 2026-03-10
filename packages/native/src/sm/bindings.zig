@@ -420,20 +420,10 @@ fn jsCastSkillAt(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_i
 }
 
 fn jsInteract(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
-    const unit_type: u32 = @bitCast(argInt32(argc, vp, 0));
-    const unit_id: u32 = @bitCast(argInt32(argc, vp, 1));
-    const player = (globals.playerUnit().* orelse {
-        retUndefined(argc, vp);
-        return 1;
-    });
-    // Find the target unit in the client hash tables
-    const target = units.findUnit(unit_type, unit_id) orelse {
-        log.print("interact: unit not found");
-        retUndefined(argc, vp);
-        return 1;
-    };
-    // Use the client-side interaction system (handles walk-to + interact)
-    d2.interactWithUnit(player, target);
+    const unit_type = argInt32(argc, vp, 0);
+    const unit_id = argInt32(argc, vp, 1);
+    // Packet 0x13: Entity interaction (dwType, dwId)
+    d2.SendIntInt.call(.{ 0x13, unit_type, unit_id });
     retUndefined(argc, vp);
     return 1;
 }

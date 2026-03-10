@@ -1,4 +1,4 @@
-import { createBot } from "diablo:game"
+import { createBot, uiFlags } from "diablo:game"
 import { Movement } from "./services/movement.js"
 
 // All waypoint preset classids
@@ -11,6 +11,13 @@ export default createBot('farmer', function*(game, services) {
     if (!game.inGame) { yield; continue }
 
     game.log(`[${game.me.charname}] area=${game.area} pos=${game.me.x},${game.me.y}`)
+
+    // Check if waypoint UI is already open
+    if (game.getUIFlag(uiFlags.Waypoint)) {
+      game.log(`  waypoint menu is open!`)
+      yield* game.delay(5000)
+      continue
+    }
 
     // Find waypoint via preset
     let found = false
@@ -28,10 +35,12 @@ export default createBot('farmer', function*(game, services) {
         // Find the actual waypoint object unit to interact with
         const wp = game.objects.find(o => o.classid === wpId)
         if (wp) {
-          game.log(`  interacting with waypoint unit id=${wp.unitId} classid=${wp.classid}`)
+          game.log(`  interacting with waypoint unit id=${wp.unitId}`)
           game.interact(wp)
+          // Wait for waypoint UI to open
+          yield* game.delay(1000)
         } else {
-          game.log(`  waypoint object not found in units (not loaded yet?)`)
+          game.log(`  waypoint object not found in units`)
         }
 
         found = true

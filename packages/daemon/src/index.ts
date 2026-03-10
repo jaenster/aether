@@ -3,14 +3,18 @@ import { Registry } from "./registry.js";
 import { Router } from "./router.js";
 import { Filesystem } from "./filesystem.js";
 import { Watcher } from "./watcher.js";
-import { resolve } from "node:path";
+import { resolve, dirname } from "node:path";
+
+// Default scripts dir: aether/scripts/ (relative to this package at aether/packages/daemon/)
+const PACKAGE_ROOT = resolve(dirname(new URL(import.meta.url).pathname), "..");
+const DEFAULT_SCRIPTS = resolve(PACKAGE_ROOT, "../../scripts");
 
 function parseArgs(): { port: number; host: string; scripts: string; token?: string } {
   const args = process.argv.slice(2);
   const opts = {
     port: parseInt(process.env.AETHER_PORT || "13119", 10),
     host: process.env.AETHER_HOST || "0.0.0.0",
-    scripts: process.env.AETHER_SCRIPTS || "./scripts",
+    scripts: process.env.AETHER_SCRIPTS || DEFAULT_SCRIPTS,
     token: process.env.AETHER_TOKEN,
   };
 
