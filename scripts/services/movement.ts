@@ -1,5 +1,5 @@
 import { createService, type Game } from "diablo:game"
-import { Config, townAreas } from "../config.ts"
+import { Config, townAreas } from "../config.js"
 
 export const Movement = createService((game: Game, services) => {
   const cfg = services.get(Config)

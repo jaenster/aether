@@ -128,7 +128,7 @@ fn initTables() void {
     if (initialized or init_attempted) return;
     init_attempted = true;
 
-    log.print("esc_menu: initializing");
+    // initializing
 
     // Force-load the fonts we need
     _ = d2.functions.SetFont.call(.{FONT_MENU});
@@ -157,7 +157,7 @@ fn initTables() void {
     @memcpy(ext_tbl[ITEM_SIZE .. 6 * ITEM_SIZE], native_tbl[0 .. 5 * ITEM_SIZE]);
 
     initialized = true;
-    log.print("esc_menu: tables initialized");
+    // tables initialized
 }
 
 // ============================================================================
@@ -480,7 +480,7 @@ fn hitTestRow(y: i32, start_y: i32) i32 {
 
 fn init() void {
     _ = patch.writeCall(ADDR_DRAW_ESCMENU_CALL, @intFromPtr(&hookDrawEscMenu));
-    log.print("esc_menu: draw hook installed");
+    // draw hook installed
 }
 
 fn deinit() void {

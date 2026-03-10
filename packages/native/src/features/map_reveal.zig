@@ -47,7 +47,7 @@ fn gameLoop() void {
         in_game = true;
         current_level = 0;
         reveal_start = 0;
-        log.print("map_reveal: game entered");
+        // game entered
     }
 
     const player = d2.globals.playerUnit().* orelse return;
@@ -63,7 +63,7 @@ fn gameLoop() void {
         reveal_data = [_]RevealState{.{}} ** 256;
         label_count = 0;
         arcane_warp = null;
-        log.hex("map_reveal: level ", level_no);
+        // level changed
     }
 
     if (GetTickCount() -% reveal_start < 200) return;

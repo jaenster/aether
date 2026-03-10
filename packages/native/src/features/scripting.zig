@@ -9,7 +9,6 @@ var engine: ?Engine = null;
 var daemon: DaemonConnection = .{};
 var loader: ScriptLoader = .{};
 var initialized: bool = false;
-var tested_bindings: bool = false;
 var daemon_enabled: bool = false;
 var loader_enabled: bool = false;
 
@@ -24,30 +23,21 @@ fn ensureInit() void {
     if (initialized) return;
     initialized = true;
 
-    log.print("scripting: initializing SpiderMonkey engine...");
     engine = Engine.init(96);
     if (engine.?.runtime == null) {
         log.print("scripting: SM engine init FAILED");
         engine = null;
         return;
     }
-    log.print("scripting: SM engine initialized");
 
     var eng = &engine.?;
     const ctx = eng.createContext() orelse {
-        log.print("scripting: failed to create OOG context");
+        log.print("scripting: failed to create context");
         return;
     };
-    log.print("scripting: context created");
     eng.oog_context = ctx;
 
     setupContext(eng, ctx);
-
-    if (eng.eval(ctx, "1+1")) |result| {
-        log.printStr("scripting: eval result: ", result);
-    } else {
-        log.print("scripting: eval failed");
-    }
 
     daemon_enabled = daemon.init();
     if (daemon_enabled) {
@@ -79,7 +69,6 @@ fn recreateContext() void {
     };
     eng.oog_context = ctx;
     setupContext(eng, ctx);
-    log.print("scripting: context recreated for hot-reload");
 }
 
 fn tickCommon() void {
@@ -103,20 +92,6 @@ fn tickCommon() void {
 fn gameLoop() void {
     tickCommon();
     const eng = &(engine orelse return);
-
-    if (!tested_bindings and feature.in_game) {
-        tested_bindings = true;
-        const ctx = eng.oog_context orelse return;
-        if (eng.eval(ctx, "getArea()")) |result| {
-            log.printStr("scripting: getArea() = ", result);
-        }
-        if (eng.eval(ctx, "'x=' + getUnitX() + ' y=' + getUnitY()")) |result| {
-            log.printStr("scripting: pos = ", result);
-        }
-        if (eng.eval(ctx, "'hp=' + getUnitHP() + '/' + getUnitMaxHP()")) |result| {
-            log.printStr("scripting: ", result);
-        }
-    }
 
     // Tick the bot generator each game frame
     if (loader.state == .loaded) {

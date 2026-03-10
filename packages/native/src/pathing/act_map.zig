@@ -85,7 +85,6 @@ var rooms_added_len: u32 = 0;
 // ── init (constructor equivalent) ──
 
 pub fn init(a: *Act, lvl: *Level) void {
-    log.print("act_map: init start");
     act = a;
     level = lvl;
 
@@ -102,11 +101,6 @@ pub fn init(a: *Act, lvl: *Level) void {
     // d2bs recalculates posX/posY after InitLevel, checking for -1 (0xFFFFFFFF unsigned)
     pos_x = if (lvl.dwPosX == 0xFFFFFFFF) 0 else lvl.dwPosX * 5;
     pos_y = if (lvl.dwPosY == 0xFFFFFFFF) 0 else lvl.dwPosY * 5;
-
-    log.hex("act_map: init pos_x=", pos_x);
-    log.hex("act_map: init pos_y=", pos_y);
-    log.hex("act_map: init width=", width);
-    log.hex("act_map: init height=", height);
 
     // clear caches
     room_cache_len = 0;
@@ -664,7 +658,6 @@ fn findRoomLinkageExits(buf: []Exit, count: *u32) void {
 // ── getExits ──
 
 pub fn getExits(buf: []Exit) u32 {
-    log.print("act_map: getExits start");
     const lvl = level orelse return 0;
     const my_level_no = lvl.dwLevelNo;
 
@@ -688,9 +681,7 @@ pub fn getExits(buf: []Exit) u32 {
         findRoomTileExits(room, buf, &exit_count);
     }
 
-    log.hex("act_map: tile exits=", exit_count);
     findRoomLinkageExits(buf, &exit_count);
-    log.hex("act_map: total exits=", exit_count);
 
     // remove locally added rooms
     {

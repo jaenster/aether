@@ -51,19 +51,12 @@ pub fn scanLevel() u32 {
     cached_count = 0;
     cached_level = level_no;
 
-    var room_count: u32 = 0;
-    var preset_count: u32 = 0;
-
     // Walk all Room2s in this level
     var r2 = level.pRoom2First;
     while (r2) |room| : (r2 = room.pRoom2Next) {
-        room_count += 1;
-        preset_count += scanRoomPresets(room);
+        _ = scanRoomPresets(room);
     }
 
-    log.hex("poi: rooms scanned=", room_count);
-    log.hex("poi: presets seen=", preset_count);
-    log.hex("poi: POIs matched=", cached_count);
     return cached_count;
 }
 

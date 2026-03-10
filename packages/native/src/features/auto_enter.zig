@@ -80,11 +80,8 @@ fn fiberEntry(_: LPVOID) callconv(.winapi) void {
 }
 
 fn autoEnterSequence() void {
-    log.print("auto_enter: starting SP game entry");
-
     // Dismiss the splash/title screen → show main menu
     waitFrames(10);
-    log.print("auto_enter: dismissing splash screen");
     showMainMenu();
     waitFrames(10);
 
@@ -92,7 +89,6 @@ fn autoEnterSequence() void {
     OogCurrentCharSelectionMode.* = 0;
 
     // Open char select screen (destroys main menu forms, enumerates saves)
-    log.print("auto_enter: opening char select");
     closeAndLaunchCharSelect();
 
     // Wait for character list to populate
@@ -106,8 +102,6 @@ fn autoEnterSequence() void {
         return;
     }
 
-    log.hex("auto_enter: chars loaded: ", TotalCurrentChars.*);
-
     // Find target character
     const target = "EpicSorc";
     var cur = D2CharSelStrcFirst.* orelse {
@@ -118,12 +112,10 @@ fn autoEnterSequence() void {
         const name = std.mem.sliceTo(&cur.szCharname, 0);
         if (std.mem.eql(u8, name, target)) break;
         cur = cur.pNext orelse {
-            log.print("auto_enter: EpicSorc not found");
+            log.print("auto_enter: char not found");
             return;
         };
     }
-
-    log.print("auto_enter: found EpicSorc, entering game");
 
     // Call SelectedCharBnetSingleTcpIp directly — bypasses difficulty dialog
     // For SP it sets nScreenToShow=1, gnSelectedCharGameState=1,
@@ -135,16 +127,13 @@ fn autoEnterSequence() void {
         @as([*:0]const u8, ""),
     });
 
-    log.print("auto_enter: game entry triggered");
 }
 
 // ============================================================================
 // Feature hooks
 // ============================================================================
 
-fn init() void {
-    log.print("auto_enter: initialized");
-}
+fn init() void {}
 
 fn oogLoop() void {
     if (fiber == null and !done) {

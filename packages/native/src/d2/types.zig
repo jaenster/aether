@@ -180,6 +180,22 @@ pub const StaticPath = extern struct {
 // Legacy alias — DynamicPath is what most code expects for pPath
 pub const Path = DynamicPath;
 
+// D2UnderMouseStrc — passed to PLAYER_InteractWithObject/Unit (0x20 bytes)
+pub const D2UnderMouseStrc = extern struct {
+    flags: DWORD, // 0x00
+    pPlayer: ?*UnitAny, // 0x04
+    pTarget: ?*UnitAny, // 0x08
+    nX: DWORD, // 0x0C
+    nY: DWORD, // 0x10
+    nMoveActionType: i32, // 0x14 — 1=left skill walk
+    nAttackActionType: i32, // 0x18 — 2=left skill interact
+    pSkill: ?*anyopaque, // 0x1C
+
+    comptime {
+        std.debug.assert(@sizeOf(D2UnderMouseStrc) == 0x20);
+    }
+};
+
 pub const StatList = extern struct {
     _00: DWORD, // 0x00
     pUnit: ?*UnitAny, // 0x04

@@ -171,8 +171,6 @@ fn installRelocateHook() void {
 
 fn init() void {
     async_.init();
-    // installRelocateHook(); // TODO: fix crash — calling convention mismatch
-    log.print("auto_move: initialized");
 }
 
 // ============================================================================
@@ -442,8 +440,6 @@ fn ensureExitsScanned() void {
     act_map.init(player_act, lvl);
     cached_exit_count = act_map.getExits(&cached_exits);
     scanned_level = lvl.dwLevelNo;
-    log.hex("auto_move: found exits: ", cached_exit_count);
-
     // Also scan POIs for this level
     poi_scanned_level = lvl.dwLevelNo;
     _ = poi.scanLevel();

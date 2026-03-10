@@ -194,7 +194,7 @@ pub const WsClient = struct {
                     self.state = .connected;
                     self.handshake_done = true;
                     self.reconnect_delay = 60; // reset backoff
-                    log.print("ws: connected");
+                    // connected
                     return null;
                 }
                 return null;

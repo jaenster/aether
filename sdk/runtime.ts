@@ -7,10 +7,11 @@ import {
   getExits as nativeGetExits,
   findPath as nativeFindPath,
   findPreset as nativeFindPreset,
+  interact as nativeInteract,
 } from "diablo:native"
-import { ServiceContainer, type BotToken } from "./service.ts"
-import { PlayerUnit, Monster, ItemUnit, ObjectUnit, Missile, Tile } from "./unit.ts"
-import { UnitCollection } from "./collection.ts"
+import { ServiceContainer, type BotToken } from "./service.js"
+import { PlayerUnit, Monster, ItemUnit, ObjectUnit, Missile, Tile } from "./unit.js"
+import { UnitCollection } from "./collection.js"
 
 export interface Game {
   readonly inGame: boolean
@@ -33,6 +34,9 @@ export interface Game {
   useSkill(skillId: number, x: number, y: number): void
   say(msg: string): void
   getUIFlag(flag: number): boolean
+
+  /** Interact with a unit (NPC, object, waypoint). Uses client-side interaction. */
+  interact(unit: { type: number, unitId: number }): void
 
   /** Get level exits from DRLG RoomTile data. Returns {area, x, y}[]. */
   getExits(): { area: number, x: number, y: number }[]
@@ -101,6 +105,7 @@ export const game: Game = {
   },
   say(msg: string) { nativeSay(msg) },
   getUIFlag(flag: number) { return nativeGetUIFlag(flag) },
+  interact(unit: { type: number, unitId: number }) { nativeInteract(unit.type, unit.unitId) },
 
   getExits() {
     const raw = nativeGetExits()

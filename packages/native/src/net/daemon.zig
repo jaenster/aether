@@ -46,7 +46,6 @@ pub const DaemonConnection = struct {
         };
 
         self.ws.init(host, port);
-        log.printStr("daemon: will connect to ", addr);
         return true;
     }
 
@@ -63,7 +62,6 @@ pub const DaemonConnection = struct {
             // Expect welcome response
             if (findInJson(msg.data, "\"welcome\"")) |_| {
                 self.welcomed = true;
-                log.print("daemon: welcome received");
             }
             return null;
         }
@@ -94,9 +92,7 @@ pub const DaemonConnection = struct {
             @memcpy(buf[pos .. pos + part.len], part);
             pos += part.len;
         }
-        if (self.ws.sendText(buf[0..pos])) {
-            log.print("daemon: hello sent");
-        } else {
+        if (!self.ws.sendText(buf[0..pos])) {
             log.print("daemon: failed to send hello");
         }
     }

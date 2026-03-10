@@ -230,7 +230,7 @@ fn initSettingsPath() void {
 fn init() void {
     initSettingsPath();
     loadSettings();
-    log.print("settings: initialized");
+    // settings loaded
 }
 
 fn loadSettings() void {

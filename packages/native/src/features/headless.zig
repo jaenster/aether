@@ -68,7 +68,7 @@ pub fn enableHeadlessMode() void {
 }
 
 fn init() void {
-    log.print("headless: applying safety patches");
+    // applying safety patches
 
     // DC6 null safety: CELCMP_FixupPointersAndPrepare (0x00601340)
     const handler_addr = @intFromPtr(&celcmpNullHandler);
@@ -90,7 +90,7 @@ fn init() void {
     _ = patch.writeBytes(0x0043BF60, &[_]u8{ 0x31, 0xC0, 0xC3 });
 
     hookExitProcess();
-    log.print("headless: safety patches applied");
+    // safety patches applied
 }
 
 extern "kernel32" fn GetModuleHandleA(name: ?[*:0]const u8) callconv(.winapi) ?win.HINSTANCE;

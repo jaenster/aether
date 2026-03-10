@@ -51,41 +51,32 @@ fn applyOverrides(table_ptr: usize, name_addr: usize, size_addr: usize, nLineLen
 
 // D2RunesTxt: server byte at +0x81 — set to 0 to enable ladder runewords offline
 fn patchRunes(base: usize, count: u32, stride: usize) void {
-    var modified: u32 = 0;
     for (0..count) |i| {
         const server: *u8 = @ptrFromInt(base + i * stride + 0x81);
         if (server.* != 0) {
             server.* = 0;
-            modified += 1;
         }
     }
-    log.hex("txt_override: runes server=0 patched=", modified);
 }
 
 // D2CubeMainTxt: ladder byte at +0x01 — set to 0 to enable ladder recipes
 fn patchCubemain(base: usize, count: u32, stride: usize) void {
-    var modified: u32 = 0;
     for (0..count) |i| {
         const ladder: *u8 = @ptrFromInt(base + i * stride + 0x01);
         if (ladder.* != 0) {
             ladder.* = 0;
-            modified += 1;
         }
     }
-    log.hex("txt_override: cubemain ladder=0 patched=", modified);
 }
 
 // D2UniqueItemsTxt: ladder flag = bit 3 at +0x2C — clear to enable ladder uniques
 fn patchUniqueItems(base: usize, count: u32, stride: usize) void {
-    var modified: u32 = 0;
     for (0..count) |i| {
         const flags: *u8 = @ptrFromInt(base + i * stride + 0x2C);
         if (flags.* & 0x08 != 0) {
             flags.* &= 0xF7;
-            modified += 1;
         }
     }
-    log.hex("txt_override: uniqueitems ladder cleared=", modified);
 }
 
 // D2ItemRatioTxt layout: { value, divisor, min } × 4 quality tiers, then hiQuality/normal
@@ -112,7 +103,6 @@ fn patchItemRatio(base: usize, count: u32, stride: usize) void {
         writeU32(row + 0x14, magic_min);
         writeU32(row + 0x20, magic_min);
     }
-    log.hex("txt_override: itemratio rebalanced rows=", count);
 }
 
 // D2TreasureClassExTxt layout (0x2E0 = 736 bytes per row):
@@ -139,7 +129,7 @@ fn patchTreasureClassEx(base: usize, count: u32) void {
             const prob2: *i32 = @ptrFromInt(row + TC_PROB_OFF + 2 * 4); // prob[2]
             prob2.* = @as(i32, 2) + @as(i32, @intCast((c * c * c * 798) >> 12));
         }
-        log.print("txt_override: treasureclassex rune probs boosted");
+        // rune probs boosted
     }
 
     // Countess rune TCs at indices 837-839: upgrade to better rune tiers
@@ -154,7 +144,7 @@ fn patchTreasureClassEx(base: usize, count: u32) void {
         const nodrop838: *i16 = @ptrFromInt(base + 838 * TC_STRIDE + TC_NODROP_OFF);
         nodrop837.* = nd;
         nodrop838.* = nd;
-        log.print("txt_override: treasureclassex countess upgraded");
+        // countess upgraded
     }
 }
 

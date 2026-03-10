@@ -1,5 +1,5 @@
 import { createBot } from "diablo:game"
-import { Movement } from "./services/movement.ts"
+import { Movement } from "./services/movement.js"
 
 // All waypoint preset classids
 const waypointIds = [119, 145, 156, 157, 237, 238, 288, 323, 324, 398, 402, 429, 494, 496, 511, 539]
@@ -19,13 +19,21 @@ export default createBot('farmer', function*(game, services) {
       if (preset) {
         const dist = Math.sqrt((preset.x - game.me.x) ** 2 + (preset.y - game.me.y) ** 2)
         game.log(`  waypoint cls=${wpId} at ${preset.x},${preset.y} dist=${Math.floor(dist)}`)
-        if (dist > 7) {
+        if (dist > 5) {
           game.log(`  walking to waypoint...`)
           yield* move.walkTo(preset.x, preset.y)
           game.log(`  arrived at ${game.me.x},${game.me.y}`)
-        } else {
-          game.log(`  at waypoint!`)
         }
+
+        // Find the actual waypoint object unit to interact with
+        const wp = game.objects.find(o => o.classid === wpId)
+        if (wp) {
+          game.log(`  interacting with waypoint unit id=${wp.unitId} classid=${wp.classid}`)
+          game.interact(wp)
+        } else {
+          game.log(`  waypoint object not found in units (not loaded yet?)`)
+        }
+
         found = true
         break
       }

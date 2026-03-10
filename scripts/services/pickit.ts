@@ -1,5 +1,5 @@
 import { createService, type Game } from "diablo:game"
-import { Config } from "../config.ts"
+import { Config } from "../config.js"
 
 export const Pickit = createService((game: Game, services) => {
   const cfg = services.get(Config)

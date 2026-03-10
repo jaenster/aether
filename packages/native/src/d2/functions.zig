@@ -449,6 +449,49 @@ pub fn castRunTo(x: u16, y: u16) void {
 }
 
 // ============================================================================
+// Unit Interaction (client-side)
+// ============================================================================
+
+const D2UnderMouseStrc = types.D2UnderMouseStrc;
+
+/// PLAYER_InteractWithObject — handles objects (waypoints, chests, shrines)
+/// __cdecl(unitId, pUnderMouse)
+/// Checks range, walks to object if needed, then interacts.
+const InteractWithObject: *const fn (i32, *D2UnderMouseStrc) callconv(.c) void = @ptrFromInt(0x461890);
+
+/// PLAYER_InteractWithUnit — handles NPCs, other players
+/// __cdecl(unitId, pUnderMouse)
+/// Checks distance < 3, walks if needed, defers interact.
+const InteractWithUnit: *const fn (i32, *D2UnderMouseStrc) callconv(.c) void = @ptrFromInt(0x4619e0);
+
+/// UNITS_FindClientSideUnit — finds a unit by GUID + type in client hash tables
+pub const FindClientSideUnit = fastcall(0x461FC0, fn (i32, i32) ?*UnitAny);
+
+/// Interact with a unit using the client-side interaction system.
+/// Builds a D2UnderMouseStrc and calls the appropriate handler.
+pub fn interactWithUnit(player: *UnitAny, target: *UnitAny) void {
+    const pos = target.getPos();
+    var under_mouse = D2UnderMouseStrc{
+        .flags = 0,
+        .pPlayer = player,
+        .pTarget = target,
+        .nX = @bitCast(pos.x),
+        .nY = @bitCast(pos.y),
+        .nMoveActionType = 1, // left skill walk
+        .nAttackActionType = 2, // left skill interact
+        .pSkill = null,
+    };
+
+    if (target.dwType == 2) {
+        // Objects: waypoints, chests, shrines, portals
+        InteractWithObject(@bitCast(target.dwUnitId), &under_mouse);
+    } else {
+        // NPCs, players, monsters
+        InteractWithUnit(@bitCast(target.dwUnitId), &under_mouse);
+    }
+}
+
+// ============================================================================
 // ClickMap / Movement
 // ============================================================================
 
@@ -524,6 +567,28 @@ pub const SpawnPortal = fastcall(0x0056D130, fn (?*anyopaque, ?*UnitAny, ?*anyop
 /// FindSpawnableLocation: scans outward from pPoint for a walkable tile.
 /// ECX=pRoom (Room1), EDX=pPoint (in/out POINT*), stack: nScanRadius, eCollisionFlags, ppRoomOut, dwTag, nMaxIter
 pub const FindSpawnableLocation = fastcall(0x00545340, fn (?*anyopaque, *[2]i32, u32, u32, *?*anyopaque, u32, i32) void);
+
+// ============================================================================
+// Skills (__fastcall / __stdcall)
+// ============================================================================
+
+/// GetSkill: returns D2SkillStrc* for a skill on a unit, or null.
+/// __unknown calling convention — appears to be fastcall: ECX=pUnit, EDX=eSkill
+pub const GetSkill = fastcall(0x00643810, fn (?*UnitAny, i32) ?*anyopaque);
+
+/// GetSkillLevel: returns skill level with or without +skills bonus.
+/// __stdcall(pUnit, pSkill, bApplyBonus) → int
+pub const GetSkillLevel = struct {
+    const Fn = *const fn (?*UnitAny, ?*anyopaque, BOOL) callconv(.winapi) i32;
+    const ptr: Fn = funcPtr(0x6442A0, Fn);
+    pub inline fn call(unit: ?*UnitAny, skill: ?*anyopaque, apply_bonus: bool) i32 {
+        return ptr(unit, skill, if (apply_bonus) 1 else 0);
+    }
+};
+
+/// GetSkillLevelById: returns effective skill level (with +skills) for a unit.
+/// __fastcall: ECX=pUnit, EDX=eSkill → int32_t
+pub const GetSkillLevelById = fastcall(0x006447B0, fn (?*UnitAny, i32) i32);
 
 // ============================================================================
 // Txt record accessors (__fastcall)

@@ -420,10 +420,20 @@ fn jsCastSkillAt(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_i
 }
 
 fn jsInteract(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
-    const unit_type = argInt32(argc, vp, 0);
-    const unit_id = argInt32(argc, vp, 1);
-    // Packet 0x13: Entity interaction (dwType, dwId)
-    d2.SendIntInt.call(.{ 0x13, unit_type, unit_id });
+    const unit_type: u32 = @bitCast(argInt32(argc, vp, 0));
+    const unit_id: u32 = @bitCast(argInt32(argc, vp, 1));
+    const player = (globals.playerUnit().* orelse {
+        retUndefined(argc, vp);
+        return 1;
+    });
+    // Find the target unit in the client hash tables
+    const target = units.findUnit(unit_type, unit_id) orelse {
+        log.print("interact: unit not found");
+        retUndefined(argc, vp);
+        return 1;
+    };
+    // Use the client-side interaction system (handles walk-to + interact)
+    d2.interactWithUnit(player, target);
     retUndefined(argc, vp);
     return 1;
 }
@@ -593,6 +603,28 @@ fn jsFindPreset(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_i
     return 1;
 }
 
+// ── Skill level ─────────────────────────────────────────────────────
+
+/// getSkillLevel(skillId: i32, mode: i32) -> i32
+/// mode 0 = base (hard points via stat 107), mode 1 = effective (with +skills)
+fn jsGetSkillLevel(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const skill_id = argInt32(argc, vp, 0);
+    const mode = argInt32(argc, vp, 1);
+
+    const player = globals.playerUnit().* orelse { retInt32(argc, vp, 0); return 1; };
+
+    if (mode == 0) {
+        // Base level = hard skill points (stat 107, layer = skillId)
+        const val = d2.GetUnitStat.call(player, 107, @bitCast(skill_id));
+        retInt32(argc, vp, @bitCast(val));
+    } else {
+        // Effective level via GetSkillLevelById (fastcall, includes +skills)
+        const val = d2.GetSkillLevelById.call(.{ player, skill_id });
+        retInt32(argc, vp, val);
+    }
+    return 1;
+}
+
 // ── Txt record field access ─────────────────────────────────────────
 
 /// txtReadField(table: i32, recordId: i32, offset: i32, size: i32) -> i32
@@ -724,6 +756,8 @@ const bindings = [_]Binding{
     .{ .name = "getExits", .func = &jsGetExits, .nargs = 0 },
     .{ .name = "findPath", .func = &jsFindPath, .nargs = 2 },
     .{ .name = "findPreset", .func = &jsFindPreset, .nargs = 2 },
+    // Skills
+    .{ .name = "getSkillLevel", .func = &jsGetSkillLevel, .nargs = 2 },
     // Txt record access
     .{ .name = "txtReadField", .func = &jsTxtReadField, .nargs = 4 },
     .{ .name = "txtReadFieldU", .func = &jsTxtReadFieldU, .nargs = 4 },
@@ -752,6 +786,5 @@ pub fn registerAll(eng: *Engine, ctx: *anyopaque) bool {
             log.printStr("sm: failed to register: ", std.mem.sliceTo(b.name, 0));
         }
     }
-    log.print("sm: native bindings registered");
     return ok == bindings.len;
 }

@@ -55,7 +55,7 @@ fn deinit() void {
 fn registerClassHook(wnd_class: *WNDCLASSA) callconv(.winapi) ATOM {
     old_wnd_proc = wnd_class.lpfnWndProc;
     wnd_class.lpfnWndProc = &windowProc;
-    log.print("input: WndProc hooked");
+    // WndProc hooked
     return RegisterClassA(wnd_class);
 }
 

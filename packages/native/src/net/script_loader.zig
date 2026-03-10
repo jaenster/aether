@@ -31,7 +31,6 @@ pub const ScriptLoader = struct {
         }
         @memcpy(self.entry_path[0..len], buf[0..len]);
         self.entry_path_len = len;
-        log.printStr("loader: entry = ", buf[0..len]);
         return true;
     }
 
@@ -43,7 +42,6 @@ pub const ScriptLoader = struct {
         self.request_id += 1;
         if (daemon.requestFile(self.entry_path[0..self.entry_path_len], self.request_id)) {
             self.state = .waiting_response;
-            log.print("loader: requested entry script");
         }
     }
 
