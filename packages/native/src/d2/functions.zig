@@ -524,3 +524,25 @@ pub const SpawnPortal = fastcall(0x0056D130, fn (?*anyopaque, ?*UnitAny, ?*anyop
 /// FindSpawnableLocation: scans outward from pPoint for a walkable tile.
 /// ECX=pRoom (Room1), EDX=pPoint (in/out POINT*), stack: nScanRadius, eCollisionFlags, ppRoomOut, dwTag, nMaxIter
 pub const FindSpawnableLocation = fastcall(0x00545340, fn (?*anyopaque, *[2]i32, u32, u32, *?*anyopaque, u32, i32) void);
+
+// ============================================================================
+// Txt record accessors (__fastcall)
+// ============================================================================
+
+/// TXT_MonStats_GetLine: returns pointer to D2MonStatsTxt record (0x1A8 bytes) or null.
+/// ECX=nMonStatsId
+pub const TxtMonStatsGetLine = fastcall(0x00451F80, fn (i32) ?[*]u8);
+
+/// TXT_Skills_GetLine: returns pointer to D2SkillsTxt record (0x23C bytes) or null.
+/// ECX=eSkill
+pub const TxtSkillsGetLine = fastcall(0x0045C4B0, fn (i32) ?[*]u8);
+
+/// TXT_Levels_GetRecord: returns pointer to D2LevelsTxt record or null.
+/// stdcall, same as GetLevelText but raw bytes.
+pub const TxtLevelsGetLine = struct {
+    const Fn = *const fn (DWORD) callconv(.winapi) ?[*]u8;
+    const ptr: Fn = funcPtr(0x61DB70, Fn);
+    pub inline fn call(level_no: DWORD) ?[*]u8 {
+        return ptr(level_no);
+    }
+};

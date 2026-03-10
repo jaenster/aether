@@ -25,7 +25,7 @@ export function bundle(entryPath: string, scriptRoot?: string): { entry: string;
   walk(absEntry, root, modules, visiting, specifierOverrides);
 
   const sorted = topologicalSort(modules);
-  const entrySpec = "./" + relativePath(root, absEntry);
+  const entrySpec = ("./" + relativePath(root, absEntry)).replace(/\.tsx?$/, ".js");
   return { entry: entrySpec, modules: sorted };
 }
 
@@ -65,9 +65,11 @@ function walk(
     walk(resolved.path, scriptRoot, modules, visiting, specifierOverrides);
   }
 
-  // Use override specifier if one was assigned, otherwise compute from path
-  const specifier = specifierOverrides.get(filePath)
+  // Use override specifier if one was assigned, otherwise compute from path.
+  // Rewrite .ts → .js so specifiers match ESM-style .js imports in source.
+  const rawSpec = specifierOverrides.get(filePath)
     ?? "./" + relativePath(scriptRoot, filePath);
+  const specifier = rawSpec.replace(/\.tsx?$/, ".js");
   modules.set(filePath, { specifier, path: filePath, source, deps });
   visiting.delete(filePath);
 }

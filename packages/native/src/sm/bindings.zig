@@ -732,13 +732,13 @@ const bindings = [_]Binding{
 /// Comptime-generated ES module source for "diablo:native".
 /// Exports all bindings from the global object so scripts can:
 ///   import { getArea, log } from "diablo:native"
-/// Uses Function('return this')() since SM60 lacks globalThis.
+/// globalThis is set up by polyfill.js before any modules load.
 pub const native_module_source: []const u8 = blk: {
     @setEvalBranchQuota(10000);
-    var src: []const u8 = "const __g = Function('return this')();\n";
+    var src: []const u8 = "";
     for (bindings) |b| {
         const name = std.mem.sliceTo(b.name, 0);
-        src = src ++ "export const " ++ name ++ " = __g." ++ name ++ ";\n";
+        src = src ++ "export const " ++ name ++ " = globalThis." ++ name ++ ";\n";
     }
     break :blk src;
 };

@@ -125,6 +125,14 @@ function tryExtensions(base: string): string | null {
   // Exact match first
   if (existsSync(base) && !isDirectory(base)) return base;
 
+  // ESM convention: .js import → .ts source file
+  if (base.endsWith(".js")) {
+    const tsPath = base.slice(0, -3) + ".ts";
+    if (existsSync(tsPath) && !isDirectory(tsPath)) return tsPath;
+    const tsxPath = base.slice(0, -3) + ".tsx";
+    if (existsSync(tsxPath) && !isDirectory(tsxPath)) return tsxPath;
+  }
+
   // Try adding extensions
   for (const ext of EXTENSIONS) {
     const p = base + ext;

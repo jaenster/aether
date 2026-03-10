@@ -13,6 +13,13 @@ var tested_bindings: bool = false;
 var daemon_enabled: bool = false;
 var loader_enabled: bool = false;
 
+const polyfill = @embedFile("../sm/polyfill.js");
+
+fn setupContext(eng: *Engine, ctx: *anyopaque) void {
+    _ = bindings.registerAll(eng, ctx);
+    _ = eng.eval(ctx, polyfill);
+}
+
 fn ensureInit() void {
     if (initialized) return;
     initialized = true;
@@ -34,7 +41,7 @@ fn ensureInit() void {
     log.print("scripting: context created");
     eng.oog_context = ctx;
 
-    _ = bindings.registerAll(eng, ctx);
+    setupContext(eng, ctx);
 
     if (eng.eval(ctx, "1+1")) |result| {
         log.printStr("scripting: eval result: ", result);
@@ -71,7 +78,7 @@ fn recreateContext() void {
         return;
     };
     eng.oog_context = ctx;
-    _ = bindings.registerAll(eng, ctx);
+    setupContext(eng, ctx);
     log.print("scripting: context recreated for hot-reload");
 }
 

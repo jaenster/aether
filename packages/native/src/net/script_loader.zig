@@ -99,8 +99,8 @@ pub const ScriptLoader = struct {
             const source = json.getString(module_json, "source") orelse continue;
             const specifier = json.getString(module_json, "specifier") orelse continue;
 
-            // Decode JSON-escaped source
-            var decode_buf: [65536]u8 = undefined;
+            // Decode JSON-escaped source (up to 256KB for large transpiled + sourcemap modules)
+            var decode_buf: [262144]u8 = undefined;
             const decoded = json.decodeString(source, &decode_buf) orelse {
                 log.printStr("loader: decode failed for ", specifier);
                 continue;
