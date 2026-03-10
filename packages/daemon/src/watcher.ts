@@ -21,6 +21,7 @@ export class Watcher {
         /(^|[\/\\])\./,          // dotfiles
         /node_modules/,
         /\.d\.ts$/,              // declaration files
+        /__tests_entry\.ts$/,    // generated test entry
       ],
       persistent: true,
       ignoreInitial: true,

@@ -14,5 +14,8 @@ packages/native/v8-include/
 packages/spidermonkey/build/
 packages/spidermonkey/build-mingw/
 
+# Generated test entry
+__tests_entry.ts
+
 # macOS
 .DS_Store
