@@ -3,6 +3,7 @@
 #include "sm_bridge.h"
 
 #include "jsapi.h"
+#include "jsfriendapi.h"
 #include "js/Initialization.h"
 #include "js/Conversions.h"
 #include "js/GCAPI.h"
@@ -198,6 +199,92 @@ int sm_eval(void* context, const char* source, int source_len,
     const char* cstr = bytes.ptr();
     int len = static_cast<int>(strlen(cstr));
     return write_to_buf(cstr, len, result_buf, result_buf_len);
+}
+
+// ── Native function registration ─────────────────────────────────────
+
+// Trampoline: SM calls this, we forward to the sm_native_fn stored in reserved slot 0.
+static bool native_trampoline(JSContext* cx, unsigned argc, JS::Value* vp) {
+    JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
+
+    JSObject* callee = &args.callee();
+    const JS::Value& fnval = js::GetFunctionNativeReserved(callee, 0);
+    auto fn = reinterpret_cast<sm_native_fn>(static_cast<uintptr_t>(fnval.toPrivateUint32()));
+
+    return fn(cx, argc, vp) != 0;
+}
+
+int sm_register_native_fn(void* context, const char* name, sm_native_fn fn, unsigned nargs) {
+    auto* ch = static_cast<ContextHandle*>(context);
+    if (!ch) return -1;
+
+    JSContext* cx = ch->cx;
+    JSAutoRequest ar(cx);
+    JSAutoCompartment ac(cx, ch->global);
+
+    JSFunction* jsfn = js::NewFunctionWithReserved(cx, native_trampoline, nargs, 0, name);
+    if (!jsfn) return -1;
+
+    JSObject* fnobj = JS_GetFunctionObject(jsfn);
+    js::SetFunctionNativeReserved(fnobj, 0,
+        JS::PrivateUint32Value(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(fn))));
+
+    JS::RootedObject global(cx, ch->global);
+    JS::RootedValue fnval(cx, JS::ObjectValue(*fnobj));
+    if (!JS_DefineProperty(cx, global, name, fnval, JSPROP_ENUMERATE | JSPROP_READONLY | JSPROP_PERMANENT))
+        return -1;
+
+    return 0;
+}
+
+// ── Argument/return helpers ──────────────────────────────────────────
+
+double sm_arg_double(void* vp, unsigned idx) {
+    JS::CallArgs args = JS::CallArgsFromVp(0, static_cast<JS::Value*>(vp));
+    if (idx < args.length() && args[idx].isDouble())
+        return args[idx].toDouble();
+    if (idx < args.length() && args[idx].isInt32())
+        return static_cast<double>(args[idx].toInt32());
+    return 0.0;
+}
+
+int sm_arg_int32(void* vp, unsigned idx) {
+    JS::CallArgs args = JS::CallArgsFromVp(0, static_cast<JS::Value*>(vp));
+    if (idx < args.length() && args[idx].isInt32())
+        return args[idx].toInt32();
+    if (idx < args.length() && args[idx].isDouble())
+        return static_cast<int>(args[idx].toDouble());
+    return 0;
+}
+
+void sm_ret_double(void* vp, double val) {
+    JS::CallArgs args = JS::CallArgsFromVp(0, static_cast<JS::Value*>(vp));
+    args.rval().setDouble(val);
+}
+
+void sm_ret_int32(void* vp, int val) {
+    JS::CallArgs args = JS::CallArgsFromVp(0, static_cast<JS::Value*>(vp));
+    args.rval().setInt32(val);
+}
+
+void sm_ret_string(void* context, void* vp, const char* str, int len) {
+    auto* cx = static_cast<JSContext*>(context);
+    JS::CallArgs args = JS::CallArgsFromVp(0, static_cast<JS::Value*>(vp));
+    JSString* s = JS_NewStringCopyN(cx, str, static_cast<size_t>(len));
+    if (s)
+        args.rval().setString(s);
+    else
+        args.rval().setUndefined();
+}
+
+void sm_ret_bool(void* vp, int val) {
+    JS::CallArgs args = JS::CallArgsFromVp(0, static_cast<JS::Value*>(vp));
+    args.rval().setBoolean(val != 0);
+}
+
+void sm_ret_undefined(void* vp) {
+    JS::CallArgs args = JS::CallArgsFromVp(0, static_cast<JS::Value*>(vp));
+    args.rval().setUndefined();
 }
 
 // ── GC pump ──────────────────────────────────────────────────────────

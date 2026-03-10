@@ -1,6 +1,8 @@
 const std = @import("std");
-const c = @cImport(@cInclude("sm_bridge.h"));
+pub const c = @cImport(@cInclude("sm_bridge.h"));
 const log = @import("../log.zig");
+
+pub const NativeFn = *const fn (?*anyopaque, c_uint, ?*anyopaque) callconv(.c) c_int;
 
 pub const Engine = struct {
     runtime: ?*anyopaque = null,
@@ -60,6 +62,11 @@ pub const Engine = struct {
             return null;
         }
         return result_buf[0..@intCast(len)];
+    }
+
+    pub fn registerNativeFn(self: *Engine, ctx: *anyopaque, name: [*:0]const u8, func: NativeFn, nargs: c_uint) bool {
+        _ = self;
+        return c.sm_register_native_fn(ctx, name, func, nargs) == 0;
     }
 
     pub fn pumpMicrotasks(self: *Engine) void {

@@ -1,9 +1,11 @@
 const feature = @import("../feature.zig");
 const log = @import("../log.zig");
 const Engine = @import("../sm/engine.zig").Engine;
+const bindings = @import("../sm/bindings.zig");
 
 var engine: ?Engine = null;
 var initialized: bool = false;
+var tested_bindings: bool = false;
 
 /// Deferred init — can't run during DllMain (loader lock blocks thread creation).
 /// Called on the first game/oog loop tick instead.
@@ -20,17 +22,18 @@ fn ensureInit() void {
     }
     log.print("scripting: SM engine initialized");
 
-    log.print("scripting: creating context...");
     var eng = &engine.?;
-    const ctx = eng.createContext();
-    if (ctx == null) {
+    const ctx = eng.createContext() orelse {
         log.print("scripting: failed to create OOG context");
         return;
-    }
+    };
     log.print("scripting: context created");
     eng.oog_context = ctx;
 
-    if (eng.eval(ctx.?, "1+1")) |result| {
+    // Register native game bindings
+    _ = bindings.registerAll(eng, ctx);
+
+    if (eng.eval(ctx, "1+1")) |result| {
         log.printStr("scripting: eval result: ", result);
     } else {
         log.print("scripting: eval failed");
@@ -47,8 +50,22 @@ fn deinit() void {
 
 fn gameLoop() void {
     ensureInit();
-    if (engine) |*eng| {
-        eng.pumpMicrotasks();
+    const eng = &(engine orelse return);
+    eng.pumpMicrotasks();
+
+    // One-shot test: verify native bindings work in-game
+    if (!tested_bindings and feature.in_game) {
+        tested_bindings = true;
+        const ctx = eng.oog_context orelse return;
+        if (eng.eval(ctx, "getArea()")) |result| {
+            log.printStr("scripting: getArea() = ", result);
+        }
+        if (eng.eval(ctx, "'x=' + getUnitX() + ' y=' + getUnitY()")) |result| {
+            log.printStr("scripting: pos = ", result);
+        }
+        if (eng.eval(ctx, "'hp=' + getUnitHP() + '/' + getUnitMaxHP()")) |result| {
+            log.printStr("scripting: ", result);
+        }
     }
 }
 
