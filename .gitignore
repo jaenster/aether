@@ -1,3 +1,18 @@
 .zig-cache/
 zig-out/
 .claude/
+node_modules/
+.turbo/
+dist/
+
+# V8 artifacts (too large for git)
+v8_monolith.zip
+packages/native/lib/
+packages/native/v8-include/
+
+# SpiderMonkey build output
+packages/spidermonkey/build/
+packages/spidermonkey/build-mingw/
+
+# macOS
+.DS_Store

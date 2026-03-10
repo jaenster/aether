@@ -1,0 +1,8 @@
+{
+  "name": "@blizzhackers/native",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "build": "zig build -Doptimize=ReleaseSmall"
+  }
+}
