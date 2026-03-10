@@ -51,7 +51,7 @@ fn gameLoop() void {
     }
 
     const player = d2.globals.playerUnit().* orelse return;
-    const path = player.pPath orelse return;
+    const path = player.dynamicPath() orelse return;
     const room1 = path.pRoom1 orelse return;
     const room2 = room1.pRoom2 orelse return;
     const level = room2.pLevel orelse return;

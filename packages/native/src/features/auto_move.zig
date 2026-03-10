@@ -396,7 +396,7 @@ fn mouseEvent(_: i32, _: i32, _: u8, _: bool) bool {
 
 fn goToPOI() void {
     const player = d2.globals.playerUnit().* orelse return;
-    const path = player.pPath orelse return;
+    const path = player.dynamicPath() orelse return;
     const room1 = path.pRoom1 orelse return;
     const room2 = room1.pRoom2 orelse return;
     const lvl = room2.pLevel orelse return;
@@ -430,7 +430,7 @@ fn goToPOI() void {
 
 fn ensureExitsScanned() void {
     const player = d2.globals.playerUnit().* orelse return;
-    const path = player.pPath orelse return;
+    const path = player.dynamicPath() orelse return;
     const room1 = path.pRoom1 orelse return;
     const room2 = room1.pRoom2 orelse return;
     const lvl = room2.pLevel orelse return;
@@ -495,7 +495,7 @@ fn goToExit(direction: ExitDirection) void {
 }
 
 fn startMoveTo(player: *d2.types.UnitAny, target_x: i32, target_y: i32) void {
-    const pp = player.pPath orelse return;
+    const pp = player.dynamicPath() orelse return;
 
     dest_x = target_x;
     dest_y = target_y;
@@ -571,7 +571,7 @@ fn restoreSkill() void {
 
 fn getPlayerPos() ?[2]u32 {
     const p = d2.globals.playerUnit().* orelse return null;
-    const pp = p.pPath orelse return null;
+    const pp = p.dynamicPath() orelse return null;
     return .{ pp.xPos, pp.yPos };
 }
 
@@ -693,7 +693,7 @@ fn teleportSequence() void {
 /// room or any directly adjacent room.
 fn isTeleportReachable(x: i32, y: i32) bool {
     const player = d2.globals.playerUnit().* orelse return false;
-    const path = player.pPath orelse return false;
+    const path = player.dynamicPath() orelse return false;
     const room1 = path.pRoom1 orelse return false;
     return d2.functions.FindBetterNearbyRoom.call(.{ room1, x, y }) != null;
 }
@@ -702,7 +702,7 @@ fn isTeleportReachable(x: i32, y: i32) bool {
 /// Uses the game's collision check with PLAYER_COLLISION_DEFAULT (0x1C09).
 fn isTeleportValid(x: i32, y: i32) bool {
     const player = d2.globals.playerUnit().* orelse return false;
-    const path = player.pPath orelse return false;
+    const path = player.dynamicPath() orelse return false;
     const room1 = path.pRoom1 orelse return false;
     const target_room = d2.functions.FindBetterNearbyRoom.call(.{ room1, x, y }) orelse return false;
     // Unit size 1 (player), collision mask 0x1C09 (PLAYER_COLLISION_DEFAULT)
@@ -730,7 +730,7 @@ fn walkSequence() void {
         while (wait_ticks < 300) : (wait_ticks += 1) {
             async_.yield();
             const player = d2.globals.playerUnit().* orelse return;
-            const path = player.pPath orelse break;
+            const path = player.dynamicPath() orelse break;
             const dx = wp.x - @as(i32, @intCast(path.xPos));
             const dy = wp.y - @as(i32, @intCast(path.yPos));
             if (dx * dx + dy * dy < 10 * 10) break;
@@ -758,7 +758,7 @@ fn refreshHUD() void {
 
 fn updateHUD() void {
     const player = d2.globals.playerUnit().* orelse return;
-    const path = player.pPath orelse return;
+    const path = player.dynamicPath() orelse return;
     const room1 = path.pRoom1 orelse return;
     const room2 = room1.pRoom2 orelse return;
     const lvl = room2.pLevel orelse return;

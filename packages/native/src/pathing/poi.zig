@@ -40,7 +40,7 @@ pub fn getPOIs(level_no: u32) []const POI {
 
 pub fn scanLevel() u32 {
     const player = d2.globals.playerUnit().* orelse return 0;
-    const path = player.pPath orelse return 0;
+    const path = player.dynamicPath() orelse return 0;
     const room1 = path.pRoom1 orelse return 0;
     const room2 = room1.pRoom2 orelse return 0;
     const level = room2.pLevel orelse return 0;

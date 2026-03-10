@@ -1,42 +1,38 @@
 import { createBot } from "diablo:game"
-import { Attack } from "./services/attack.ts"
-import { Pickit } from "./services/pickit.ts"
 import { Movement } from "./services/movement.ts"
-import { townAreas } from "./config.ts"
+
+// All waypoint preset classids
+const waypointIds = [119, 145, 156, 157, 237, 238, 288, 323, 324, 398, 402, 429, 494, 496, 511, 539]
 
 export default createBot('farmer', function*(game, services) {
-  const attack = services.get(Attack)
-  const pickit = services.get(Pickit)
   const move = services.get(Movement)
 
   while (true) {
-    if (!game.inGame) {
-      game.log('waiting for game...')
-      yield* game.delay(1000)
-      continue
+    if (!game.inGame) { yield; continue }
+
+    game.log(`[${game.me.charname}] area=${game.area} pos=${game.me.x},${game.me.y}`)
+
+    // Find waypoint via preset
+    let found = false
+    for (const wpId of waypointIds) {
+      const preset = game.findPreset(2, wpId)
+      if (preset) {
+        const dist = Math.sqrt((preset.x - game.me.x) ** 2 + (preset.y - game.me.y) ** 2)
+        game.log(`  waypoint cls=${wpId} at ${preset.x},${preset.y} dist=${Math.floor(dist)}`)
+        if (dist > 7) {
+          game.log(`  walking to waypoint...`)
+          yield* move.walkTo(preset.x, preset.y)
+          game.log(`  arrived at ${game.me.x},${game.me.y}`)
+        } else {
+          game.log(`  at waypoint!`)
+        }
+        found = true
+        break
+      }
     }
 
-    const inTown = townAreas.has(game.area)
-    const exits = game.getExits()
-    game.log(`[${game.me.charname}] area=${game.area}${inTown ? " (town)" : ""} pos=${game.me.x},${game.me.y} exits=${exits.length}`)
+    if (!found) game.log(`  no waypoint preset found`)
 
-    if (inTown) {
-      const fieldExit = exits.find(e => !townAreas.has(e.area))
-      if (fieldExit) {
-        game.log(`  Heading to area ${fieldExit.area} at ${fieldExit.x},${fieldExit.y}`)
-        yield* move.takeExit(fieldExit.area)
-      } else {
-        game.log(`  No field exits, available: ${exits.map(e => e.area).join(", ")}`)
-      }
-    } else {
-      const nearby = game.monsters.filter(m => m.distance < 25 && m.hp > 0)
-      if (nearby.length > 0) {
-        game.log(`  Engaging ${nearby.length} monsters`)
-        yield* attack.clearNearby()
-      }
-      yield* pickit.lootGround()
-    }
-
-    yield* game.delay(2000)
+    yield* game.delay(3000)
   }
 })

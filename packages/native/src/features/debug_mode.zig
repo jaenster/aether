@@ -111,7 +111,7 @@ fn gamePostDraw() void {
     if (!settings.debug_mode) return;
 
     const player = d2.globals.playerUnit().* orelse return;
-    const path = player.pPath orelse return;
+    const path = player.dynamicPath() orelse return;
     const room1 = path.pRoom1 orelse return;
 
     drawCollRoom(room1);

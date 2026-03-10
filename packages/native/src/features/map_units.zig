@@ -15,7 +15,7 @@ const item_rarity_color = [_]u32{ 255, 29, 30, 32, 151, 132, 111, 155, 111 };
 fn gameAutomapPostDraw() void {
     // Don't draw if player isn't valid yet
     const player = d2.globals.playerUnit().* orelse return;
-    _ = player.pPath orelse return;
+    _ = player.dynamicPath() orelse return;
 
     if (settings.show_monsters) drawMonsters();
     if (settings.show_items) drawItems();
@@ -24,7 +24,7 @@ fn gameAutomapPostDraw() void {
 
 fn drawMonsters() void {
     const tables = d2.globals.serverSideUnits();
-    for (tables.monsters.table) |first| {
+    for (tables.byType[1].table) |first| {
         var unit_opt: ?*UnitAny = first;
         while (unit_opt) |unit| {
             defer unit_opt = unit.pListNext;
@@ -51,7 +51,7 @@ fn drawMonsters() void {
 
 fn drawItems() void {
     const tables = d2.globals.serverSideUnits();
-    for (tables.items.table) |first| {
+    for (tables.byType[4].table) |first| {
         var unit_opt: ?*UnitAny = first;
         while (unit_opt) |unit| {
             defer unit_opt = unit.pListNext;
@@ -89,7 +89,7 @@ fn drawItems() void {
 
 fn drawMissiles() void {
     const tables = d2.globals.clientSideUnits();
-    for (tables.missiles.table) |first| {
+    for (tables.byType[3].table) |first| {
         var unit_opt: ?*UnitAny = first;
         while (unit_opt) |unit| {
             defer unit_opt = unit.pListNext;

@@ -6,6 +6,7 @@ import {
   getUIFlag as nativeGetUIFlag, say as nativeSay,
   getExits as nativeGetExits,
   findPath as nativeFindPath,
+  findPreset as nativeFindPreset,
 } from "diablo:native"
 import { ServiceContainer, type BotToken } from "./service.ts"
 import { PlayerUnit, Monster, ItemUnit, ObjectUnit, Missile, Tile } from "./unit.ts"
@@ -38,6 +39,9 @@ export interface Game {
 
   /** A* pathfind from current position to (x,y). Returns path nodes. */
   findPath(x: number, y: number): { x: number, y: number }[]
+
+  /** Find a preset unit in the current level by type and classid. */
+  findPreset(type: number, classid: number): { x: number, y: number } | undefined
 
   delay(ms: number): Generator<void>
   log(...args: any[]): void
@@ -114,9 +118,16 @@ export const game: Game = {
     return arr.map(function(p: number[]) { return { x: p[0], y: p[1] } })
   },
 
+  findPreset(type: number, classid: number) {
+    const raw = nativeFindPreset(type, classid)
+    if (!raw) return undefined
+    const parts = raw.split(':')
+    return { x: parseInt(parts[0], 10), y: parseInt(parts[1], 10) }
+  },
+
   *delay(ms: number) {
-    const start = getTickCount()
-    while (getTickCount() - start < ms) yield
+    const ticks = Math.ceil(ms / 40)
+    for (let i = 0; i < ticks; i++) yield
   },
 
   log(...args: any[]) {

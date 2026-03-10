@@ -83,7 +83,7 @@ fn onServerGameLoop() void {
     const pClient = readPtr(captured_pGame + 0x88) orelse return;
     const player: *d2.types.UnitAny = @ptrFromInt(readPtr(pClient + 0x174) orelse return);
 
-    const path = player.pPath orelse return;
+    const path = player.dynamicPath() orelse return;
     const room1 = path.pRoom1 orelse return;
     const room2 = room1.pRoom2 orelse return;
     const level = room2.pLevel orelse return;

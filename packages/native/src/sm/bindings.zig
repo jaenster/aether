@@ -36,7 +36,7 @@ fn retString(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque, s: []const u8) void
 
 fn jsGetArea(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const player = globals.playerUnit().* orelse { retInt32(argc, vp, -1); return 1; };
-    const path = player.pPath orelse { retInt32(argc, vp, -1); return 1; };
+    const path = player.dynamicPath() orelse { retInt32(argc, vp, -1); return 1; };
     const room1 = path.pRoom1 orelse { retInt32(argc, vp, -1); return 1; };
     const room2 = room1.pRoom2 orelse { retInt32(argc, vp, -1); return 1; };
     const level = room2.pLevel orelse { retInt32(argc, vp, -1); return 1; };
@@ -52,14 +52,14 @@ fn jsGetAct(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
 
 fn jsGetUnitX(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const player = globals.playerUnit().* orelse { retInt32(argc, vp, 0); return 1; };
-    const path = player.pPath orelse { retInt32(argc, vp, 0); return 1; };
+    const path = player.dynamicPath() orelse { retInt32(argc, vp, 0); return 1; };
     retInt32(argc, vp, @as(i32, path.xPos));
     return 1;
 }
 
 fn jsGetUnitY(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const player = globals.playerUnit().* orelse { retInt32(argc, vp, 0); return 1; };
-    const path = player.pPath orelse { retInt32(argc, vp, 0); return 1; };
+    const path = player.dynamicPath() orelse { retInt32(argc, vp, 0); return 1; };
     retInt32(argc, vp, @as(i32, path.yPos));
     return 1;
 }
@@ -167,8 +167,7 @@ fn jsUnitGetX(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int 
     const unit_type: u32 = @bitCast(argInt32(argc, vp, 0));
     const unit_id: u32 = @bitCast(argInt32(argc, vp, 1));
     const unit = units.findUnit(unit_type, unit_id) orelse { retInt32(argc, vp, 0); return 1; };
-    const path = unit.pPath orelse { retInt32(argc, vp, 0); return 1; };
-    retInt32(argc, vp, @as(i32, path.xPos));
+    retInt32(argc, vp, unit.getPos().x);
     return 1;
 }
 
@@ -176,8 +175,7 @@ fn jsUnitGetY(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int 
     const unit_type: u32 = @bitCast(argInt32(argc, vp, 0));
     const unit_id: u32 = @bitCast(argInt32(argc, vp, 1));
     const unit = units.findUnit(unit_type, unit_id) orelse { retInt32(argc, vp, 0); return 1; };
-    const path = unit.pPath orelse { retInt32(argc, vp, 0); return 1; };
-    retInt32(argc, vp, @as(i32, path.yPos));
+    retInt32(argc, vp, unit.getPos().y);
     return 1;
 }
 
@@ -222,8 +220,7 @@ fn jsUnitGetArea(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_i
     const unit_type: u32 = @bitCast(argInt32(argc, vp, 0));
     const unit_id: u32 = @bitCast(argInt32(argc, vp, 1));
     const unit = units.findUnit(unit_type, unit_id) orelse { retInt32(argc, vp, -1); return 1; };
-    const path = unit.pPath orelse { retInt32(argc, vp, -1); return 1; };
-    const room1 = path.pRoom1 orelse { retInt32(argc, vp, -1); return 1; };
+    const room1 = unit.getRoom1() orelse { retInt32(argc, vp, -1); return 1; };
     const room2 = room1.pRoom2 orelse { retInt32(argc, vp, -1); return 1; };
     const level = room2.pLevel orelse { retInt32(argc, vp, -1); return 1; };
     retInt32(argc, vp, @bitCast(level.dwLevelNo));
@@ -356,8 +353,7 @@ fn jsTileGetDestArea(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c)
     const unit = units.findUnit(5, unit_id) orelse { retInt32(argc, vp, -1); return 1; };
     // For room tiles, pPath leads to the warp destination info
     // The RoomTile linked via the room2 has the dest area
-    const path = unit.pPath orelse { retInt32(argc, vp, -1); return 1; };
-    const room1 = path.pRoom1 orelse { retInt32(argc, vp, -1); return 1; };
+    const room1 = unit.getRoom1() orelse { retInt32(argc, vp, -1); return 1; };
     const room2 = room1.pRoom2 orelse { retInt32(argc, vp, -1); return 1; };
     // Walk room tiles to find the one matching this unit's classid
     var tile: ?*types.RoomTile = room2.pRoomTiles;
@@ -470,7 +466,7 @@ fn jsSay(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
 /// Ensure act_map is initialized for the current level. Called before pathfinding.
 fn ensureActMap() void {
     const player = globals.playerUnit().* orelse return;
-    const path = player.pPath orelse return;
+    const path = player.dynamicPath() orelse return;
     const room1 = path.pRoom1 orelse return;
     const room2 = room1.pRoom2 orelse return;
     const lvl = room2.pLevel orelse return;
@@ -488,7 +484,7 @@ fn ensureActMap() void {
 /// A* pathfind from current position to (x, y). Returns JSON: [[x,y],[x,y],...]
 fn jsFindPath(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const player = globals.playerUnit().* orelse { retString(cx, argc, vp, "[]"); return 1; };
-    const ppath = player.pPath orelse { retString(cx, argc, vp, "[]"); return 1; };
+    const ppath = player.dynamicPath() orelse { retString(cx, argc, vp, "[]"); return 1; };
     const sx: i32 = @intCast(ppath.xPos);
     const sy: i32 = @intCast(ppath.yPos);
     const ex = argInt32(argc, vp, 0);
@@ -523,7 +519,7 @@ fn jsFindPath(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int
 /// Returns comma-separated "area:x:y" entries.
 fn jsGetExits(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const player = globals.playerUnit().* orelse { retString(cx, argc, vp, ""); return 1; };
-    const path = player.pPath orelse { retString(cx, argc, vp, ""); return 1; };
+    const path = player.dynamicPath() orelse { retString(cx, argc, vp, ""); return 1; };
     const room1 = path.pRoom1 orelse { retString(cx, argc, vp, ""); return 1; };
     const my_room2 = room1.pRoom2 orelse { retString(cx, argc, vp, ""); return 1; };
     const level = my_room2.pLevel orelse { retString(cx, argc, vp, ""); return 1; };
@@ -560,6 +556,107 @@ fn jsGetExits(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int
     }
 
     retString(cx, argc, vp, buf[0..pos]);
+    return 1;
+}
+
+// ── Preset search ───────────────────────────────────────────────────
+
+/// findPreset(unitType, classid) -> "x:y" or ""
+/// Walks Room2 preset units in the current level to find a matching preset.
+fn jsFindPreset(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const preset_type: u32 = @bitCast(argInt32(argc, vp, 0));
+    const classid: u32 = @bitCast(argInt32(argc, vp, 1));
+
+    const player = globals.playerUnit().* orelse { retString(cx, argc, vp, ""); return 1; };
+    const path = player.dynamicPath() orelse { retString(cx, argc, vp, ""); return 1; };
+    const room1 = path.pRoom1 orelse { retString(cx, argc, vp, ""); return 1; };
+    const room2 = room1.pRoom2 orelse { retString(cx, argc, vp, ""); return 1; };
+    const level = room2.pLevel orelse { retString(cx, argc, vp, ""); return 1; };
+
+    // Walk all Room2s in this level
+    var r2 = level.pRoom2First;
+    while (r2) |room| : (r2 = room.pRoom2Next) {
+        var preset = room.pPreset;
+        while (preset) |unit| : (preset = unit.pPresetNext) {
+            if (unit.dwType == preset_type and unit.dwTxtFileNo == classid) {
+                const wx = unit.dwPosX + room.dwPosX * 5;
+                const wy = unit.dwPosY + room.dwPosY * 5;
+                var buf: [32]u8 = undefined;
+                const result = std.fmt.bufPrint(&buf, "{d}:{d}", .{ wx, wy }) catch { retString(cx, argc, vp, ""); return 1; };
+                retString(cx, argc, vp, result);
+                return 1;
+            }
+        }
+    }
+
+    retString(cx, argc, vp, "");
+    return 1;
+}
+
+// ── Txt record field access ─────────────────────────────────────────
+
+/// txtReadField(table: i32, recordId: i32, offset: i32, size: i32) -> i32
+/// table: 0=monstats, 1=skills, 2=levels
+/// Reads `size` bytes (1/2/4) at `offset` from the txt record, sign-extended.
+fn jsTxtReadField(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const table = argInt32(argc, vp, 0);
+    const record_id = argInt32(argc, vp, 1);
+    const offset: u32 = @bitCast(argInt32(argc, vp, 2));
+    const size = argInt32(argc, vp, 3);
+
+    const record_ptr: ?[*]u8 = switch (table) {
+        0 => d2.TxtMonStatsGetLine.call(.{record_id}),
+        1 => d2.TxtSkillsGetLine.call(.{record_id}),
+        2 => d2.TxtLevelsGetLine.call(@bitCast(record_id)),
+        else => null,
+    };
+
+    if (record_ptr == null) {
+        retInt32(argc, vp, 0);
+        return 1;
+    }
+
+    const ptr = record_ptr.? + offset;
+    const val: i32 = switch (size) {
+        1 => @as(i32, @as(i8, @bitCast(ptr[0]))),
+        2 => @as(i32, @as(i16, @bitCast(ptr[0..2].*))),
+        4 => @as(i32, @bitCast(ptr[0..4].*)),
+        else => 0,
+    };
+
+    retInt32(argc, vp, val);
+    return 1;
+}
+
+/// txtReadFieldU(table: i32, recordId: i32, offset: i32, size: i32) -> i32
+/// Same but zero-extends (unsigned).
+fn jsTxtReadFieldU(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const table = argInt32(argc, vp, 0);
+    const record_id = argInt32(argc, vp, 1);
+    const offset: u32 = @bitCast(argInt32(argc, vp, 2));
+    const size = argInt32(argc, vp, 3);
+
+    const record_ptr: ?[*]u8 = switch (table) {
+        0 => d2.TxtMonStatsGetLine.call(.{record_id}),
+        1 => d2.TxtSkillsGetLine.call(.{record_id}),
+        2 => d2.TxtLevelsGetLine.call(@bitCast(record_id)),
+        else => null,
+    };
+
+    if (record_ptr == null) {
+        retInt32(argc, vp, 0);
+        return 1;
+    }
+
+    const ptr = record_ptr.? + offset;
+    const val: i32 = switch (size) {
+        1 => @as(i32, @as(u8, ptr[0])),
+        2 => @as(i32, @as(u16, @bitCast(ptr[0..2].*))),
+        4 => @as(i32, @bitCast(ptr[0..4].*)),
+        else => 0,
+    };
+
+    retInt32(argc, vp, val);
     return 1;
 }
 
@@ -626,6 +723,10 @@ const bindings = [_]Binding{
     // Map & pathfinding
     .{ .name = "getExits", .func = &jsGetExits, .nargs = 0 },
     .{ .name = "findPath", .func = &jsFindPath, .nargs = 2 },
+    .{ .name = "findPreset", .func = &jsFindPreset, .nargs = 2 },
+    // Txt record access
+    .{ .name = "txtReadField", .func = &jsTxtReadField, .nargs = 4 },
+    .{ .name = "txtReadFieldU", .func = &jsTxtReadFieldU, .nargs = 4 },
 };
 
 /// Comptime-generated ES module source for "diablo:native".

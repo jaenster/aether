@@ -2,7 +2,6 @@ const std = @import("std");
 const types = @import("../d2/types.zig");
 const globals = @import("../d2/globals.zig");
 const UnitAny = types.UnitAny;
-const UnitHashTable = types.UnitHashTable;
 
 pub const SnapshotEntry = struct {
     unit_type: u32,
@@ -12,22 +11,22 @@ pub const SnapshotEntry = struct {
 var snapshot_buf: [512]SnapshotEntry = undefined;
 var snapshot_len: u32 = 0;
 
-/// Walk the client-side unit hash table for the given type, fill snapshot buffer.
+/// Get the appropriate hash table for a unit type.
+/// Missiles (3) use client-side, everything else uses server-side.
+fn getTable(unit_type: u32) ?*types.UnitHashTable {
+    if (unit_type >= types.UNIT_TYPE_COUNT) return null;
+    if (unit_type == 3) {
+        return globals.clientSideUnits().get(unit_type);
+    }
+    return globals.serverSideUnits().get(unit_type);
+}
+
+/// Walk the unit hash table for the given type, fill snapshot buffer.
 /// Returns count of units found.
 pub fn snapshotUnits(unit_type: u32) u32 {
     snapshot_len = 0;
-    if (unit_type > 5) return 0;
 
-    const collection = globals.clientSideUnits();
-    const table: *UnitHashTable = switch (unit_type) {
-        0 => &collection.players,
-        1 => &collection.monsters,
-        2 => &collection.objects,
-        3 => &collection.missiles,
-        4 => &collection.items,
-        5 => &collection.roomtiles,
-        else => return 0,
-    };
+    const table = getTable(unit_type) orelse return 0;
 
     for (table.table) |entry| {
         var unit: ?*UnitAny = entry;
@@ -51,20 +50,9 @@ pub fn getSnapshotUnit(idx: u32) ?SnapshotEntry {
     return snapshot_buf[idx];
 }
 
-/// Find a unit by type+id in the client-side hash table.
+/// Find a unit by type+id in the hash table.
 pub fn findUnit(unit_type: u32, unit_id: u32) ?*UnitAny {
-    if (unit_type > 5) return null;
-
-    const collection = globals.clientSideUnits();
-    const table: *UnitHashTable = switch (unit_type) {
-        0 => &collection.players,
-        1 => &collection.monsters,
-        2 => &collection.objects,
-        3 => &collection.missiles,
-        4 => &collection.items,
-        5 => &collection.roomtiles,
-        else => return null,
-    };
+    const table = getTable(unit_type) orelse return null;
 
     const hash_idx = unit_id & 0x7F;
     var unit: ?*UnitAny = table.table[hash_idx];

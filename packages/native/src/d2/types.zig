@@ -55,7 +55,7 @@ pub const UnitAny = extern struct {
     dwLoSeed: DWORD, // 0x20
     dwHiSeed: DWORD, // 0x24
     dwInitSeed: DWORD, // 0x28
-    pPath: ?*Path, // 0x2C
+    pPath: ?*anyopaque, // 0x2C — DynamicPath or StaticPath depending on dwType
     pAnimSeq: ?*anyopaque, // 0x30
     dwSeqFrameCount: DWORD, // 0x34
     dwSeqFrame: DWORD, // 0x38
@@ -103,12 +103,44 @@ pub const UnitAny = extern struct {
     pMsgFirst: ?*anyopaque, // 0xEC
     pMsgLast: ?*anyopaque, // 0xF0
 
+    /// Objects (2) and items (4) use StaticPath, everything else uses DynamicPath
+    pub fn isStaticUnit(self: *const UnitAny) bool {
+        return self.dwType == 2 or self.dwType == 4;
+    }
+
+    pub fn dynamicPath(self: *const UnitAny) ?*DynamicPath {
+        return @ptrCast(@alignCast(self.pPath));
+    }
+
+    pub fn staticPath(self: *const UnitAny) ?*StaticPath {
+        return @ptrCast(@alignCast(self.pPath));
+    }
+
+    pub fn getPos(self: *const UnitAny) struct { x: i32, y: i32 } {
+        if (self.isStaticUnit()) {
+            const sp = self.staticPath() orelse return .{ .x = 0, .y = 0 };
+            return .{ .x = @bitCast(sp.xPos), .y = @bitCast(sp.yPos) };
+        }
+        const dp = self.dynamicPath() orelse return .{ .x = 0, .y = 0 };
+        return .{ .x = @as(i32, dp.xPos), .y = @as(i32, dp.yPos) };
+    }
+
+    pub fn getRoom1(self: *const UnitAny) ?*Room1 {
+        if (self.isStaticUnit()) {
+            const sp = self.staticPath() orelse return null;
+            return sp.pRoom1;
+        }
+        const dp = self.dynamicPath() orelse return null;
+        return dp.pRoom1;
+    }
+
     comptime {
         std.debug.assert(@sizeOf(UnitAny) == 0xF4);
     }
 };
 
-pub const Path = extern struct {
+// DynamicPath — used by players, monsters, missiles (moving units)
+pub const DynamicPath = extern struct {
     xOffset: WORD, // 0x00
     xPos: WORD, // 0x02
     yOffset: WORD, // 0x04
@@ -132,6 +164,21 @@ pub const Path = extern struct {
     dwTargetId: DWORD, // 0x60
     bDirection: BYTE, // 0x64
 };
+
+// StaticPath — used by objects, items on ground (stationary units)
+pub const StaticPath = extern struct {
+    pRoom1: ?*Room1, // 0x00
+    nScreenX: i32, // 0x04
+    nScreenY: i32, // 0x08
+    xPos: DWORD, // 0x0C — world tile X
+    yPos: DWORD, // 0x10 — world tile Y
+    _14: DWORD, // 0x14
+    _18: DWORD, // 0x18
+    nDirection: BYTE, // 0x1C
+};
+
+// Legacy alias — DynamicPath is what most code expects for pPath
+pub const Path = DynamicPath;
 
 pub const StatList = extern struct {
     _00: DWORD, // 0x00
@@ -404,19 +451,22 @@ pub const D2CharSelStrc = extern struct {
     pNext: ?*D2CharSelStrc, // 0x34C
 };
 
-// UnitHashTable: 128 pointers
+pub const UNIT_TYPE_COUNT = 6;
+pub const UNIT_HASH_SIZE = 128;
+
+// Unit hash table: 128 bucket heads, units chained via pListNext
 pub const UnitHashTable = extern struct {
-    table: [128]?*UnitAny,
+    table: [UNIT_HASH_SIZE]?*UnitAny,
 };
 
-// 6 hash tables: players, monsters, objects, missiles, items, roomtiles
+// 6 hash tables indexed by unit type: [0]=player [1]=monster [2]=object [3]=missile [4]=item [5]=tile
 pub const UnitHashTableCollection = extern struct {
-    players: UnitHashTable,
-    monsters: UnitHashTable,
-    objects: UnitHashTable,
-    missiles: UnitHashTable,
-    items: UnitHashTable,
-    roomtiles: UnitHashTable,
+    byType: [UNIT_TYPE_COUNT]UnitHashTable,
+
+    pub fn get(self: *UnitHashTableCollection, unit_type: u32) ?*UnitHashTable {
+        if (unit_type >= UNIT_TYPE_COUNT) return null;
+        return &self.byType[unit_type];
+    }
 };
 
 pub const D2PoolManagerStrc = opaque {};

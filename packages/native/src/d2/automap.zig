@@ -110,19 +110,19 @@ pub fn drawScreenDottedLine(x0: f64, y0: f64, x1: f64, y1: f64, color: u32) void
 
 /// Get world position for a unit — handles object/item static paths vs dynamic paths.
 pub fn unitPos(unit: *const types.UnitAny) struct { x: f64, y: f64 } {
-    if (unit.pPath) |path| {
-        // Objects (type 2) and roomtiles (type 5) use static position from Path
-        // Items (type 4) also use static position
-        if (unit.dwType == 2 or unit.dwType == 4 or unit.dwType == 5) {
+    if (unit.pPath != null) {
+        if (unit.isStaticUnit()) {
+            const pos = unit.getPos();
             return .{
-                .x = @floatFromInt(path.xPos),
-                .y = @floatFromInt(path.yPos),
+                .x = @floatFromInt(pos.x),
+                .y = @floatFromInt(pos.y),
             };
         }
         // Living units use position + sub-tile offset
+        const dp = unit.dynamicPath().?;
         return .{
-            .x = @as(f64, @floatFromInt(path.xPos)) + @as(f64, @floatFromInt(path.xOffset)) / 65536.0,
-            .y = @as(f64, @floatFromInt(path.yPos)) + @as(f64, @floatFromInt(path.yOffset)) / 65536.0,
+            .x = @as(f64, @floatFromInt(dp.xPos)) + @as(f64, @floatFromInt(dp.xOffset)) / 65536.0,
+            .y = @as(f64, @floatFromInt(dp.yPos)) + @as(f64, @floatFromInt(dp.yOffset)) / 65536.0,
         };
     }
     return .{ .x = 0, .y = 0 };
