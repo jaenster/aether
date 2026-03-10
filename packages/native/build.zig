@@ -36,59 +36,16 @@ pub fn build(b: *std.Build) void {
         .root_module = aether_mod,
     });
 
-    // --- SpiderMonkey (pre-built static lib from packages/spidermonkey) ---
-    // Build with: packages/spidermonkey/build-mozjs.sh
+    // --- SpiderMonkey (pre-built DLL from packages/spidermonkey) ---
+    // Build with: packages/spidermonkey/build-mozjs.sh && packages/spidermonkey/build-dll.sh
     const sm = std.Build.LazyPath{ .cwd_relative = "../spidermonkey" };
-    const sm_build = sm.path(b, "build");
-    const sm_include = sm.path(b, "build/include");
-    const sm_src = sm.path(b, "src");
 
-    // Link pre-built static libraries
-    aether.addObjectFile(sm_build.path(b, "src/js/libjs.a"));
-    aether.addObjectFile(sm_build.path(b, "src/mfbt/libmfbt.a"));
-    aether.addObjectFile(sm_build.path(b, "src/mozglue/misc/libmozglue.a"));
-    aether.addObjectFile(sm_build.path(b, "src/memory/mozalloc/libmozalloc.a"));
-    aether.addObjectFile(sm_build.path(b, "src/memory/build/libmozmemory.a"));
-    aether.addObjectFile(sm_build.path(b, "src/nsprpub/pr/libnspr.a"));
-    aether.addObjectFile(sm_build.path(b, "src/nsprpub/lib/libc/liblibc.a"));
-    aether.addObjectFile(sm_build.path(b, "src/modules/zlib/libzlib.a"));
-    aether.addObjectFile(sm_build.path(b, "src/modules/fdlibm/libfdlibm.a"));
+    // Link against mozjs.dll import library (built by build-dll.sh with MinGW g++)
+    aether.addObjectFile(sm.path(b, "build-mingw/dll/libmozjs.dll.a"));
 
-    // SM bridge — the only C++ we compile ourselves
-    const sm_generated = sm.path(b, "generated");
-    aether.addCSourceFiles(.{
-        .files = &.{"src/sm/sm_bridge.cpp"},
-        .flags = &.{
-            "-std=c++17",
-            "-w",
-            "-DWIN32",
-            "-D_WIN32",
-            "-DXP_WIN",
-            "-DSTATIC_JS_API",
-            "-DIMPL_MFBT",
-            "-DJS_CODEGEN_X86",
-            "-DJS_CPU_X86",
-            "-DJS_NUNBOX32",
-            "-DJSGC_INCREMENTAL",
-            "-DNOMINMAX",
-        },
-    });
-    aether.addIncludePath(sm_include);
-    aether.addIncludePath(sm_generated);
-    aether.addIncludePath(sm_src.path(b, "js/src"));
-    aether.addIncludePath(sm_src.path(b, "js/public"));
-    aether.addIncludePath(sm_src.path(b, "mfbt/src"));
-    aether.addIncludePath(sm_src.path(b, "nsprpub/pr/include"));
-    aether.addIncludePath(sm_src.path(b, "memory/mozalloc"));
+    // SM bridge header include path (for engine.zig's @cImport)
+    aether_mod.addCMacro("MOZJS_DLL_IMPORT", "1");
     aether.addIncludePath(b.path("src/sm"));
-
-    // Win32 libs needed by NSPR + SM
-    aether.linkSystemLibrary("ws2_32");
-    aether.linkSystemLibrary("winmm");
-    aether.linkSystemLibrary("advapi32");
-    aether.linkSystemLibrary("psapi");
-    aether.linkSystemLibrary("mswsock");
-    aether.linkLibCpp();
 
     b.installArtifact(aether);
 }

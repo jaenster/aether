@@ -18,6 +18,8 @@ cmake -S "$SCRIPT_DIR" -B "$BUILD_DIR" \
   -DMOZJS_SM_PROMISE=ON \
   -DMOZJS_THREADSAFE=OFF \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DCMAKE_C_FLAGS_INIT="-fno-zero-initialized-in-bss" \
+  -DCMAKE_CXX_FLAGS_INIT="-fno-zero-initialized-in-bss" \
   "$@"
 
 cmake --build "$BUILD_DIR" -j "$(nproc 2>/dev/null || sysctl -n hw.ncpu)"

@@ -23,6 +23,8 @@ rm -f "$GAME_DIR/aether_log.txt"
 
 # Copy DLLs
 cp "$SCRIPT_DIR/zig-out/bin/dbghelp.dll" "$GAME_DIR/"
+cp "$SCRIPT_DIR/../spidermonkey/build-mingw/dll/mozjs.dll" "$GAME_DIR/"
+cp /opt/homebrew/Cellar/mingw-w64/13.0.0_2/toolchain-i686/i686-w64-mingw32/bin/libwinpthread-1.dll "$GAME_DIR/" 2>/dev/null || true
 
 # Auto-detect headless when using minimal install (marker file)
 EXTRA_FLAGS=""

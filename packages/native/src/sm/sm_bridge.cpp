@@ -2,11 +2,6 @@
 // This version uses the unified JSContext API (no separate JSRuntime).
 #include "sm_bridge.h"
 
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-
 #include "jsapi.h"
 #include "js/Initialization.h"
 #include "js/Conversions.h"
@@ -102,7 +97,8 @@ void* sm_create_context(void* runtime) {
     JS_SetParallelParsingEnabled(cx, false);
     JS_SetOffthreadIonCompilationEnabled(cx, false);
 
-    // Disable all JIT tiers — JIT code generation may crash under Wine/Rosetta
+    // Disable baseline JIT during self-hosted code init (heavy compile overhead),
+    // then re-enable for user code. Ion stays enabled for hot user functions.
     JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_BASELINE_ENABLE, 0);
     JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_ION_ENABLE, 0);
 
@@ -110,6 +106,10 @@ void* sm_create_context(void* runtime) {
         JS_DestroyContext(cx);
         return nullptr;
     }
+
+    // Re-enable JIT for user code
+    JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_BASELINE_ENABLE, 1);
+    JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_ION_ENABLE, 1);
 
     auto* ch = new ContextHandle();
     ch->cx = cx;

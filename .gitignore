@@ -12,3 +12,7 @@ packages/native/v8-include/
 
 # SpiderMonkey build output
 packages/spidermonkey/build/
+packages/spidermonkey/build-mingw/
+
+# macOS
+.DS_Store
