@@ -59,6 +59,13 @@ export class Watcher {
 
     console.log(`Files changed: ${paths.join(", ")}`);
 
+    // Notify all game clients about changed files
+    this.server.broadcast(
+      { type: "file:invalidate", paths },
+      undefined,
+      "game",
+    );
+
     // Re-bundle and push to all subscribed game clients
     this.filesystem.reloadSubscribers();
   }

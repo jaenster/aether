@@ -17,8 +17,14 @@ export interface ResolveResult {
  * Throws if the module cannot be found.
  */
 export function resolveModule(specifier: string, fromPath: string): ResolveResult | null {
-  // diablo:native is resolved client-side (compiled into DLL)
+  // diablo:native and other unhandled scheme imports are resolved client-side
   if (specifier === "diablo:native") {
+    return null;
+  }
+
+  // Pass through any non-diablo: scheme specifiers (e.g. node:fs, diablo2:foo)
+  // — they're resolved at runtime, not bundled.
+  if (/^[a-z][a-z0-9]*:/.test(specifier) && !specifier.startsWith("diablo:")) {
     return null;
   }
 
