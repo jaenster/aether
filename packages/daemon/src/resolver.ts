@@ -2,8 +2,8 @@ import { resolve as resolvePath, relative as relativePath, dirname, join } from 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-// SDK root — aether/sdk/ relative to this package
-const SDK_ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "../../../sdk");
+// SDK root — aether/packages/sdk/ relative to this package
+const SDK_ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "../../sdk");
 
 export interface ResolveResult {
   path: string;
@@ -54,6 +54,33 @@ export function resolveModule(specifier: string, fromPath: string): ResolveResul
       throw new Error(`SDK test runner not found: ${runnerEntry}`);
     }
     return { path: runnerEntry, specifierOverride: "diablo:test-runner" };
+  }
+
+  // diablo:runtime → SDK runtime (game object)
+  if (specifier === "diablo:runtime") {
+    const runtimeEntry = join(SDK_ROOT, "runtime-exports.ts");
+    if (!existsSync(runtimeEntry)) {
+      throw new Error(`SDK runtime module not found: ${runtimeEntry}`);
+    }
+    return { path: runtimeEntry, specifierOverride: "diablo:runtime" };
+  }
+
+  // diablo:constants → SDK constants (areas, skills, stats, etc.)
+  if (specifier === "diablo:constants") {
+    const constantsEntry = join(SDK_ROOT, "constants-exports.ts");
+    if (!existsSync(constantsEntry)) {
+      throw new Error(`SDK constants module not found: ${constantsEntry}`);
+    }
+    return { path: constantsEntry, specifierOverride: "diablo:constants" };
+  }
+
+  // diablo:units → SDK unit classes
+  if (specifier === "diablo:units") {
+    const unitsEntry = join(SDK_ROOT, "units.ts");
+    if (!existsSync(unitsEntry)) {
+      throw new Error(`SDK units module not found: ${unitsEntry}`);
+    }
+    return { path: unitsEntry, specifierOverride: "diablo:units" };
   }
 
   const fromDir = dirname(fromPath);

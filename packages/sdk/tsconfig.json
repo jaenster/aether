@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "rootDir": ".",
+    "declaration": true,
+    "declarationMap": true,
+    "emitDeclarationOnly": false,
+    "noEmit": true
+  },
+  "include": [
+    "*.ts",
+    "diablo.d.ts"
+  ]
+}
+
