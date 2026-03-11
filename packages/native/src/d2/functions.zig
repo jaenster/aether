@@ -456,6 +456,35 @@ pub fn castRunTo(x: u16, y: u16) void {
 /// Sends packet 0x69, sets exit vars, transitions to menu.
 pub const ExitGame = fastcall(0x44DD60, fn (i32) void);
 
+/// D2CLIENT_TakeWaypoint — decomposed from INPUT_WaypointMouseUp.
+/// Replicates the essential steps that the game performs when the player
+/// clicks a waypoint destination, without needing to jump mid-function.
+///
+/// Steps: send packet 0x49, close waypoint UI, update globals, update UI flags.
+pub fn takeWaypoint(waypoint_id: u32, dest_area: u32) void {
+    // 1. Send travel packet: 0x49 (waypointTravel), waypointUnitId, destArea
+    SendIntInt.call(.{ 0x49, @as(i32, @bitCast(waypoint_id)), @as(i32, @bitCast(dest_area)) });
+
+    // 2. Set "waypoint traveling" flag
+    const wp_traveling: *volatile u8 = @ptrFromInt(0x7bf085);
+    wp_traveling.* = 1;
+
+    // 3. Close waypoint UI — sends close packet to server
+    const WaypointSendClose: *const fn () callconv(.c) void = @ptrFromInt(0x0049c6c0);
+    WaypointSendClose();
+
+    // 4. Clear waypoint menu state globals
+    const wp_menu_open: *volatile u8 = @ptrFromInt(0x7bf06c);
+    const wp_selected_idx: *align(1) volatile i32 = @ptrFromInt(0x7bf06d);
+    wp_menu_open.* = 0;
+    wp_selected_idx.* = -1;
+
+    // 5. Update UI flag: SetUIFlag(0x14=WAYPOINT, 1=CLOSE, 0)
+    //    __fastcall(ECX=eUI, EDX=setType, stack=unknown)
+    const SetUIFlag = fastcall(0x00455f20, fn (u32, u32, u32) void);
+    SetUIFlag.call(.{ 0x14, 1, 0 });
+}
+
 // ============================================================================
 // Unit Interaction (client-side)
 // ============================================================================

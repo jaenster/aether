@@ -709,9 +709,10 @@ fn jsExitClient(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_in
 }
 
 fn jsTakeWaypoint(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
-    const wp_id: i32 = argInt32(argc, vp, 0);
-    const dest_area: i32 = argInt32(argc, vp, 1);
-    d2.SendIntInt.call(.{ 0x49, wp_id, dest_area });
+    const wp_id: u32 = @bitCast(argInt32(argc, vp, 0));
+    const dest_area: u32 = @bitCast(argInt32(argc, vp, 1));
+    log.print("js: takeWaypoint");
+    d2.takeWaypoint(wp_id, dest_area);
     retUndefined(argc, vp);
     return 1;
 }

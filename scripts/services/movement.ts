@@ -115,15 +115,19 @@ export const Movement = createService((game: Game, services) => {
       yield* game.delay(500)
 
       // Send waypoint travel packet
-      game.log(`[move] waypoint → area ${destArea}`)
+      game.log(`[move] waypoint → area ${destArea} (wpUnit=${wpUnit.unitId})`)
       game.takeWaypoint(wpUnit.unitId, destArea)
 
       // Wait for area transition
       for (let i = 0; i < 50; i++) {
         yield* game.delay(100)
-        if (game.area === destArea) return true
+        const curArea = game.area
+        if (curArea === destArea) {
+          game.log(`[move] waypoint travel succeeded, now in area ${curArea}`)
+          return true
+        }
       }
-      game.log(`[move] waypoint travel timed out`)
+      game.log(`[move] waypoint travel timed out (still in area ${game.area})`)
       return false
     },
 
