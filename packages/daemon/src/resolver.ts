@@ -47,13 +47,9 @@ export function resolveModule(specifier: string, fromPath: string): ResolveResul
     return { path: constantsEntry, specifierOverride: "diablo:constants" };
   }
 
-  // diablo:test → SDK test framework
-  if (specifier === "diablo:test") {
-    const testEntry = join(SDK_ROOT, "test/index.d.ts");
-    if (!existsSync(testEntry)) {
-      throw new Error(`SDK test module not found: ${testEntry}`);
-    }
-    return { path: testEntry, specifierOverride: "diablo:test" };
+  // diablo:test and diablo:test-runner → runtime-provided modules (resolved client-side)
+  if (specifier === "diablo:test" || specifier === "diablo:test-runner") {
+    return null;
   }
 
   const fromDir = dirname(fromPath);
