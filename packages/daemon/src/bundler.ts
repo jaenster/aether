@@ -61,9 +61,10 @@ function walk(
     if (resolved.specifierOverride) {
       specifierOverrides.set(resolved.path, resolved.specifierOverride);
     }
-    // Store the specifier (not path) so deps match what SM sees at runtime
-    const depSpec = resolved.specifierOverride
-      ?? ("./" + relativePath(scriptRoot, resolved.path).replace(/\\/g, "/")).replace(/\.tsx?$/, ".js");
+    // Store the specifier (not path) so deps match what SM sees at runtime.
+    // Always normalize .ts/.tsx → .js so deps match module specifiers.
+    const depSpec = (resolved.specifierOverride
+      ?? "./" + relativePath(scriptRoot, resolved.path).replace(/\\/g, "/")).replace(/\.tsx?$/, ".js");
     deps.push(depSpec);
     walk(resolved.path, scriptRoot, modules, visiting, specifierOverrides);
   }
