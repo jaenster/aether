@@ -1,4 +1,4 @@
-import { resolve as resolvePath, relative as relativePath, dirname, join } from "node:path";
+import { resolve as resolvePath, relative as relativePath, dirname, join, basename } from "node:path";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -18,8 +18,10 @@ export interface ResolveResult {
  * Throws if the module cannot be found.
  */
 export function resolveModule(specifier: string, fromPath: string): ResolveResult | null {
-  // diablo:native and other unhandled scheme imports are resolved client-side
-  if (specifier === "diablo:native") {
+  // diablo:native is resolved client-side (provided by the Zig runtime).
+  // diablo:test-runner is also client-side (compiled by script_loader from
+  // the test entry's own "import diablo:test-runner" statement).
+  if (specifier === "diablo:native" || specifier === "diablo:test-runner") {
     return null;
   }
 
@@ -73,12 +75,14 @@ export function resolveModule(specifier: string, fromPath: string): ResolveResul
 
 /**
  * If a file is inside the SDK directory, return a specifier that matches
- * SM60's resolution from diablo:game (dirname="./").
+ * SM60's resolution.  All diablo:* module specifiers have dirname "./"
+ * (because path_dirname("diablo:game") returns "./" when there is no "/").
+ * Relative imports from within those modules therefore resolve to
+ * "./filename.js", so we must register sub-files with their basename only.
  */
 function getSdkSpecifierOverride(absPath: string): string | undefined {
   if (!absPath.startsWith(SDK_ROOT)) return undefined;
-  const rel = relativePath(SDK_ROOT, absPath).replace(/\\/g, "/");
-  return "./" + rel;
+  return "./" + basename(absPath).replace(/\\/g, "/");
 }
 
 function resolveRelative(specifier: string, fromDir: string): string {
