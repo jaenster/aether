@@ -1,24 +1,26 @@
 import {
   log, exitGame, inGame, getArea, getAct, getDifficulty, getTickCount,
-  getUnitX, getUnitY, getUnitHP, getUnitMaxHP, getUnitMP, getUnitMaxMP,
-  getUnitStat, meGetCharName, clickMap, move as nativeMove,
-  selectSkill, castSkillAt, getUIFlag as nativeGetUIFlag, say as nativeSay,
-  getExits as nativeGetExits, findPath as nativeFindPath,
-  findPreset as nativeFindPreset, interact as nativeInteract,
+  meGetUnitId, meGetCharName,
+  unitGetX, unitGetY, unitGetStat, unitGetState,
+  getExits as nativeGetExits,
 } from "diablo:native"
 import { __getTests } from "diablo:test"
 
 // Minimal Game object for test runner — avoids importing diablo:game barrel
 // which pulls in constants and exceeds the WS buffer.
-const me = {
-  get charname() { return meGetCharName() },
-  get x() { return getUnitX(0, 0) },
-  get y() { return getUnitY(0, 0) },
-  get hp() { return getUnitHP(0, 0) },
-  get hpmax() { return getUnitMaxHP(0, 0) },
-  get mp() { return getUnitMP(0, 0) },
-  get mpmax() { return getUnitMaxMP(0, 0) },
-  getStat(stat: number, layer: number) { return getUnitStat(stat, layer) },
+function makePlayer() {
+  const id = meGetUnitId()
+  return {
+    get charname() { return meGetCharName() },
+    get name() { return meGetCharName() },
+    get x() { return unitGetX(0, id) },
+    get y() { return unitGetY(0, id) },
+    get hp() { return unitGetStat(0, id, 6, 0) >> 8 },
+    get hpmax() { return unitGetStat(0, id, 7, 0) >> 8 },
+    get mp() { return unitGetStat(0, id, 8, 0) >> 8 },
+    get mpmax() { return unitGetStat(0, id, 9, 0) >> 8 },
+    getStat(stat: number, layer: number = 0) { return unitGetStat(0, id, stat, layer) },
+  }
 }
 
 const game = {
@@ -27,7 +29,7 @@ const game = {
   get act() { return getAct() },
   get difficulty() { return getDifficulty() },
   get tickCount() { return getTickCount() },
-  get me() { return me },
+  get player() { return makePlayer() },
   log(...args: any[]) { log(args.map((a: any) => String(a)).join(' ')) },
   getExits() {
     const raw = nativeGetExits()

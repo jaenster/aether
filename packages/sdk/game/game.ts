@@ -1,7 +1,6 @@
 import {
   getArea, getAct, getDifficulty, inGame, getTickCount, log as nativeLog,
-  getUnitX, getUnitY, getUnitHP, getUnitMaxHP, getUnitMP, getUnitMaxMP, getUnitStat,
-  meGetCharName,
+  meGetUnitId,
   clickMap, move as nativeMove, selectSkill, castSkillAt,
   getUIFlag as nativeGetUIFlag, say as nativeSay,
   getExits as nativeGetExits,
@@ -12,7 +11,6 @@ import {
 } from "diablo:native"
 import { UnitCollection } from "./unit.collection.js";
 import { ItemUnit, Missile, Monster, ObjectUnit, PlayerUnit, Tile } from "./unit.js";
-import { meProxy } from './me.js'
 import type { ScriptToken } from './service.js'
 
 
@@ -42,7 +40,16 @@ export class Game {
   get act() { return getAct() }
   get difficulty() { return getDifficulty() }
   get tickCount() { return getTickCount() }
-  get me() { return meProxy }
+  private _player: PlayerUnit | null = null
+
+  get player(): PlayerUnit {
+    if (!this._player) {
+      this._player = new PlayerUnit(meGetUnitId())
+    }
+    return this._player
+  }
+
+  clearPlayer() { this._player = null }
 
   get players() { return this._players }
   get monsters() { return this._monsters }

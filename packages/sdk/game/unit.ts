@@ -1,11 +1,10 @@
 import {
   unitGetX, unitGetY, unitGetMode, unitGetClassId, unitGetStat, unitGetState,
   unitGetName, unitGetArea, unitGetOwnerId, unitGetOwnerType,
-  unitValid,
+  unitValid, meGetUnitId,
   monGetSpecType, monGetEnchants,
   itemGetQuality, itemGetFlags, itemGetLocation, itemGetCode,
   tileGetDestArea,
-  getUnitX, getUnitY,
 } from "diablo:native"
 import { UnitType } from "diablo:constants";
 
@@ -33,8 +32,9 @@ export abstract class Unit {
   }
 
   get distance(): number {
-    const mx = getUnitX()
-    const my = getUnitY()
+    const pid = meGetUnitId()
+    const mx = unitGetX(0, pid)
+    const my = unitGetY(0, pid)
     const dx = mx - this.x
     const dy = my - this.y
     return Math.sqrt(dx * dx + dy * dy)

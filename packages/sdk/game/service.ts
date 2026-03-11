@@ -85,6 +85,7 @@ export function createBot(name: string, factory: BotFactory): BotToken {
       ]
     } else if (wasInGame && !nowInGame) {
       // Left game — kill inGame, start oog + always scripts
+      game.clearPlayer()
       game.log('[' + name + '] left game')
       activeGens = [
         ...startScripts(game.load.oogScripts),

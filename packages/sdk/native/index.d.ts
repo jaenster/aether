@@ -47,6 +47,7 @@
 
   // Player
   export function meGetCharName(): string;
+  export function meGetUnitId(): number;
 
   // Actions
   export function clickMap(type: number, shift: number, x: number, y: number): void;

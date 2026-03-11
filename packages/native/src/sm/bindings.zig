@@ -382,6 +382,12 @@ fn jsMeGetCharName(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) 
     return 1;
 }
 
+fn jsMeGetUnitId(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const player = globals.playerUnit().* orelse { retInt32(argc, vp, -1); return 1; };
+    retInt32(argc, vp, @bitCast(player.dwUnitId));
+    return 1;
+}
+
 // ── Action bindings (Step 4) ─────────────────────────────────────────
 
 fn jsClickMap(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
@@ -743,6 +749,7 @@ const bindings = [_]Binding{
     .{ .name = "tileGetDestArea", .func = &jsTileGetDestArea, .nargs = 1 },
     // Player
     .{ .name = "meGetCharName", .func = &jsMeGetCharName, .nargs = 0 },
+    .{ .name = "meGetUnitId", .func = &jsMeGetUnitId, .nargs = 0 },
     // Actions (Step 4)
     .{ .name = "clickMap", .func = &jsClickMap, .nargs = 4 },
     .{ .name = "move", .func = &jsMove, .nargs = 2 },

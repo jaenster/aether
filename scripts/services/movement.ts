@@ -8,8 +8,8 @@ export const Movement = createService((game: Game, services) => {
     *teleportTo(targetX: number, targetY: number) {
       let attempts = 0
       while (attempts < 50) {
-        const dx = targetX - game.me.x
-        const dy = targetY - game.me.y
+        const dx = targetX - game.player.x
+        const dy = targetY - game.player.y
         const dist = Math.sqrt(dx * dx + dy * dy)
         if (dist < 5) return
 
@@ -18,8 +18,8 @@ export const Movement = createService((game: Game, services) => {
         } else {
           const ratio = cfg.teleRange / dist
           game.useSkill(cfg.teleport,
-            Math.floor(game.me.x + dx * ratio),
-            Math.floor(game.me.y + dy * ratio))
+            Math.floor(game.player.x + dx * ratio),
+            Math.floor(game.player.y + dy * ratio))
         }
         attempts++
         yield* game.delay(200)
@@ -38,8 +38,8 @@ export const Movement = createService((game: Game, services) => {
         const wp = path[i]!
         let ticks = 0
         while (ticks < 30) {
-          const dx = wp.x - game.me.x
-          const dy = wp.y - game.me.y
+          const dx = wp.x - game.player.x
+          const dy = wp.y - game.player.y
           const dist = Math.sqrt(dx * dx + dy * dy)
           if (dist < 5) break
 
@@ -48,10 +48,10 @@ export const Movement = createService((game: Game, services) => {
           yield* game.delay(100)
         }
         if (i % 5 === 0) {
-          game.log(`  walk: wp ${i}/${path.length} pos=${game.me.x},${game.me.y}`)
+          game.log(`  walk: wp ${i}/${path.length} pos=${game.player.x},${game.player.y}`)
         }
       }
-      game.log(`  walk: done at ${game.me.x},${game.me.y}`)
+      game.log(`  walk: done at ${game.player.x},${game.player.y}`)
     },
 
     *moveTo(targetX: number, targetY: number) {
