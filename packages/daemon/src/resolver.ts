@@ -1,8 +1,9 @@
 import { resolve as resolvePath, relative as relativePath, dirname, join } from "node:path";
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 // SDK root — aether/sdk/ relative to this package
-const SDK_ROOT = resolvePath(dirname(new URL(import.meta.url).pathname), "../../../sdk");
+const SDK_ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "../../../sdk");
 
 export interface ResolveResult {
   path: string;
