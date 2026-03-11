@@ -6,7 +6,7 @@ import { log as nativeLog, exitGame } from "diablo:native"
 const __g = Function('return this')()
 let runnerGenerator: Generator<void> | null = null
 
-function* runAllTests(): Generator<void> {
+function* runAllTests(): Generator<void, number> {
   // Wait until we're in game
   while (!game.inGame) yield
 
@@ -34,6 +34,7 @@ function* runAllTests(): Generator<void> {
   }
 
   nativeLog("=== Results: " + passed + "/" + total + " passed, " + failed + " failed ===")
+  return failed
 }
 
 // Override __onTick set by runtime.ts (which is a no-op until __setRoot is called).
@@ -47,12 +48,12 @@ __g.__onTick = () => {
     if (result.done) {
       nativeLog("Test run complete.")
       runnerGenerator = null
-      // Exit the game process — CI and headless runs need a clean shutdown
-      exitGame()
+      // Exit the game process — code 1 on failure so CI detects it
+      exitGame(result.value > 0 ? 1 : 0)
     }
   } catch (e) {
     nativeLog("Runner error: " + String(e))
     runnerGenerator = null
-    __g.__onTick = () => {}
+    exitGame(1)
   }
 }

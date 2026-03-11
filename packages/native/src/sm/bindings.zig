@@ -686,9 +686,10 @@ fn jsTxtReadFieldU(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c
 
 extern "kernel32" fn ExitProcess(code: u32) callconv(.winapi) noreturn;
 
-fn jsExitGame(_: ?*anyopaque, _: c_uint, _: ?*anyopaque) callconv(.c) c_int {
-    log.print("js: exitGame called — terminating process");
-    ExitProcess(0);
+fn jsExitGame(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const code: u32 = if (argc > 0) @bitCast(argInt32(argc, vp, 0)) else 0;
+    log.hex("js: exitGame called, code ", code);
+    ExitProcess(code);
 }
 
 // ── Binding table ───────────────────────────────────────────────────
@@ -761,7 +762,7 @@ const bindings = [_]Binding{
     .{ .name = "txtReadField", .func = &jsTxtReadField, .nargs = 4 },
     .{ .name = "txtReadFieldU", .func = &jsTxtReadFieldU, .nargs = 4 },
     // Process control
-    .{ .name = "exitGame", .func = &jsExitGame, .nargs = 0 },
+    .{ .name = "exitGame", .func = &jsExitGame, .nargs = 1 },
 };
 
 /// Comptime-generated ES module source for "diablo:native".
