@@ -1,5 +1,9 @@
 {
   "name": "@blizzhackers/aether",
   "private": true,
-  "packageManager": "pnpm@10.6.2"
+  "packageManager": "pnpm@10.6.2",
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@aether/sdk": "workspace:*"
+  }
 }

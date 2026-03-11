@@ -1,14 +1,15 @@
 import {
   unitGetX, unitGetY, unitGetMode, unitGetClassId, unitGetStat, unitGetState,
-  unitGetName, unitGetArea, unitGetFlags, unitGetOwnerId, unitGetOwnerType,
+  unitGetName, unitGetArea, unitGetOwnerId, unitGetOwnerType,
   unitValid,
   monGetSpecType, monGetEnchants,
   itemGetQuality, itemGetFlags, itemGetLocation, itemGetCode,
   tileGetDestArea,
   getUnitX, getUnitY,
 } from "diablo:native"
+import { UnitType } from "../constants";
 
-export class Unit {
+export abstract class Unit {
   constructor(readonly type: number, readonly unitId: number) {}
 
   get valid(): boolean { return unitValid(this.type, this.unitId) }
@@ -71,7 +72,7 @@ export class Monster extends Unit {
   get enchants(): number[] {
     const s = monGetEnchants(this.unitId)
     if (!s) return []
-    return s.split(',').map(Number).filter((n: number) => n > 0)
+    return s.filter((n: number) => n > 0)
   }
 }
 
@@ -106,7 +107,7 @@ export class Tile extends Unit {
   get destArea(): number { return tileGetDestArea(this.unitId) }
 }
 
-export function createUnit(type: number, id: number): Unit {
+export function createUnit(type: UnitType, id: number): Unit {
   switch (type) {
     case 0: return new PlayerUnit(id)
     case 1: return new Monster(id)
@@ -114,6 +115,6 @@ export function createUnit(type: number, id: number): Unit {
     case 3: return new Missile(id)
     case 4: return new ItemUnit(id)
     case 5: return new Tile(id)
-    default: return new Unit(type, id)
+    default: throw new Error('Invalid unit type: ' + type)
   }
 }

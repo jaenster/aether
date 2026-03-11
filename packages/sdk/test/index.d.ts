@@ -1,5 +1,15 @@
-import type { Game } from "./runtime.js"
-import type { ServiceContainer } from "./service.js"
+import type { Game, ServiceContainer } from "diablo:game";
+
+export interface TestEntry {
+  name: string;
+  fn: TestFn;
+}
+
+export function test(name: string, fn: TestFn): void;
+
+/** @internal */
+export function __getTests(): TestEntry[];
+
 
 // --- Assertions ---
 

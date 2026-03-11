@@ -1,0 +1,16 @@
+export enum ItemLocation {
+  None = 0,
+  Head = 1,
+  Neck = 2,
+  Torso = 3,
+  Armor = 3,
+  RightArm = 4,
+  LeftArm = 5,
+  RingRight = 6,
+  RingLeft = 7,
+  Belt = 8,
+  Feet = 9,
+  Gloves = 10,
+  RightArmSecondary = 11,
+  LeftArmSecondary = 12,
+}

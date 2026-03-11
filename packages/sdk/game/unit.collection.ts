@@ -1,5 +1,5 @@
-import { unitCount, unitAtIndex } from "diablo:native"
-import { type Unit, createUnit } from "./unit.js"
+import { unitAtIndex, unitCount } from "diablo:native";
+import { createUnit, type Unit } from "./unit";
 
 export class UnitCollection<T extends Unit> {
   constructor(private unitType: number) {}
