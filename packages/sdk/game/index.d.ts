@@ -1,6 +1,6 @@
 export * from './game.js'
 export * from './unit.js'
-export {Me} from './me.js'
+export * from './me.js'
 export * from './service.js'
 export * from './unit.collection.js'
 export * from 'diablo:constants'

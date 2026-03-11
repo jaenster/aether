@@ -49,8 +49,9 @@ function walk(
   // Extract import specifiers from the transpiled source
   const importSpecifiers = extractImports(source);
 
-  // Resolve each import
+  // Resolve each import and build specifier rewrite map
   const deps: string[] = [];
+  const specRewriteMap = new Map<string, string>();
   for (const spec of importSpecifiers) {
     const resolved = resolveModule(spec, filePath);
     if (resolved === null) {
@@ -66,6 +67,9 @@ function walk(
     const depSpec = (resolved.specifierOverride
       ?? "./" + relativePath(scriptRoot, resolved.path).replace(/\\/g, "/")).replace(/\.tsx?$/, ".js");
     deps.push(depSpec);
+    if (depSpec !== spec) {
+      specRewriteMap.set(spec, depSpec);
+    }
     walk(resolved.path, scriptRoot, modules, visiting, specifierOverrides);
   }
 
@@ -74,7 +78,24 @@ function walk(
   const rawSpec = specifierOverrides.get(filePath)
     ?? "./" + relativePath(scriptRoot, filePath).replace(/\\/g, "/");
   const specifier = rawSpec.replace(/\.tsx?$/, ".js");
-  modules.set(filePath, { specifier, path: filePath, source, deps });
+
+  // Rewrite import specifiers in source for modules with scheme-based specifiers
+  // (e.g., diablo:game, diablo:constants). SM60 resolves relative imports using
+  // path_dirname(specifier), but scheme specifiers have dirname "./" while their
+  // actual imports reference files in subdirectories. Regular file-path specifiers
+  // don't need rewriting — SM resolves them correctly from their dirname.
+  const isSchemeSpecifier = /^[a-z][a-z0-9]*:/.test(specifier);
+
+  let finalSource = source;
+  if (isSchemeSpecifier && specRewriteMap.size > 0) {
+    for (const [oldSpec, newSpec] of specRewriteMap) {
+      finalSource = finalSource
+        .split(`'${oldSpec}'`).join(`'${newSpec}'`)
+        .split(`"${oldSpec}"`).join(`"${newSpec}"`);
+    }
+  }
+
+  modules.set(filePath, { specifier, path: filePath, source: finalSource, deps });
   visiting.delete(filePath);
 }
 

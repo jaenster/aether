@@ -8,21 +8,35 @@ import {
   findPath as nativeFindPath,
   findPreset as nativeFindPreset,
   interact as nativeInteract,
+  exitGame as nativeExitGame,
 } from "diablo:native"
 import { UnitCollection } from "./unit.collection.js";
 import { ItemUnit, Missile, Monster, ObjectUnit, PlayerUnit, Tile } from "./unit.js";
-import {meProxy} from './me.js'
+import { meProxy } from './me.js'
+import type { ScriptToken } from './service.js'
 
 
-const _players = new UnitCollection<PlayerUnit>(0)
-const _monsters = new UnitCollection<Monster>(1)
-const _objects = new UnitCollection<ObjectUnit>(2)
-const _missiles = new UnitCollection<Missile>(3)
-const _items = new UnitCollection<ItemUnit>(4)
-const _tiles = new UnitCollection<Tile>(5)
+export class ScriptLoader {
+  readonly inGameScripts: ScriptToken[] = []
+  readonly oogScripts: ScriptToken[] = []
+  readonly alwaysScripts: ScriptToken[] = []
+
+  inGame(script: ScriptToken) { this.inGameScripts.push(script) }
+  oog(script: ScriptToken) { this.oogScripts.push(script) }
+  always(script: ScriptToken) { this.alwaysScripts.push(script) }
+}
 
 
 export class Game {
+  readonly load = new ScriptLoader()
+
+  private _players = new UnitCollection<PlayerUnit>(0)
+  private _monsters = new UnitCollection<Monster>(1)
+  private _objects = new UnitCollection<ObjectUnit>(2)
+  private _missiles = new UnitCollection<Missile>(3)
+  private _items = new UnitCollection<ItemUnit>(4)
+  private _tiles = new UnitCollection<Tile>(5)
+
   get inGame() { return inGame() }
   get area() { return getArea() }
   get act() { return getAct() }
@@ -30,12 +44,12 @@ export class Game {
   get tickCount() { return getTickCount() }
   get me() { return meProxy }
 
-  get players() { return _players }
-  get monsters() { return _monsters }
-  get objects() { return _objects }
-  get missiles() { return _missiles }
-  get items() { return _items }
-  get tiles() { return _tiles }
+  get players() { return this._players }
+  get monsters() { return this._monsters }
+  get objects() { return this._objects }
+  get missiles() { return this._missiles }
+  get items() { return this._items }
+  get tiles() { return this._tiles }
 
   clickMap(type: number, x: number, y: number, shift: boolean = false) {
     clickMap(type, shift ? 1 : 0, x, y)
@@ -48,6 +62,8 @@ export class Game {
   say(msg: string) { nativeSay(msg) }
   getUIFlag(flag: number) { return nativeGetUIFlag(flag) }
   interact(unit: { type: number, unitId: number }) { nativeInteract(unit.type, unit.unitId) }
+
+  exitGame() { nativeExitGame(0) }
 
   getExits() {
     const raw = nativeGetExits()
@@ -81,5 +97,3 @@ export class Game {
     nativeLog(args.map(a => String(a)).join(' '))
   }
 }
-
-declare const game: Game;
