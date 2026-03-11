@@ -4,17 +4,19 @@ import { Router } from "./router.js";
 import { Filesystem } from "./filesystem.js";
 import { Watcher } from "./watcher.js";
 import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Default scripts dir: aether/scripts/ (relative to this package at aether/packages/daemon/)
-const PACKAGE_ROOT = resolve(dirname(new URL(import.meta.url).pathname), "..");
+const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_SCRIPTS = resolve(PACKAGE_ROOT, "../../scripts");
 
-function parseArgs(): { port: number; host: string; scripts: string; token?: string } {
+function parseArgs(): { port: number; host: string; scripts: string; tests: boolean; token?: string } {
   const args = process.argv.slice(2);
   const opts = {
     port: parseInt(process.env.AETHER_PORT || "13119", 10),
     host: process.env.AETHER_HOST || "0.0.0.0",
     scripts: process.env.AETHER_SCRIPTS || DEFAULT_SCRIPTS,
+    tests: false,
     token: process.env.AETHER_TOKEN,
   };
 
@@ -28,6 +30,9 @@ function parseArgs(): { port: number; host: string; scripts: string; token?: str
         break;
       case "--scripts":
         opts.scripts = args[++i];
+        break;
+      case "--tests":
+        opts.tests = true;
         break;
       case "--token":
         opts.token = args[++i];
@@ -46,13 +51,14 @@ function main(): void {
   console.log(`  Port:    ${opts.port}`);
   console.log(`  Host:    ${opts.host}`);
   console.log(`  Scripts: ${opts.scripts}`);
+  console.log(`  Mode:    ${opts.tests ? "tests" : "bot"}`);
   console.log(`  Auth:    ${opts.token ? "enabled" : "disabled"}`);
 
   const server = new AetherServer(opts.port, opts.host);
 
   new Registry(server);
   new Router(server);
-  const filesystem = new Filesystem(server, opts.scripts);
+  const filesystem = new Filesystem(server, opts.scripts, opts.tests);
 
   const watcher = new Watcher(server, opts.scripts, filesystem);
 

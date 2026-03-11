@@ -8,7 +8,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsc --watch",
-    "test": "tsc -p tsconfig.test.json && node --test dist/test/e2e.test.js"
+    "test": "tsc -p tsconfig.test.json && node --test --test-force-exit dist/test/e2e.test.js"
   },
   "dependencies": {
     "ws": "^8.16.0",

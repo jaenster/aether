@@ -32,8 +32,8 @@ function startDaemon(scriptsDir?: string): Daemon {
   const server = new AetherServer(port, "127.0.0.1");
   new Registry(server);
   new Router(server);
-  new Filesystem(server, dir);
-  const watcher = new Watcher(server, dir);
+  const filesystem = new Filesystem(server, dir);
+  const watcher = new Watcher(server, dir, filesystem);
   server.start();
   watcher.start();
   return { server, watcher, port, scriptsDir: dir };

@@ -1,8 +1,9 @@
 import { resolve as resolvePath, relative as relativePath, dirname, join } from "node:path";
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 // SDK root — aether/sdk/ relative to this package
-const SDK_ROOT = resolvePath(dirname(new URL(import.meta.url).pathname), "../../../sdk");
+const SDK_ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "../../../sdk");
 
 export interface ResolveResult {
   path: string;
@@ -17,8 +18,14 @@ export interface ResolveResult {
  * Throws if the module cannot be found.
  */
 export function resolveModule(specifier: string, fromPath: string): ResolveResult | null {
-  // diablo:native is resolved client-side (compiled into DLL)
+  // diablo:native and other unhandled scheme imports are resolved client-side
   if (specifier === "diablo:native") {
+    return null;
+  }
+
+  // Pass through any non-diablo: scheme specifiers (e.g. node:fs, diablo2:foo)
+  // — they're resolved at runtime, not bundled.
+  if (/^[a-z][a-z0-9]*:/.test(specifier) && !specifier.startsWith("diablo:")) {
     return null;
   }
 
@@ -29,6 +36,24 @@ export function resolveModule(specifier: string, fromPath: string): ResolveResul
       throw new Error(`SDK not found: ${sdkEntry}`);
     }
     return { path: sdkEntry, specifierOverride: "diablo:game" };
+  }
+
+  // diablo:test → SDK test framework
+  if (specifier === "diablo:test") {
+    const testEntry = join(SDK_ROOT, "test.ts");
+    if (!existsSync(testEntry)) {
+      throw new Error(`SDK test module not found: ${testEntry}`);
+    }
+    return { path: testEntry, specifierOverride: "diablo:test" };
+  }
+
+  // diablo:test-runner → SDK test runner bootstrap
+  if (specifier === "diablo:test-runner") {
+    const runnerEntry = join(SDK_ROOT, "test-runner.ts");
+    if (!existsSync(runnerEntry)) {
+      throw new Error(`SDK test runner not found: ${runnerEntry}`);
+    }
+    return { path: runnerEntry, specifierOverride: "diablo:test-runner" };
   }
 
   const fromDir = dirname(fromPath);
@@ -52,7 +77,7 @@ export function resolveModule(specifier: string, fromPath: string): ResolveResul
  */
 function getSdkSpecifierOverride(absPath: string): string | undefined {
   if (!absPath.startsWith(SDK_ROOT)) return undefined;
-  const rel = relativePath(SDK_ROOT, absPath);
+  const rel = relativePath(SDK_ROOT, absPath).replace(/\\/g, "/");
   return "./" + rel;
 }
 
