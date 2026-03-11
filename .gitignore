@@ -28,3 +28,4 @@ packages/native/minimal/BlizzardError/
 
 # macOS
 .DS_Store
+.idea
