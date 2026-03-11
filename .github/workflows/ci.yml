@@ -57,7 +57,7 @@ jobs:
           # D2 1.14d uses KnownFolder SavedGames via SHGetKnownFolderPath
           $savedGames = [Environment]::GetFolderPath('UserProfile') + '\Saved Games\Diablo II'
           New-Item -ItemType Directory -Force -Path $savedGames | Out-Null
-          Copy-Item "$gameDir/save/*.d2s" -Destination $savedGames
+          Copy-Item "$gameDir/saves/*.d2s" -Destination $savedGames
           Write-Host "Saves copied to: $savedGames"
           Get-ChildItem $savedGames
 
