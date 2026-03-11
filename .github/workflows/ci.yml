@@ -23,12 +23,12 @@ jobs:
       # Fetch pre-built DLLs from the artifacts branch
       - name: Fetch artifact DLLs
         run: |
-          git fetch origin claude/artifacts-g7LoE --depth=1
-          git checkout origin/claude/artifacts-g7LoE -- Aether.dll dbghelp.dll mozjs.dll
+          git fetch origin artifacts --depth=1
+          git checkout origin/artifacts -- Aether.dll dbghelp.dll mozjs.dll
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 10.6.2
 
       - uses: actions/setup-node@v4
         with:
@@ -50,8 +50,10 @@ jobs:
         shell: pwsh
         run: |
           $gameDir = "packages/native/minimal"
+          
           # Copy artifact DLLs into the game directory
           Copy-Item Aether.dll, dbghelp.dll, mozjs.dll -Destination $gameDir
+          
           # D2 1.14d uses KnownFolder SavedGames via SHGetKnownFolderPath
           $savedGames = [Environment]::GetFolderPath('UserProfile') + '\Saved Games\Diablo II'
           New-Item -ItemType Directory -Force -Path $savedGames | Out-Null
@@ -80,9 +82,11 @@ jobs:
           $proc = Start-Process -FilePath .\Game.exe `
             -ArgumentList "-w -nosound --headless -loaddll `"$PWD\Aether.dll`"" `
             -PassThru -NoNewWindow
+          
           # Game exits itself after tests via exitGame()
           $proc | Wait-Process -Timeout 120
           Get-Content aether_log.txt
+          
           # Clean up daemon
           Stop-Process -Name node -Force -ErrorAction SilentlyContinue
 
@@ -105,24 +109,3 @@ jobs:
             echo "WARNING: No test results found in log"
             exit 1
           fi
-
-      # ── Save everything as downloadable artifact ──────────────────────
-      - name: Package
-        if: always()
-        shell: bash
-        run: |
-          mkdir -p staging
-          cp Aether.dll dbghelp.dll mozjs.dll staging/
-          cp -r scripts staging/
-          cp packages/native/minimal/aether_log.txt staging/ 2>/dev/null || true
-          cp -r packages/daemon/dist/test staging/test-results 2>/dev/null || true
-          cp README.md staging/ 2>/dev/null || true
-          cp INSTALL.txt staging/ 2>/dev/null || true
-
-      - name: Save artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: aether-windows
-          path: staging/
-          retention-days: 14
