@@ -1,4 +1,4 @@
-import { createBot, uiFlags } from "diablo:game"
+import { createBot, UiFlags } from "diablo:game"
 import { Movement } from "./services/movement.js"
 
 // All waypoint preset classids
@@ -10,10 +10,10 @@ export default createBot('farmer', function*(game, services) {
   while (true) {
     if (!game.inGame) { yield; continue }
 
-    game.log(`[${game.me.charname}] area=${game.area} pos=${game.me.x},${game.me.y}`)
+    game.log(`[${game.me.name}] area=${game.area} pos=${game.me.x},${game.me.y}`)
 
     // Check if waypoint UI is already open
-    if (game.getUIFlag(uiFlags.Waypoint)) {
+    if (game.getUIFlag(UiFlags.Waypoint)) {
       game.log(`  waypoint menu is open!`)
       yield* game.delay(5000)
       continue

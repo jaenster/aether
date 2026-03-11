@@ -10,8 +10,8 @@ import {
   interact as nativeInteract,
 } from "diablo:native"
 import { UnitCollection } from "./unit.collection.js";
-import { ItemUnit, Missile, Monster, ObjectUnit, PlayerUnit, Tile } from "./unit";
-import {meProxy} from './me'
+import { ItemUnit, Missile, Monster, ObjectUnit, PlayerUnit, Tile } from "./unit.js";
+import {meProxy} from './me.js'
 
 
 const _players = new UnitCollection<PlayerUnit>(0)

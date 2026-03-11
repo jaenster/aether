@@ -1,4 +1,4 @@
-import type { Game } from "./runtime.js"
+import type { Game } from "./game.js"
 
 type ServiceFactory<T> = (game: Game, services: ServiceContainer) => T
 

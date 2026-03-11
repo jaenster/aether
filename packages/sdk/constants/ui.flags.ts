@@ -27,3 +27,4 @@ export const enum UiFlags {
   MercScreen = 0x24,
   ScrollWindow = 0x25,
 }
+

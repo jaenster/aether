@@ -31,56 +31,29 @@ export function resolveModule(specifier: string, fromPath: string): ResolveResul
 
   // diablo:game → SDK barrel (bundled + sent to client)
   if (specifier === "diablo:game") {
-    const sdkEntry = join(SDK_ROOT, "game.ts");
+    const sdkEntry = join(SDK_ROOT, "game/index.d.ts");
     if (!existsSync(sdkEntry)) {
       throw new Error(`SDK not found: ${sdkEntry}`);
     }
     return { path: sdkEntry, specifierOverride: "diablo:game" };
   }
 
-  // diablo:test → SDK test framework
-  if (specifier === "diablo:test") {
-    const testEntry = join(SDK_ROOT, "test.ts");
-    if (!existsSync(testEntry)) {
-      throw new Error(`SDK test module not found: ${testEntry}`);
-    }
-    return { path: testEntry, specifierOverride: "diablo:test" };
-  }
-
-  // diablo:test-runner → SDK test runner bootstrap
-  if (specifier === "diablo:test-runner") {
-    const runnerEntry = join(SDK_ROOT, "test-runner.ts");
-    if (!existsSync(runnerEntry)) {
-      throw new Error(`SDK test runner not found: ${runnerEntry}`);
-    }
-    return { path: runnerEntry, specifierOverride: "diablo:test-runner" };
-  }
-
-  // diablo:runtime → SDK runtime (game object)
-  if (specifier === "diablo:runtime") {
-    const runtimeEntry = join(SDK_ROOT, "runtime-exports.ts");
-    if (!existsSync(runtimeEntry)) {
-      throw new Error(`SDK runtime module not found: ${runtimeEntry}`);
-    }
-    return { path: runtimeEntry, specifierOverride: "diablo:runtime" };
-  }
-
   // diablo:constants → SDK constants (areas, skills, stats, etc.)
   if (specifier === "diablo:constants") {
-    const constantsEntry = join(SDK_ROOT, "constants-exports.ts");
+    const constantsEntry = join(SDK_ROOT, "constants/index.ts");
     if (!existsSync(constantsEntry)) {
       throw new Error(`SDK constants module not found: ${constantsEntry}`);
     }
     return { path: constantsEntry, specifierOverride: "diablo:constants" };
   }
 
-  // diablo:units → SDK unit classes
-  if (specifier === "diablo:units") {
-    const unitsEntry = join(SDK_ROOT, "units.ts");
-    if (!existsSync(unitsEntry)) {
-      throw new Error(`SDK units module not found: ${unitsEntry}`);
+  // diablo:test → SDK test framework
+  if (specifier === "diablo:test") {
+    const testEntry = join(SDK_ROOT, "test/index.d.ts");
+    if (!existsSync(testEntry)) {
+      throw new Error(`SDK test module not found: ${testEntry}`);
     }
-    return { path: unitsEntry, specifierOverride: "diablo:units" };
+    return { path: testEntry, specifierOverride: "diablo:test" };
   }
 
   const fromDir = dirname(fromPath);
