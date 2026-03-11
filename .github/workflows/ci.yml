@@ -77,10 +77,13 @@ jobs:
           AETHER_ENTRY: main.ts
         run: |
           cd packages\native\minimal
-          start /b Game.exe -w -nosound --headless
+          start /b Game.exe -w -nosound --headless -loaddll "%CD%\Aether.dll"
           :: Wait for game to boot, connect to daemon, run tests
           timeout /t 30 /nobreak >nul
           type aether_log.txt
+          :: Kill game and daemon
+          taskkill /f /im Game.exe >nul 2>&1
+          taskkill /f /im node.exe >nul 2>&1
 
       - name: Check test results
         shell: bash

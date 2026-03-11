@@ -24,6 +24,7 @@ packages/native/minimal/mozjs.dll
 packages/native/minimal/aether_log.txt
 packages/native/minimal/default.key
 packages/native/minimal/save/
+packages/native/minimal/BlizzardError/
 
 # macOS
 .DS_Store
