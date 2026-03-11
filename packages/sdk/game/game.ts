@@ -8,6 +8,8 @@ import {
   findPreset as nativeFindPreset,
   interact as nativeInteract,
   exitGame as nativeExitGame,
+  exitClient as nativeExitClient,
+  takeWaypoint as nativeTakeWaypoint,
 } from "diablo:native"
 import { UnitCollection } from "./unit.collection.js";
 import { ItemUnit, Missile, Monster, ObjectUnit, PlayerUnit, Tile } from "./unit.js";
@@ -70,7 +72,9 @@ export class Game {
   getUIFlag(flag: number) { return nativeGetUIFlag(flag) }
   interact(unit: { type: number, unitId: number }) { nativeInteract(unit.type, unit.unitId) }
 
-  exitGame() { nativeExitGame(0) }
+  exitGame() { nativeExitGame() }
+  exitClient() { nativeExitClient() }
+  takeWaypoint(waypointUnitId: number, destArea: number) { nativeTakeWaypoint(waypointUnitId, destArea) }
 
   getExits() {
     const raw = nativeGetExits()

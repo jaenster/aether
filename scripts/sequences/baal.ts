@@ -9,26 +9,38 @@ export const Baal = createScript(function*(game, svc) {
   const loot = svc.get(Pickit)
 
   game.log('[baal] starting run')
+  yield* move.journeyTo(Area.ThroneofDestruction)
 
-  // WSK 2 → Throne of Destruction
-  yield* move.takeExit(Area.WorldstoneLvl3)
-  yield* move.takeExit(Area.ThroneofDestruction)
+  // Move to throne position
+  yield* move.moveTo(15095, 5029)
 
-  // Clear throne waves
+  // Wait for and clear 5 waves
+  // Waves spawn monsters with y < 5080 near the throne
   game.log('[baal] clearing throne waves')
   for (let wave = 0; wave < 5; wave++) {
+    // Wait for wave to spawn
+    yield* game.delay(2000)
     yield* atk.clearNearby()
-    yield* game.delay(3000)
+    game.log(`[baal] wave ${wave + 1} cleared`)
   }
 
-  // Enter worldstone chamber
-  yield* move.takeExit(Area.WorldstoneChamber)
+  // Enter Worldstone Chamber via portal (object classid 563)
+  const portal = game.findPreset(2, 563)
+  if (portal) {
+    yield* move.moveTo(portal.x, portal.y)
+    const portalUnit = game.objects.find(o => o.classid === 563)
+    if (portalUnit) {
+      game.interact(portalUnit)
+      for (let i = 0; i < 50; i++) {
+        yield* game.delay(100)
+        if (game.area === Area.WorldstoneChamber) break
+      }
+    }
+  }
 
-  // Kill Baal (classid 544)
   game.log('[baal] engaging baal')
-  yield* atk.kill(544)
+  yield* atk.kill(544) // Baal
 
-  // Loot
   game.log('[baal] looting')
   yield* loot.lootGround()
 

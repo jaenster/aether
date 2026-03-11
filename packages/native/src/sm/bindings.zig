@@ -688,14 +688,32 @@ fn jsTxtReadFieldU(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c
     return 1;
 }
 
-// ── Process control ─────────────────────────────────────────────────
-
-extern "kernel32" fn ExitProcess(code: u32) callconv(.winapi) noreturn;
+// ── Game control ────────────────────────────────────────────────────
 
 fn jsExitGame(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
-    const code: u32 = if (argc > 0) @bitCast(argInt32(argc, vp, 0)) else 0;
-    log.hex("js: exitGame called, code ", code);
-    ExitProcess(code);
+    log.print("js: exitGame — leaving game gracefully");
+    d2.ExitGame.call(.{0});
+    retUndefined(argc, vp);
+    return 1;
+}
+
+extern "kernel32" fn TerminateProcess(hProcess: ?*anyopaque, uExitCode: u32) callconv(.winapi) i32;
+extern "kernel32" fn GetCurrentProcess() callconv(.winapi) ?*anyopaque;
+
+fn jsExitClient(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    _ = argc;
+    _ = vp;
+    log.print("js: exitClient — terminating process");
+    _ = TerminateProcess(GetCurrentProcess(), 0);
+    return 1;
+}
+
+fn jsTakeWaypoint(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const wp_id: i32 = argInt32(argc, vp, 0);
+    const dest_area: i32 = argInt32(argc, vp, 1);
+    d2.SendIntInt.call(.{ 0x49, wp_id, dest_area });
+    retUndefined(argc, vp);
+    return 1;
 }
 
 // ── Binding table ───────────────────────────────────────────────────
@@ -769,7 +787,9 @@ const bindings = [_]Binding{
     .{ .name = "txtReadField", .func = &jsTxtReadField, .nargs = 4 },
     .{ .name = "txtReadFieldU", .func = &jsTxtReadFieldU, .nargs = 4 },
     // Process control
-    .{ .name = "exitGame", .func = &jsExitGame, .nargs = 1 },
+    .{ .name = "exitGame", .func = &jsExitGame, .nargs = 0 },
+    .{ .name = "exitClient", .func = &jsExitClient, .nargs = 0 },
+    .{ .name = "takeWaypoint", .func = &jsTakeWaypoint, .nargs = 2 },
 };
 
 /// Comptime-generated ES module source for "diablo:native".

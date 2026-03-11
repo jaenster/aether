@@ -71,5 +71,7 @@
   export function txtReadField(table: number, row: number, column: number, signed: number): number;
   export function txtReadFieldU(table: number, row: number, column: number, signed: number): number;
 
-  // Process control
-  export function exitGame(code: number): never;
+  // Game control
+  export function exitGame(): void;
+  export function exitClient(): void;
+  export function takeWaypoint(waypointUnitId: number, destArea: number): void;

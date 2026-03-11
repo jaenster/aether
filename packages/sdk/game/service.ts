@@ -104,8 +104,10 @@ export function createBot(name: string, factory: BotFactory): BotToken {
       const r = mainGen.next()
       if (r.done) mainGen = null
     } catch (e: any) {
-      game.log('[' + name + '] main error: ' + (e.message || String(e)))
+      game.log('[' + name + '] FATAL: ' + (e.message || String(e)))
       mainGen = null
+      game.exitGame()
+      return
     }
 
     // Step all active background generators, remove finished ones

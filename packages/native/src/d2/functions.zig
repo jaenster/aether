@@ -449,6 +449,14 @@ pub fn castRunTo(x: u16, y: u16) void {
 }
 
 // ============================================================================
+// Game state control
+// ============================================================================
+
+/// D2CLIENT_ExitGame at 0x44DD60 — gracefully leave current game.
+/// Sends packet 0x69, sets exit vars, transitions to menu.
+pub const ExitGame = fastcall(0x44DD60, fn (i32) void);
+
+// ============================================================================
 // Unit Interaction (client-side)
 // ============================================================================
 
