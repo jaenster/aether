@@ -1,5 +1,5 @@
 import { log, exitGame, inGame } from "diablo:native"
-import { Game } from "diablo:game"
+import { Game } from "../game/game.js"
 import { __getTests } from "diablo:test"
 
 const game = new Game()
