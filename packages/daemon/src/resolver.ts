@@ -77,7 +77,7 @@ export function resolveModule(specifier: string, fromPath: string): ResolveResul
  */
 function getSdkSpecifierOverride(absPath: string): string | undefined {
   if (!absPath.startsWith(SDK_ROOT)) return undefined;
-  const rel = relativePath(SDK_ROOT, absPath);
+  const rel = relativePath(SDK_ROOT, absPath).replace(/\\/g, "/");
   return "./" + rel;
 }
 

@@ -25,7 +25,7 @@ export function bundle(entryPath: string, scriptRoot?: string): { entry: string;
   walk(absEntry, root, modules, visiting, specifierOverrides);
 
   const sorted = topologicalSort(modules);
-  const entrySpec = ("./" + relativePath(root, absEntry)).replace(/\.tsx?$/, ".js");
+  const entrySpec = ("./" + relativePath(root, absEntry).replace(/\\/g, "/")).replace(/\.tsx?$/, ".js");
   return { entry: entrySpec, modules: sorted };
 }
 
@@ -63,7 +63,7 @@ function walk(
     }
     // Store the specifier (not path) so deps match what SM sees at runtime
     const depSpec = resolved.specifierOverride
-      ?? ("./" + relativePath(scriptRoot, resolved.path)).replace(/\.tsx?$/, ".js");
+      ?? ("./" + relativePath(scriptRoot, resolved.path).replace(/\\/g, "/")).replace(/\.tsx?$/, ".js");
     deps.push(depSpec);
     walk(resolved.path, scriptRoot, modules, visiting, specifierOverrides);
   }
@@ -71,7 +71,7 @@ function walk(
   // Use override specifier if one was assigned, otherwise compute from path.
   // Rewrite .ts → .js so specifiers match ESM-style .js imports in source.
   const rawSpec = specifierOverrides.get(filePath)
-    ?? "./" + relativePath(scriptRoot, filePath);
+    ?? "./" + relativePath(scriptRoot, filePath).replace(/\\/g, "/");
   const specifier = rawSpec.replace(/\.tsx?$/, ".js");
   modules.set(filePath, { specifier, path: filePath, source, deps });
   visiting.delete(filePath);

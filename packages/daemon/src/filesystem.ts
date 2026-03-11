@@ -60,7 +60,7 @@ export class Filesystem {
     ];
 
     for (const file of testFiles) {
-      const rel = "./" + relativePath(this.scriptRoot, file).replace(/\.ts$/, ".js");
+      const rel = "./" + relativePath(this.scriptRoot, file).replace(/\\/g, "/").replace(/\.ts$/, ".js");
       console.log("  " + rel);
       lines.push('import "' + rel + '"');
     }
