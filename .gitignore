@@ -17,5 +17,13 @@ packages/spidermonkey/build-mingw/
 # Generated test entry
 __tests_entry.ts
 
+# Runtime artifacts in minimal game directory
+packages/native/minimal/Aether.dll
+packages/native/minimal/dbghelp.dll
+packages/native/minimal/mozjs.dll
+packages/native/minimal/aether_log.txt
+packages/native/minimal/default.key
+packages/native/minimal/save/
+
 # macOS
 .DS_Store
