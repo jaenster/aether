@@ -1,7 +1,7 @@
 import { game } from "./runtime.js"
 import { ServiceContainer } from "./service.js"
 import { __getTests, AssertionError } from "diablo:test"
-import { log as nativeLog } from "diablo:native"
+import { log as nativeLog, exitGame } from "diablo:native"
 
 const __g = Function('return this')()
 let runnerGenerator: Generator<void> | null = null
@@ -47,8 +47,8 @@ __g.__onTick = () => {
     if (result.done) {
       nativeLog("Test run complete.")
       runnerGenerator = null
-      // Clear handler so we don't keep ticking
-      __g.__onTick = () => {}
+      // Exit the game process — CI and headless runs need a clean shutdown
+      exitGame()
     }
   } catch (e) {
     nativeLog("Runner error: " + String(e))

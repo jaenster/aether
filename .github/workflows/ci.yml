@@ -70,20 +70,21 @@ jobs:
 
       # ── Launch game and run in-game tests ─────────────────────────────
       - name: Run in-game tests
-        shell: cmd
+        shell: pwsh
         timeout-minutes: 3
         env:
           AETHER_DAEMON: 127.0.0.1:13119
           AETHER_ENTRY: main.ts
         run: |
           cd packages\native\minimal
-          start /b Game.exe -w -nosound --headless -loaddll "%CD%\Aether.dll"
-          :: Wait for game to boot, connect to daemon, run tests
-          timeout /t 30 /nobreak >nul
-          type aether_log.txt
-          :: Kill game and daemon
-          taskkill /f /im Game.exe >nul 2>&1
-          taskkill /f /im node.exe >nul 2>&1
+          $proc = Start-Process -FilePath .\Game.exe `
+            -ArgumentList "-w -nosound --headless -loaddll `"$PWD\Aether.dll`"" `
+            -PassThru -NoNewWindow
+          # Game exits itself after tests via exitGame()
+          $proc | Wait-Process -Timeout 120
+          Get-Content aether_log.txt
+          # Clean up daemon
+          Stop-Process -Name node -Force -ErrorAction SilentlyContinue
 
       - name: Check test results
         shell: bash

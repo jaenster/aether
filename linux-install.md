@@ -172,14 +172,21 @@ export WINEARCH=win32
 export AETHER_DAEMON=127.0.0.1:13119
 export AETHER_ENTRY=main.ts
 
-DLL_WINE_PATH="Z:\home\user\aether\packages\native\zig-out\bin\Aether.dll"
+AETHER_DLL="Z:$(echo "$PWD/Aether.dll" | tr '/' '\\')"
 
 DISPLAY=:99 WINEDLLOVERRIDES="dbghelp=n" \
-  wine Game.exe -w -nosound --headless -loaddll "$DLL_WINE_PATH"
+  wine Game.exe -w -nosound --headless -loaddll "$AETHER_DLL"
 ```
+
+**Important:** The `-loaddll` argument is required — the `dbghelp.dll` proxy
+reads the command line to find and load `Aether.dll`. Without it, only the
+proxy loads and the game runs without Aether.
 
 The game will connect to the daemon, load modules, and either run the bot
 or the test suite depending on daemon mode.
+
+In test mode, the game **exits automatically** after all tests complete via
+`exitGame()`. No need to kill the process manually.
 
 ### Check output
 
@@ -198,6 +205,7 @@ Test output looks like:
 [RUN]  can read area exits
 [PASS] can read area exits
 === Results: 4/4 passed, 0 failed ===
+Test run complete.
 ```
 
 ## Troubleshooting
