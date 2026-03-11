@@ -4,9 +4,10 @@ import { Router } from "./router.js";
 import { Filesystem } from "./filesystem.js";
 import { Watcher } from "./watcher.js";
 import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Default scripts dir: aether/scripts/ (relative to this package at aether/packages/daemon/)
-const PACKAGE_ROOT = resolve(dirname(new URL(import.meta.url).pathname), "..");
+const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_SCRIPTS = resolve(PACKAGE_ROOT, "../../scripts");
 
 function parseArgs(): { port: number; host: string; scripts: string; tests: boolean; token?: string } {
