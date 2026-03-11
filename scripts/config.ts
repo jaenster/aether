@@ -1,17 +1,17 @@
-import { createService, skills, areas } from "diablo:game"
+import { createService, Skill, Area } from "diablo:game"
 
 export const townAreas = new Set([
-  areas.RogueEncampment,
-  areas.LutGholein,
-  areas.KurastDocks,
-  areas.ThePandemoniumFortress,
-  areas.Harrogath,
+  Area.RogueEncampment,
+  Area.LutGholein,
+  Area.KurastDocks,
+  Area.PandemoniumFortress,
+  Area.Harrogath,
 ])
 
 export const Config = createService(() => ({
   // Combat
-  mainSkill: skills.Blizzard,
-  teleport: skills.Teleport,
+  mainSkill: Skill.Blizzard,
+  teleport: Skill.Teleport,
   castDelay: 600,       // ms between casts
   killRange: 25,        // max distance to engage
   maxAttacks: 20,       // bail after this many casts per clear

@@ -3,11 +3,17 @@
   "compilerOptions": {
     "noEmit": true,
     "lib": ["esnext"],
-    "moduleResolution": "nodenext",
-    "types": ["@aether/sdk"]
+    "types": [],
+    "paths": {
+      "diablo:native": ["../packages/sdk/native/index.d.ts"],
+      "diablo:game": ["../packages/sdk/game/index.d.ts"],
+      "diablo:constants": ["../packages/sdk/constants/index.ts"],
+      "diablo:test": ["../packages/sdk/test/index.d.ts"]
+    }
   },
   "include": [
-    "**/*.ts"
+    "**/*.ts",
+    "../packages/sdk/diablo.d.ts"
   ]
 }
 

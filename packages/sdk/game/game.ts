@@ -54,7 +54,7 @@ export class Game {
     if (!raw) return []
     return raw.split(',').map(function(entry: string) {
       const parts = entry.split(':')
-      return { area: parseInt(parts[0]!, 10), x: parseInt(parts[1]!, 10), y: parseInt(parts[2], 10) }
+      return { area: parseInt(parts[0]!, 10), x: parseInt(parts[1]!, 10), y: parseInt(parts[2]!, 10) }
     })
   }
 
@@ -62,14 +62,14 @@ export class Game {
     const raw = nativeFindPath(x, y)
     if (!raw) return []
     const arr = JSON.parse(raw) as number[][]
-    return arr.map(function(p: number[]) { return { x: p[0], y: p[1] } })
+    return arr.map(function(p: number[]) { return { x: p[0]!, y: p[1]! } })
   }
 
   findPreset(type: number, classid: number) {
     const raw = nativeFindPreset(type, classid)
     if (!raw) return undefined
     const parts = raw.split(':')
-    return { x: parseInt(parts[0], 10), y: parseInt(parts[1], 10) }
+    return { x: parseInt(parts[0]!, 10), y: parseInt(parts[1]!, 10) }
   }
 
   *delay(ms: number) {

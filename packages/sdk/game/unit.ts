@@ -7,7 +7,7 @@ import {
   tileGetDestArea,
   getUnitX, getUnitY,
 } from "diablo:native"
-import { UnitType } from "../constants";
+import { UnitType } from "diablo:constants";
 
 export abstract class Unit {
   constructor(readonly type: number, readonly unitId: number) {}

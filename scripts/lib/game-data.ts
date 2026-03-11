@@ -173,8 +173,8 @@ function monsterLevel(monId: number, areaId: number): number {
 function monsterMaxHP(monId: number, areaId: number, adjustLevel = 0): number {
   const diff = getDifficulty();
   const mlvl = Math.min(HPLookup.length - 1, monsterLevel(monId, areaId) + adjustLevel);
-  const hpField = ["maxHP", "maxHP(N)", "maxHP(H)"][diff];
-  return HPLookup[mlvl][diff] * getBaseStat("monstats", monId, hpField) / 100;
+  const hpField = ["maxHP", "maxHP(N)", "maxHP(H)"][diff]!;
+  return HPLookup[mlvl]![diff]! * getBaseStat("monstats", monId, hpField) / 100;
 }
 
 function monsterResist(monId: number, type: string): number {
@@ -188,7 +188,7 @@ function monsterResist(monId: number, type: string): number {
     Poison:    ["ResPo", "ResPo(N)", "ResPo(H)"],
   };
   const fields = fieldMap[type];
-  return fields ? getBaseStat("monstats", monId, fields[diff]) : 0;
+  return fields ? getBaseStat("monstats", monId, fields[diff]!) : 0;
 }
 
 function skillCooldown(skillId: number): boolean {
@@ -251,16 +251,16 @@ export function skillDamage(skillId: number): DamageInfo {
   const sc = synergyCalc[skillId];
   if (sc) {
     for (let c = 0; c < sc.length; c += 2) {
-      const sl = baseLevel(sc[c]);
+      const sl = baseLevel(sc[c]!);
       if (skillId === 229 || skillId === 244) {
         if (sc[c] === 229 || sc[c] === 244) {
-          psynergy += sl * sc[c + 1];
+          psynergy += sl * sc[c + 1]!;
         } else {
-          synergy += sl * sc[c + 1];
+          synergy += sl * sc[c + 1]!;
         }
       } else {
-        psynergy += sl * sc[c + 1];
-        synergy += sl * sc[c + 1];
+        psynergy += sl * sc[c + 1]!;
+        synergy += sl * sc[c + 1]!;
       }
     }
   }
@@ -431,7 +431,7 @@ export function castingFrames(skillId: number, charClass: number): number {
   const fcr = getUnitStat(STAT_FCR, 0);
   const effectiveFCR = Math.min(75, (fcr * 120 / (fcr + 120)) | 0);
   const isLightning = skillId === 49 || skillId === 53;
-  const baseCastRate = [20, isLightning ? 19 : 14, 16, 16, 14, 15, 17][charClass];
+  const baseCastRate = [20, isLightning ? 19 : 14, 16, 16, 14, 15, 17][charClass]!;
 
   if (isLightning) {
     return Math.round(256 * baseCastRate / (256 * (100 + effectiveFCR) / 100));

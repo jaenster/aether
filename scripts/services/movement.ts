@@ -35,7 +35,7 @@ export const Movement = createService((game: Game, services) => {
       game.log(`  walk: ${path.length} nodes`)
 
       for (let i = 0; i < path.length; i++) {
-        const wp = path[i]
+        const wp = path[i]!
         let ticks = 0
         while (ticks < 30) {
           const dx = wp.x - game.me.x

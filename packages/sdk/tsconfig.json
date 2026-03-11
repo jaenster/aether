@@ -1,15 +1,17 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "module": "esnext",
     "rootDir": ".",
-    "declaration": true,
-    "declarationMap": true,
-    "emitDeclarationOnly": false,
-    "noEmit": true
+    "noEmit": true,
+    "paths": {
+      "diablo:native": ["./native/index.d.ts"],
+      "diablo:game": ["./game/index.d.ts"],
+      "diablo:constants": ["./constants/index.ts"],
+      "diablo:test": ["./test/index.d.ts"]
+    }
   },
   "include": [
-    "*.ts",
+    "**/*.ts",
     "diablo.d.ts"
   ]
 }

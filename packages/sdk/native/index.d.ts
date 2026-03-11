@@ -49,7 +49,7 @@
   export function meGetCharName(): string;
 
   // Actions
-  export function clickMap(type: number, x: number, y: number, shift: boolean): void;
+  export function clickMap(type: number, shift: number, x: number, y: number): void;
   export function move(x: number, y: number): void;
   export function selectSkill(skillId: number, hand: number): void;
   export function castSkillAt(x: number, y: number): void;
@@ -59,9 +59,9 @@
   export function runToEntity(type: number, unitId: number): void;
 
   // Map & pathfinding
-  export function getExits(): Array<{ area: number; x: number; y: number }>;
-  export function findPath(x: number, y: number): Array<{ x: number; y: number }>;
-  export function findPreset(type: number, classid: number): { x: number; y: number } | undefined;
+  export function getExits(): string | null;
+  export function findPath(x: number, y: number): string | null;
+  export function findPreset(type: number, classid: number): string | undefined;
 
   // Skills
   export function getSkillLevel(skillId: number, includeItems: number): number;

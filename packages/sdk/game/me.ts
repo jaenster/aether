@@ -6,6 +6,7 @@ export interface Me {
   readonly mp: number;
   readonly mpmax: number;
   readonly name: string;
+  readonly charname: string;
 
   getStat(stat: number, layer?: number): number;
 
