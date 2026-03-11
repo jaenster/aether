@@ -58,10 +58,13 @@ function walk(
       deps.push(spec);
       continue;
     }
-    deps.push(resolved.path);
     if (resolved.specifierOverride) {
       specifierOverrides.set(resolved.path, resolved.specifierOverride);
     }
+    // Store the specifier (not path) so deps match what SM sees at runtime
+    const depSpec = resolved.specifierOverride
+      ?? ("./" + relativePath(scriptRoot, resolved.path)).replace(/\.tsx?$/, ".js");
+    deps.push(depSpec);
     walk(resolved.path, scriptRoot, modules, visiting, specifierOverrides);
   }
 
@@ -107,6 +110,12 @@ function topologicalSort(modules: Map<string, ModuleInfo>): ModuleInfo[] {
   const inDegree = new Map<string, number>();
   const dependents = new Map<string, string[]>();
 
+  // Build specifier → path lookup so deps (which are specifiers) can find modules (keyed by path)
+  const specToPath = new Map<string, string>();
+  for (const [path, mod] of modules) {
+    specToPath.set(mod.specifier, path);
+  }
+
   // Initialize
   for (const [path] of modules) {
     inDegree.set(path, 0);
@@ -116,9 +125,10 @@ function topologicalSort(modules: Map<string, ModuleInfo>): ModuleInfo[] {
   // Build edges
   for (const [path, mod] of modules) {
     for (const dep of mod.deps) {
-      if (modules.has(dep)) {
+      const depPath = specToPath.get(dep);
+      if (depPath !== undefined) {
         inDegree.set(path, (inDegree.get(path) || 0) + 1);
-        dependents.get(dep)!.push(path);
+        dependents.get(depPath)!.push(path);
       }
     }
   }

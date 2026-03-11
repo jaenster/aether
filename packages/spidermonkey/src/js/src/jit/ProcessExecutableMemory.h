@@ -14,7 +14,11 @@ namespace jit {
 
 // Limit on the number of bytes of executable memory to prevent JIT spraying
 // attacks.
-#if JS_BITS_PER_WORD == 32
+//
+// Note: JS_BITS_PER_WORD may not be defined yet (it lives in jstypes.h which
+// is not always included before this header). Use __SIZEOF_POINTER__ which
+// is a compiler built-in and always available.
+#if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 4
 static const size_t MaxCodeBytesPerProcess = 140 * 1024 * 1024;
 #else
 static const size_t MaxCodeBytesPerProcess = 1 * 1024 * 1024 * 1024;

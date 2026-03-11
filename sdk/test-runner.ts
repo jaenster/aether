@@ -1,6 +1,6 @@
 import { game } from "./runtime.js"
 import { ServiceContainer } from "./service.js"
-import { __getTests, AssertionError } from "./test.js"
+import { __getTests, AssertionError } from "diablo:test"
 import { log as nativeLog } from "diablo:native"
 
 const __g = Function('return this')()

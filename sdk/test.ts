@@ -24,7 +24,7 @@ export function assertEqual<T>(actual: T, expected: T, message?: string): void {
 export function assertNotEqual<T>(actual: T, notExpected: T, message?: string): void {
   if (actual === notExpected)
     throw new AssertionError(
-      message ?? "Expected value to differ from " + JSON.stringify(notExpected)
+      message ?? "Value should differ, got " + JSON.stringify(notExpected)
     )
 }
 
