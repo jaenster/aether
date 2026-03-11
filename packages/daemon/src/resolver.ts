@@ -47,9 +47,22 @@ export function resolveModule(specifier: string, fromPath: string): ResolveResul
     return { path: constantsEntry, specifierOverride: "diablo:constants" };
   }
 
-  // diablo:test and diablo:test-runner → runtime-provided modules (resolved client-side)
-  if (specifier === "diablo:test" || specifier === "diablo:test-runner") {
-    return null;
+  // diablo:test → SDK test framework (bundled + sent to client)
+  if (specifier === "diablo:test") {
+    const testEntry = join(SDK_ROOT, "test/index.ts");
+    if (!existsSync(testEntry)) {
+      throw new Error(`SDK test module not found: ${testEntry}`);
+    }
+    return { path: testEntry, specifierOverride: "diablo:test" };
+  }
+
+  // diablo:test-runner → SDK test runner (bundled + sent to client)
+  if (specifier === "diablo:test-runner") {
+    const runnerEntry = join(SDK_ROOT, "test/runner.ts");
+    if (!existsSync(runnerEntry)) {
+      throw new Error(`SDK test runner not found: ${runnerEntry}`);
+    }
+    return { path: runnerEntry, specifierOverride: "diablo:test-runner" };
   }
 
   const fromDir = dirname(fromPath);
