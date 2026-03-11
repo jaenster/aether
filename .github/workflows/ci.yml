@@ -99,7 +99,7 @@ jobs:
           echo ""
           # Check for test results line
           if grep -q "Results:.*failed" "$LOG"; then
-            FAILED=$(grep "Results:" "$LOG" | grep -oP '\d+ failed' | grep -oP '^\d+')
+            FAILED=$(grep "Results:" "$LOG" | sed -n 's/.*\([0-9][0-9]*\) failed.*/\1/p')
             if [ "$FAILED" != "0" ]; then
               echo "FAIL: $FAILED test(s) failed"
               exit 1
