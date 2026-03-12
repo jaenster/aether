@@ -24,11 +24,13 @@ export const Movement = createService((game: Game, services) => {
     *teleportTo(targetX: number, targetY: number, threshold = 5) {
       if (dist(game.player.x, game.player.y, targetX, targetY) < threshold) return
 
+      const d = dist(game.player.x, game.player.y, targetX, targetY)
       const path = game.findTelePath(targetX, targetY)
       if (path.length === 0) {
-        game.log(`[move] no tele path to ${targetX},${targetY}`)
+        game.log(`[move] no tele path to ${targetX},${targetY} dist=${d|0}`)
         return
       }
+      game.log(`[move] tele ${path.length} hops, dist=${d|0}`)
 
       // Select teleport skill once, cast on self to trigger the switch
       game.useSkill(cfg.teleport, game.player.x, game.player.y)

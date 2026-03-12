@@ -583,7 +583,12 @@ fn jsFindTelePath(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c
 
     ensureActMap();
     const tp_range: u32 = 40;
+    const t0 = std.time.milliTimestamp();
     const wp_count = teleport_reducer.findPath(sx, sy, ex, ey, tp_range);
+    const dt = std.time.milliTimestamp() - t0;
+    var tbuf: [128]u8 = undefined;
+    const tmsg = std.fmt.bufPrint(&tbuf, "tele path: {d}ms, {d} wps", .{ dt, wp_count }) catch "?";
+    log.printStr("", tmsg);
     if (wp_count == 0) { retString(cx, argc, vp, "[]"); return 1; }
 
     var buf: [8192]u8 = undefined;

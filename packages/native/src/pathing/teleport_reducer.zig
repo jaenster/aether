@@ -293,6 +293,15 @@ pub fn findPath(sx: i32, sy: i32, ex: i32, ey: i32, tp_range: u32) u32 {
     // astar internally calls reduce(), result goes directly into waypoints
     waypoint_count = astar.FindPath(@This()).findPath(sx, sy, ex, ey, &waypoints);
 
+    // Drop first waypoint if it's very close to start (avoids 1-tile teleport)
+    if (waypoint_count > 1 and euclidean(waypoints[0].x, waypoints[0].y, sx, sy) < @divTrunc(range, 2)) {
+        var i: u32 = 0;
+        while (i < waypoint_count - 1) : (i += 1) {
+            waypoints[i] = waypoints[i + 1];
+        }
+        waypoint_count -= 1;
+    }
+
     // Always append the original destination as the final waypoint.
     // A* may mutate the endpoint via mutatePoint (shifting it to walkable space),
     // so reduce() can end at a different point than the caller requested.
