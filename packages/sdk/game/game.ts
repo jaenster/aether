@@ -15,6 +15,7 @@ import {
   printScreen as nativePrintScreen,
   getRightSkill as nativeGetRightSkill,
   sendPacket as nativeSendPacket,
+  castSkillPacket as nativeCastSkillPacket,
 } from "diablo:native"
 import { UnitCollection } from "./unit.collection.js";
 import { ItemUnit, Missile, Monster, ObjectUnit, PlayerUnit, Tile } from "./unit.js";
@@ -78,6 +79,8 @@ export class Game {
     selectSkill(0, skillId)
     castSkillAt(x, y)
   }
+  /** Cast right skill at world coords via packet — works off-screen (for teleport). */
+  castSkillPacket(x: number, y: number) { nativeCastSkillPacket(x, y) }
   /** Get the currently selected right-hand skill ID */
   get rightSkill(): number { return nativeGetRightSkill() }
   say(msg: string) { nativeSay(msg) }

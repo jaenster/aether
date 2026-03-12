@@ -54,6 +54,8 @@
   export function move(x: number, y: number): void;
   export function selectSkill(skillId: number, hand: number): void;
   export function castSkillAt(x: number, y: number): void;
+  /** Cast right skill at world coords via packet (works off-screen, no animation). */
+  export function castSkillPacket(x: number, y: number): void;
   export function getRightSkill(): number;
   export function getUIFlag(flag: number): boolean;
   export function say(message: string): void;

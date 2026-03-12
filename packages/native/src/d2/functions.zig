@@ -423,9 +423,9 @@ pub fn sendPacket(data: []const u8) void {
 /// __fastcall: ECX=packet_id, EDX=x (i16), stack=y (i16)
 pub const SendShortShort = fastcall(0x4785D0, fn (u32, i16, i16) void);
 
-/// Cast right skill at world coordinates (packet 0x16).
+/// Cast right skill at world coordinates (packet 0x0C = RightSkillOnLocation).
 pub fn sendRightSkillAtLocation(x: u16, y: u16) void {
-    SendShortShort.call(.{ 0x16, @as(i16, @bitCast(x)), @as(i16, @bitCast(y)) });
+    SendShortShort.call(.{ 0x0C, @as(i16, @bitCast(x)), @as(i16, @bitCast(y)) });
 }
 
 /// Run to location (packet 0x04).

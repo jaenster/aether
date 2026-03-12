@@ -455,6 +455,15 @@ fn jsCastSkillAt(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_i
     return 1;
 }
 
+fn jsCastSkillPacket(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const x: u16 = @bitCast(@as(i16, @truncate(argInt32(argc, vp, 0))));
+    const y: u16 = @bitCast(@as(i16, @truncate(argInt32(argc, vp, 1))));
+    // Packet 0x0C: cast right skill at world coords — works off-screen
+    d2.sendRightSkillAtLocation(x, y);
+    retUndefined(argc, vp);
+    return 1;
+}
+
 fn jsGetRightSkill(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const player = globals.playerUnit().* orelse {
         retInt32(argc, vp, -1);
@@ -860,6 +869,7 @@ const bindings = [_]Binding{
     .{ .name = "move", .func = &jsMove, .nargs = 2 },
     .{ .name = "selectSkill", .func = &jsSelectSkill, .nargs = 2 },
     .{ .name = "castSkillAt", .func = &jsCastSkillAt, .nargs = 2 },
+    .{ .name = "castSkillPacket", .func = &jsCastSkillPacket, .nargs = 2 },
     .{ .name = "getRightSkill", .func = &jsGetRightSkill, .nargs = 0 },
     .{ .name = "getUIFlag", .func = &jsGetUIFlag, .nargs = 1 },
     .{ .name = "say", .func = &jsSay, .nargs = 1 },
