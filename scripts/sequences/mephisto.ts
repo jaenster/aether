@@ -19,11 +19,7 @@ export const Mephisto = createScript(function*(game, svc) {
   }
   game.log(`[mephisto] preset at ${mephPreset.x},${mephPreset.y}`)
 
-  // Pre-activate the bridge
-  yield* move.moveTo(17590, 8068)
-  yield* game.delay(1500)
-
-  // Kill Mephisto
+  // Teleport to Mephisto
   yield* move.moveTo(mephPreset.x, mephPreset.y)
   yield* atk.kill(242)
 
@@ -37,8 +33,8 @@ export const Mephisto = createScript(function*(game, svc) {
     game.log(`[mephisto] red portal at ${portal.x},${portal.y}`)
     yield* move.moveTo(portal.x, portal.y)
     game.interact(portal)
-    for (let i = 0; i < 50; i++) {
-      yield* game.delay(100)
+    for (let i = 0; i < 150; i++) {
+      yield
       if (game.area === Area.PandemoniumFortress) break
     }
   }

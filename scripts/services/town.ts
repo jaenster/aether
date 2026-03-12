@@ -25,8 +25,8 @@ export const Town = createService((game: Game, services) => {
     game.interact(unit)
 
     // Wait for NPC menu to appear
-    for (let i = 0; i < 50; i++) {
-      yield* game.delay(100)
+    for (let i = 0; i < 150; i++) {
+      yield
       if (game.getUIFlag(UiFlags.NPCMenu) || game.getUIFlag(UiFlags.Shop)) return unit
     }
 
@@ -36,8 +36,8 @@ export const Town = createService((game: Game, services) => {
 
   /** Wait for shop UI to open after sending open-trade packet */
   function* waitForShop() {
-    for (let i = 0; i < 30; i++) {
-      yield* game.delay(100)
+    for (let i = 0; i < 100; i++) {
+      yield
       if (game.getUIFlag(UiFlags.Shop)) return true
     }
     return false
@@ -46,7 +46,7 @@ export const Town = createService((game: Game, services) => {
   /** Close any open NPC dialog */
   function* closeNpc(npcUnitId: number) {
     game.sendPacket(npcClose(1, npcUnitId))
-    yield* game.delay(300)
+    yield* game.delay(200)
   }
 
   return {
@@ -109,7 +109,7 @@ export const Town = createService((game: Game, services) => {
 
       // Repair all: itemId=0, cost=0x80000000
       game.sendPacket(npcRepair(unit.unitId, 0, 0, 0x80000000 | 0))
-      yield* game.delay(300)
+      yield* game.delay(200)
 
       yield* closeNpc(unit.unitId)
       game.log(`[town] repair done`)

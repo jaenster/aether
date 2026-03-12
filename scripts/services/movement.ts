@@ -152,8 +152,8 @@ export const Movement = createService((game: Game, services) => {
           game.log(`[move] no tile unit for area ${areaId}`)
         }
 
-        for (let i = 0; i < 30; i++) {
-          yield* game.delay(100)
+        for (let i = 0; i < 100; i++) {
+          yield
           if (game.area === areaId) return true
         }
       }
@@ -197,8 +197,8 @@ export const Movement = createService((game: Game, services) => {
       game.log(`[move] waypoint → area ${destArea} (wpUnit=${wpUnit.unitId})`)
       game.takeWaypoint(wpUnit.unitId, destArea)
 
-      for (let i = 0; i < 50; i++) {
-        yield* game.delay(100)
+      for (let i = 0; i < 150; i++) {
+        yield
         if (game.area === destArea) {
           game.log(`[move] waypoint travel succeeded, now in area ${game.area}`)
           return true

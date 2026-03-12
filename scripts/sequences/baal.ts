@@ -31,8 +31,8 @@ export const Baal = createScript(function*(game, svc) {
     const portalUnit = game.objects.find(o => o.classid === 563)
     if (portalUnit) {
       game.interact(portalUnit)
-      for (let i = 0; i < 50; i++) {
-        yield* game.delay(100)
+      for (let i = 0; i < 150; i++) {
+        yield
         if (game.area === Area.WorldstoneChamber) break
       }
     }
