@@ -85,12 +85,22 @@ NORMAL_LIBS=(
 
 mkdir -p "$BUILD_DIR/dll"
 
+# Create a local lib dir where we shadow the dynamic winpthread with the static one
+# This tricks g++'s default -lpthread into finding the static archive first
+SHADOW_LIB="$BUILD_DIR/shadow-lib"
+mkdir -p "$SHADOW_LIB"
+cp "$($GXX -print-file-name=libwinpthread.a)" "$SHADOW_LIB/libpthread.a"
+cp "$($GXX -print-file-name=libwinpthread.a)" "$SHADOW_LIB/libwinpthread.a"
+# Remove any dynamic import lib copies
+rm -f "$SHADOW_LIB/libpthread.dll.a" "$SHADOW_LIB/libwinpthread.dll.a"
+
 $GXX -shared -o "$BUILD_DIR/dll/mozjs.dll" \
     "$BUILD_DIR/sm_bridge.o" \
     -Wl,--whole-archive "${WHOLE_ARCHIVE_LIBS[@]}" -Wl,--no-whole-archive \
     "${NORMAL_LIBS[@]}" \
     -lws2_32 -lwinmm -ladvapi32 -lpsapi -lmswsock -lkernel32 -ldbghelp \
     -static-libgcc -static-libstdc++ \
+    -L"$SHADOW_LIB" \
     -Wl,--out-implib,"$BUILD_DIR/dll/libmozjs.dll.a" \
     -Wl,--enable-stdcall-fixup
 
