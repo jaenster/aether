@@ -25,22 +25,14 @@ export const Town = createService((game: Game, services) => {
     game.interact(unit)
 
     // Wait for NPC menu to appear
-    for (let i = 0; i < 150; i++) {
-      yield
-      if (game.getUIFlag(UiFlags.NPCMenu) || game.getUIFlag(UiFlags.Shop)) return unit
+    const ok: unknown = yield* game.waitUntil(() =>
+      game.getUIFlag(UiFlags.NPCMenu) || game.getUIFlag(UiFlags.Shop)
+    )
+    if (!ok) {
+      game.log(`[town] ${npc.name} interaction timed out`)
+      return null
     }
-
-    game.log(`[town] ${npc.name} interaction timed out`)
-    return null
-  }
-
-  /** Wait for shop UI to open after sending open-trade packet */
-  function* waitForShop() {
-    for (let i = 0; i < 100; i++) {
-      yield
-      if (game.getUIFlag(UiFlags.Shop)) return true
-    }
-    return false
+    return unit
   }
 
   /** Close any open NPC dialog */
@@ -100,7 +92,7 @@ export const Town = createService((game: Game, services) => {
 
       // Open repair shop
       game.sendPacket(npcSession(1, unit.unitId))
-      const ok: unknown = yield* waitForShop()
+      const ok: unknown = yield* game.waitUntil(() => game.getUIFlag(UiFlags.Shop))
       if (!ok) {
         game.log(`[town] repair shop didn't open`)
         yield* closeNpc(unit.unitId)
@@ -122,7 +114,7 @@ export const Town = createService((game: Game, services) => {
 
       // Send open-trade packet
       game.sendPacket(npcSession(0, unit.unitId))
-      const ok: unknown = yield* waitForShop()
+      const ok: unknown = yield* game.waitUntil(() => game.getUIFlag(UiFlags.Shop))
       if (!ok) {
         game.log(`[town] trade didn't open with ${npc.name}`)
         yield* closeNpc(unit.unitId)

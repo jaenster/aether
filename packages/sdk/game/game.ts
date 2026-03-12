@@ -130,6 +130,24 @@ export class Game {
     for (let i = 0; i < ticks; i++) yield
   }
 
+  /** Yield per-frame until area changes to target, or maxFrames exceeded. */
+  *waitForArea(area: number, maxFrames = 150) {
+    for (let i = 0; i < maxFrames; i++) {
+      if (this.area === area) return true
+      yield
+    }
+    return false
+  }
+
+  /** Yield per-frame until predicate returns true, or maxFrames exceeded. */
+  *waitUntil(predicate: () => boolean, maxFrames = 150) {
+    for (let i = 0; i < maxFrames; i++) {
+      if (predicate()) return true
+      yield
+    }
+    return false
+  }
+
   log(...args: any[]) {
     const msg = args.map(a => String(a)).join(' ')
     nativeLog(`[f${this._frame}] ${msg}`)

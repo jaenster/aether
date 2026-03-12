@@ -33,10 +33,7 @@ export const Mephisto = createScript(function*(game, svc) {
     game.log(`[mephisto] red portal at ${portal.x},${portal.y}`)
     yield* move.moveTo(portal.x, portal.y)
     game.interact(portal)
-    for (let i = 0; i < 150; i++) {
-      yield
-      if (game.area === Area.PandemoniumFortress) break
-    }
+    yield* game.waitForArea(Area.PandemoniumFortress)
   }
 
   game.log('[mephisto] run complete')
