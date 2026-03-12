@@ -84,13 +84,37 @@ jobs:
             -PassThru -NoNewWindow
 
           # Game exits itself after tests via exitGame()
-          $proc | Wait-Process -Timeout 120
-          Get-Content aether_log.txt
+          try {
+            $proc | Wait-Process -Timeout 120
+          } catch {
+            Write-Host "Game process timed out — dumping log before failing"
+          }
+
+          $exitCode = $proc.ExitCode
+          Write-Host "Game exit code: $exitCode"
+
+          if (Test-Path aether_log.txt) {
+            Write-Host "=== aether_log.txt ==="
+            Get-Content aether_log.txt
+          } else {
+            Write-Host "WARNING: aether_log.txt not found"
+          }
+
+          # Kill game if still running
+          if (!$proc.HasExited) {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          }
 
           # Clean up daemon
           Stop-Process -Name node -Force -ErrorAction SilentlyContinue
 
+          # Fail if game didn't exit cleanly
+          if ($exitCode -eq $null -or $exitCode -ne 0) {
+            exit 1
+          }
+
       - name: Check test results
+        if: always()
         shell: bash
         run: |
           LOG="packages/native/minimal/aether_log.txt"
