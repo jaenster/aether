@@ -20,11 +20,11 @@ export const Mephisto = createScript(function*(game, svc) {
   for (let i = 0; i < 20; i++) yield // ~0.8s for bridge activation to start
 
   // Find and kill Mephisto (bridge rises during the fight)
-  const meph = game.monsters.find(m => m.classid === 242)
+  const meph = game.monsters.find(m => m.classid === 242 && atk.alive(m))
   if (meph) {
     yield* move.moveTo(meph.x, meph.y)
+    yield* atk.kill(meph)
   }
-  yield* atk.kill(242)
 
   game.log('[mephisto] looting')
   yield* loot.lootGround()

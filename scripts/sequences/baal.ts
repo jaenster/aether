@@ -20,7 +20,7 @@ export const Baal = createScript(function*(game, svc) {
   for (let wave = 0; wave < 5; wave++) {
     // Wait for wave to spawn
     yield* game.delay(2000)
-    yield* atk.clearNearby()
+    yield* atk.clear()
     game.log(`[baal] wave ${wave + 1} cleared`)
   }
 
@@ -36,7 +36,8 @@ export const Baal = createScript(function*(game, svc) {
   }
 
   game.log('[baal] engaging baal')
-  yield* atk.kill(544) // Baal
+  const baal = game.monsters.find(m => m.classid === 544 && atk.alive(m))
+  if (baal) yield* atk.kill(baal)
 
   game.log('[baal] looting')
   yield* loot.lootGround()

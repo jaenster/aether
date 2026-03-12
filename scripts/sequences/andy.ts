@@ -15,7 +15,8 @@ export const Andy = createScript(function*(game, svc) {
   yield* move.moveTo(22549, 9520)
 
   game.log('[andy] engaging andariel')
-  yield* atk.kill(156) // Andariel
+  const andy = game.monsters.find(m => m.classid === 156 && atk.alive(m))
+  if (andy) yield* atk.kill(andy)
 
   game.log('[andy] looting')
   yield* loot.lootGround()

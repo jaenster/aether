@@ -457,4 +457,246 @@ export function skillRange(skillId: number): number {
   return 3
 }
 
+// --- Live unit-based evaluation ---
+
+import type { Monster } from "diablo:game"
+import type { Pos, ActionScore } from "./attack-types.js"
+
+/** Read actual resist from a live monster unit (not txt) */
+export function unitResist(mon: Monster, type: string): number {
+  const statId = resistMap[type]
+  if (!statId) return 0
+  return mon.getStat(statId, 0)
+}
+
+/** Compute average damage of a skill against a specific live unit */
+export function skillDamageVsUnit(skillId: number, mon: Monster): number {
+  const dmg = skillDamage(skillId)
+  if (dmg.pmin === 0 && dmg.pmax === 0 && dmg.min === 0 && dmg.max === 0) return 0
+
+  const isUndead = getBaseStat("monstats", mon.classid, "hUndead") || getBaseStat("monstats", mon.classid, "lUndead")
+  if (dmg.undeadOnly && !isUndead) return 0
+
+  let total = 0
+
+  // Physical
+  const avgP = (dmg.pmin + dmg.pmax) / 2
+  if (avgP > 0) {
+    const presist = Math.max(-100, Math.min(100, unitResist(mon, "Physical")))
+    total += avgP * (100 - presist) / 100
+  }
+
+  // Elemental
+  const avgE = (dmg.min + dmg.max) / 2
+  if (avgE > 0) {
+    let resist = unitResist(mon, dmg.type)
+    const pierceStat = pierceMap[dmg.type]
+    const pierce = pierceStat ? getUnitStat(pierceStat, 0) : 0
+    if (resist < 100) {
+      resist = Math.max(-100, resist - pierce)
+    } else {
+      resist = 100
+    }
+    total += avgE * (100 - resist) / 100
+  }
+
+  return total
+}
+
+function distXY(x1: number, y1: number, x2: number, y2: number): number {
+  const dx = x1 - x2, dy = y1 - y2
+  return Math.sqrt(dx * dx + dy * dy)
+}
+
+/** Mana cost for a skill at current level. Reads from skills.txt fields. */
+export function skillManaCost(skillId: number): number {
+  const lvl = skillLevel(skillId)
+  if (lvl < 1) return 0
+  const baseMana = getBaseStat("skills", skillId, "mana")
+  const lvlMana = getBaseStat("skills", skillId, "lvlmana")
+  const minMana = getBaseStat("skills", skillId, "minmana")
+  // mana + lvlmana * (level - 1), floored at minmana. Shift >> 8 for fixed point.
+  const cost = Math.max(minMana, baseMana + lvlMana * (lvl - 1)) >> 8
+  return Math.max(0, cost)
+}
+
+/** Is a skill centered on the caster (nova-like) vs aimed at a target? */
+export function isNova(skillId: number): boolean {
+  return !!novaLike[skillId]
+}
+
+/** Get splash/AoE radius for a skill (0 = single target) */
+export function splashRadius(skillId: number): number {
+  return skillRadius[skillId] || 0
+}
+
+/**
+ * Evaluate a skill cast from `casterPos` aimed at `targetPos` against a group of monsters.
+ * For nova-like skills, all monsters within radius of casterPos are hit.
+ * For projectile/AoE skills, monsters near targetPos within splash radius are hit.
+ * charClass is needed for cast frame calculation.
+ */
+export function evaluateBattlefield(
+  skillId: number,
+  casterPos: Pos,
+  targetPos: Pos,
+  monsters: Monster[],
+  charClass: number,
+  primaryTarget?: Monster,
+): ActionScore {
+  const range = skillRange(skillId)
+  const splash = splashRadius(skillId)
+  const nova = isNova(skillId)
+  const frames = castingFrames(skillId, charClass)
+
+  let totalDmg = 0
+  let primaryDmg = 0
+  let hit = 0
+
+  for (const mon of monsters) {
+    // For nova: distance from caster. For targeted: distance from target point.
+    const d = nova
+      ? distXY(casterPos.x, casterPos.y, mon.x, mon.y)
+      : distXY(targetPos.x, targetPos.y, mon.x, mon.y)
+
+    // Check if monster is in range
+    const effectiveRadius = nova ? range : (splash > 0 ? splash : 3)
+    if (d > effectiveRadius) continue
+
+    const dmg = skillDamageVsUnit(skillId, mon)
+    if (dmg <= 0) continue
+
+    totalDmg += dmg
+    hit++
+    if (primaryTarget && mon.unitId === primaryTarget.unitId) {
+      primaryDmg = dmg
+    }
+  }
+
+  // Check if caster needs to reposition to cast
+  const castDist = distXY(casterPos.x, casterPos.y, targetPos.x, targetPos.y)
+  const needsReposition = nova ? false : castDist > range
+  // Rough teleport cost: 1 frame per 30 units of distance
+  const teleFrames = needsReposition ? Math.ceil(castDist / 30) : 0
+  const totalFrames = frames + teleFrames
+
+  // Mana cost — penalize skills we can't sustain
+  const manaCost = skillManaCost(skillId)
+  const currentMp = getUnitMP()
+  let manaFactor = 1.0
+  if (manaCost > 0) {
+    if (manaCost > currentMp) manaFactor = 0 // can't afford it
+    else manaFactor = Math.min(1, currentMp / (manaCost * 3)) // penalize if < 3 casts left
+  }
+
+  return {
+    skillId,
+    casterPos,
+    targetPos: nova ? casterPos : targetPos,
+    dpsPerFrame: totalFrames > 0 ? (totalDmg / totalFrames) * manaFactor : 0,
+    primaryDmg,
+    monstersHit: hit,
+    frameCost: totalFrames,
+    manaCost,
+    needsReposition,
+  }
+}
+
+/**
+ * Find the best skill + position for a caster against visible monsters.
+ *
+ * @param casterPos Where the caster is now (parameter, not hardcoded — for multi-player).
+ * @param monsterFilter Predicate to select which monsters to consider (e.g. alive + in range).
+ *   Called with each monster from allMonsters. Keeps the caller in control of targeting.
+ * @param allMonsters Full monster list to filter from (game.monsters).
+ * @param charClass Caster's class for frame calculation.
+ * @param primaryTarget Optional focus target — used to evaluate positions near it.
+ * @param skillFilter Optional skill predicate.
+ */
+/**
+ * Rank all viable skill+position combos for a caster against visible monsters.
+ * Returns sorted list (best first) so the caller can skip cooldown/unavailable skills.
+ *
+ * @param casterPos Where the caster is now (parameter for multi-player support).
+ * @param monsterFilter Predicate selecting which monsters to consider.
+ * @param allMonsters Full monster list to filter from.
+ * @param charClass Caster's class for frame calculation.
+ * @param primaryTarget Optional focus target for position evaluation.
+ * @param skillFilter Optional skill predicate.
+ * @param maxResults Cap the returned list (default 5).
+ */
+export function rankActions(
+  casterPos: Pos,
+  monsterFilter: (m: Monster) => boolean,
+  allMonsters: Monster[],
+  charClass: number,
+  primaryTarget?: Monster,
+  skillFilter?: (skillId: number) => boolean,
+  maxResults = 5,
+): ActionScore[] {
+  const monsters = allMonsters.filter(monsterFilter)
+  if (monsters.length === 0) return []
+
+  const results: ActionScore[] = []
+
+  // Candidate positions to evaluate from/at
+  const positions: Pos[] = [casterPos]
+  if (primaryTarget) {
+    positions.push({ x: primaryTarget.x, y: primaryTarget.y })
+  }
+  // Densest cluster center
+  if (monsters.length > 2) {
+    let sx = 0, sy = 0, n = 0
+    for (const m of monsters) {
+      if (distXY(casterPos.x, casterPos.y, m.x, m.y) < 40) {
+        sx += m.x; sy += m.y; n++
+      }
+    }
+    if (n > 0) positions.push({ x: (sx / n) | 0, y: (sy / n) | 0 })
+  }
+
+  // Track best score per skill (don't add same skill twice at different positions)
+  const bestPerSkill = new Map<number, ActionScore>()
+
+  for (let sk = 0; sk < 360; sk++) {
+    if (nonDamage[sk]) continue
+    if (skillLevel(sk) < 1) continue
+    if (skillCooldown(sk)) continue
+    if (skillFilter && !skillFilter(sk)) continue
+
+    const dmg = skillDamage(sk)
+    if (dmg.pmin === 0 && dmg.pmax === 0 && dmg.min === 0 && dmg.max === 0) continue
+
+    const nova = isNova(sk)
+
+    for (const targetPos of positions) {
+      const evalCasterPos = nova ? targetPos : casterPos
+      const score = evaluateBattlefield(sk, evalCasterPos, targetPos, monsters, charClass, primaryTarget)
+      if (score.monstersHit === 0) continue
+
+      const prev = bestPerSkill.get(sk)
+      if (!prev || score.dpsPerFrame > prev.dpsPerFrame) {
+        bestPerSkill.set(sk, score)
+      }
+    }
+  }
+
+  results.push(...bestPerSkill.values())
+  results.sort((a, b) => b.dpsPerFrame - a.dpsPerFrame)
+  return results.slice(0, maxResults)
+}
+
+/** Convenience: return the single best action, or null */
+export function findBestAction(
+  casterPos: Pos,
+  monsterFilter: (m: Monster) => boolean,
+  allMonsters: Monster[],
+  charClass: number,
+  primaryTarget?: Monster,
+  skillFilter?: (skillId: number) => boolean,
+): ActionScore | null {
+  const ranked = rankActions(casterPos, monsterFilter, allMonsters, charClass, primaryTarget, skillFilter, 1)
+  return ranked[0] ?? null
+}
+
 export { resistMap, pierceMap, masteryMap, convictionEligible, nonDamage, damageTypes };
