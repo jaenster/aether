@@ -31,10 +31,11 @@ export const Mephisto = createScript(function*(game, svc) {
   yield* loot.lootGround()
 
   // Take red portal to Act 4
-  yield* move.moveTo(17602, 8069)
   const portal = game.objects.find(o => o.classid === 342)
     ?? game.objects.find(o => o.classid === 341)
   if (portal) {
+    game.log(`[mephisto] red portal at ${portal.x},${portal.y}`)
+    yield* move.moveTo(portal.x, portal.y)
     game.interact(portal)
     for (let i = 0; i < 50; i++) {
       yield* game.delay(100)

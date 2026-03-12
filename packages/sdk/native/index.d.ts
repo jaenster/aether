@@ -54,6 +54,7 @@
   export function move(x: number, y: number): void;
   export function selectSkill(skillId: number, hand: number): void;
   export function castSkillAt(x: number, y: number): void;
+  export function getRightSkill(): number;
   export function getUIFlag(flag: number): boolean;
   export function say(message: string): void;
   export function interact(type: number, unitId: number): void;

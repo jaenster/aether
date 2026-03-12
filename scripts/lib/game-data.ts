@@ -445,6 +445,10 @@ export function skillRange(skillId: number): number {
   const missile = getBaseStat("skills", skillId, "srvmissile") as number
   if (missile > 0) return 25
 
+  // Ground-targeted AoE skills (Blizzard, Meteor, etc.) — cast anywhere in range
+  const cltMissile = getBaseStat("skills", skillId, "cltmissile") as number
+  if (cltMissile > 0) return 25
+
   // range field: 0=melee, 1=h2h/both, 2+=ranged
   const r = getBaseStat("skills", skillId, "range") as number
   if (r >= 2) return 25

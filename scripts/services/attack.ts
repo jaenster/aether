@@ -1,4 +1,4 @@
-import { createService, type Game } from "diablo:game"
+import { createService, type Game, PlayerMode } from "diablo:game"
 import { Config } from "../config.js"
 import { Movement } from "./movement.js"
 import { monsterEffort, castingFrames, skillRange } from "../lib/game-data.js"
@@ -7,20 +7,26 @@ export const Attack = createService((game: Game, services) => {
   const cfg = services.get(Config)
   const move = services.get(Movement)
 
-  function bestSkill(classid: number, minRange = 0): { skill: number, delay: number, range: number } {
+  function bestSkill(classid: number, minRange = 0): { skill: number, delay: number, range: number, frames: number } {
     const result = monsterEffort(classid, game.area, 0, 0, minRange)
-    if (result.skill < 0) {
-      return { skill: cfg.mainSkill, delay: cfg.castDelay, range: skillRange(cfg.mainSkill) }
-    }
+    if (result.skill < 0) return { skill: -1, delay: 600, range: 3, frames: 15 }
     const frames = castingFrames(result.skill, game.player.charclass)
-    const delay = Math.max(200, frames * 40)
-    return { skill: result.skill, delay, range: skillRange(result.skill) }
+    return { skill: result.skill, delay: frames * 40, range: skillRange(result.skill), frames }
   }
 
   /** Select a skill and wait for it to take effect */
   function* preSelect(skill: number) {
     game.useSkill(skill, game.player.x, game.player.y)
     yield* game.delay(250)
+  }
+
+  /** Wait until the player can cast again */
+  function* waitCastDone(maxFrames = 30) {
+    yield // let the click be processed
+    for (let f = 0; f < maxFrames; f++) {
+      if (game.player.canCast) return
+      yield
+    }
   }
 
   return {
@@ -31,31 +37,30 @@ export const Attack = createService((game: Game, services) => {
         const target = game.monsters.find(m => m.hp > 0 && m.distance < cfg.killRange)
         if (!target) return
 
-        const { skill, delay, range } = bestSkill(target.classid)
-        if (skill !== currentSkill) {
-          yield* preSelect(skill)
-          currentSkill = skill
+        const best = bestSkill(target.classid)
+        if (best.skill !== currentSkill) {
+          yield* preSelect(best.skill)
+          currentSkill = best.skill
         }
-        if (target.distance > range) {
-          yield* move.moveNear(target.x, target.y, range)
+        if (target.distance > best.range) {
+          yield* move.moveNear(target.x, target.y, best.range)
         }
         game.castSkill(target.x, target.y)
         casts++
-        yield* game.delay(delay)
+        yield* waitCastDone()
       }
     },
 
     *kill(classid: number) {
-      let { skill, delay, range } = bestSkill(classid)
-      game.log(`[atk] killing classid=${classid} skill=${skill} range=${range} delay=${delay}ms`)
+      // Prefer ranged — try minRange=10 first, fall back to any skill
+      let best = bestSkill(classid, 10)
+      if (best.skill < 0) best = bestSkill(classid)
+      let { skill, range, frames: castFrames } = best
+      game.log(`[atk] killing classid=${classid} skill=${skill} range=${range} frames=${castFrames}`)
 
-      // Pre-select the attack skill once
       yield* preSelect(skill)
 
       let casts = 0
-      let stuckCount = 0
-      let lastDist = Infinity
-
       while (casts < cfg.maxAttacks) {
         const target = game.monsters.find(m => m.classid === classid && m.hp > 0)
         if (!target) {
@@ -63,36 +68,16 @@ export const Attack = createService((game: Game, services) => {
           return
         }
 
-        if (casts % 5 === 0) {
-          game.log(`[atk] cast=${casts} hp=${target.hp} dist=${target.distance|0}`)
-        }
+        game.log(`[atk] cast=${casts} hp=${target.hp} dist=${target.distance|0} rSkill=${game.rightSkill} mode=${game.player.mode}`)
 
         if (target.distance > range) {
           yield* move.moveNear(target.x, target.y, range)
-
-          if (target.distance >= lastDist - 2) {
-            stuckCount++
-            if (stuckCount >= 3 && range < 10) {
-              const ranged = bestSkill(classid, 10)
-              if (ranged.range > range) {
-                game.log(`[atk] stuck at dist=${target.distance|0}, switching to ranged skill=${ranged.skill}`)
-                skill = ranged.skill
-                delay = ranged.delay
-                range = ranged.range
-                stuckCount = 0
-                yield* preSelect(skill)
-                continue
-              }
-            }
-          } else {
-            stuckCount = 0
-          }
-          lastDist = target.distance
+          yield* preSelect(skill)
         }
 
         game.castSkill(target.x, target.y)
         casts++
-        yield* game.delay(delay)
+        yield* waitCastDone()
       }
       game.log(`[atk] max attacks (${cfg.maxAttacks}) reached, target still alive`)
     },

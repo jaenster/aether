@@ -13,6 +13,7 @@ import {
   exitClient as nativeExitClient,
   takeWaypoint as nativeTakeWaypoint,
   printScreen as nativePrintScreen,
+  getRightSkill as nativeGetRightSkill,
 } from "diablo:native"
 import { UnitCollection } from "./unit.collection.js";
 import { ItemUnit, Missile, Monster, ObjectUnit, PlayerUnit, Tile } from "./unit.js";
@@ -76,6 +77,8 @@ export class Game {
     selectSkill(0, skillId)
     castSkillAt(x, y)
   }
+  /** Get the currently selected right-hand skill ID */
+  get rightSkill(): number { return nativeGetRightSkill() }
   say(msg: string) { nativeSay(msg) }
   getUIFlag(flag: number) { return nativeGetUIFlag(flag) }
   interact(unit: { type: number, unitId: number }) { nativeInteract(unit.type, unit.unitId) }

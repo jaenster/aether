@@ -447,10 +447,32 @@ fn jsSelectSkill(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_i
 }
 
 fn jsCastSkillAt(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
-    const x: u32 = @bitCast(argInt32(argc, vp, 0));
-    const y: u32 = @bitCast(argInt32(argc, vp, 1));
-    d2.castRightSkillAt(@intCast(x & 0xFFFF), @intCast(y & 0xFFFF));
+    const x = argInt32(argc, vp, 0);
+    const y = argInt32(argc, vp, 1);
+    // Right-click through client (type 3 = right click down) so animations render
+    d2.clickAtWorld(3, x, y);
     retUndefined(argc, vp);
+    return 1;
+}
+
+fn jsGetRightSkill(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const player = globals.playerUnit().* orelse {
+        retInt32(argc, vp, -1);
+        return 1;
+    };
+    const info = player.pInfo orelse {
+        retInt32(argc, vp, -1);
+        return 1;
+    };
+    const rs = info.pRightSkill orelse {
+        retInt32(argc, vp, -1);
+        return 1;
+    };
+    const si = rs.pSkillInfo orelse {
+        retInt32(argc, vp, -1);
+        return 1;
+    };
+    retInt32(argc, vp, @as(i32, si.wSkillId));
     return 1;
 }
 
@@ -822,6 +844,7 @@ const bindings = [_]Binding{
     .{ .name = "move", .func = &jsMove, .nargs = 2 },
     .{ .name = "selectSkill", .func = &jsSelectSkill, .nargs = 2 },
     .{ .name = "castSkillAt", .func = &jsCastSkillAt, .nargs = 2 },
+    .{ .name = "getRightSkill", .func = &jsGetRightSkill, .nargs = 0 },
     .{ .name = "getUIFlag", .func = &jsGetUIFlag, .nargs = 1 },
     .{ .name = "say", .func = &jsSay, .nargs = 1 },
     .{ .name = "interact", .func = &jsInteract, .nargs = 2 },

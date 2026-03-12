@@ -6,7 +6,7 @@ import {
   itemGetQuality, itemGetFlags, itemGetLocation, itemGetCode,
   tileGetDestArea,
 } from "diablo:native"
-import { UnitType } from "diablo:constants";
+import { UnitType, PlayerMode } from "diablo:constants";
 
 export abstract class Unit {
   constructor(readonly type: number, readonly unitId: number) {}
@@ -58,6 +58,18 @@ export class PlayerUnit extends Unit {
   get goldStash(): number { return this.getStat(15, 0) }
   get stamina(): number { return this.getStat(25, 0) }
   get staminamax(): number { return this.getStat(26, 0) }
+
+  get idle(): boolean {
+    const m = this.mode
+    return m === PlayerMode.Neutral || m === PlayerMode.TownNeutral
+  }
+  get casting(): boolean { return this.mode === PlayerMode.Cast }
+  get canCast(): boolean {
+    const m = this.mode
+    return m === PlayerMode.Neutral || m === PlayerMode.TownNeutral
+      || m === PlayerMode.Walk || m === PlayerMode.Run
+      || m === PlayerMode.TownWalk
+  }
 }
 
 export class Monster extends Unit {

@@ -10,9 +10,7 @@ export const townAreas = new Set([
 
 export const Config = createService(() => ({
   // Combat
-  mainSkill: Skill.Blizzard,
   teleport: Skill.Teleport,
-  castDelay: 600,       // ms between casts
   killRange: 25,        // max distance to engage
   maxAttacks: 50,       // bail after this many casts per clear
 
