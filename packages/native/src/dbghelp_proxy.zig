@@ -50,15 +50,19 @@ fn loadRealDbgHelp() ?HMODULE {
 fn loadInjectedDlls() void {
     var argc: c_int = 0;
     const argv_opt = CommandLineToArgvW(GetCommandLineW(), &argc);
-    const argv = argv_opt orelse return;
+    const argv = argv_opt orelse {
+        log.print("dbghelp_proxy: CommandLineToArgvW failed");
+        return;
+    };
     defer _ = LocalFree(@ptrCast(argv));
 
     var i: usize = 0;
     while (i < @as(usize, @intCast(argc)) -| 1) : (i += 1) {
         if (wcsieql(argv[i], w("-loaddll"))) {
             const dll_path = argv[i + 1];
+            log.print("dbghelp_proxy: loading injected DLL");
             if (LoadLibraryW(dll_path) == null) {
-                _ = MessageBoxW(null, dll_path, w("Aether: Failed to load DLL"), 0x10);
+                log.print("dbghelp_proxy: LoadLibraryW FAILED");
             }
             i += 1;
         }
