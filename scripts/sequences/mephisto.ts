@@ -2,6 +2,7 @@ import { createScript, Area } from "diablo:game"
 import { Movement } from "../services/movement.js"
 import { Attack } from "../services/attack.js"
 import { Pickit } from "../services/pickit.js"
+import { Supplies } from "../services/supplies.js"
 
 // Fixed positions in Durance of Hate Level 3
 const BRIDGE_TRIGGER = { x: 17590, y: 8068 }
@@ -11,7 +12,9 @@ export const Mephisto = createScript(function*(game, svc) {
   const move = svc.get(Movement)
   const atk = svc.get(Attack)
   const loot = svc.get(Pickit)
+  const supplies = svc.get(Supplies)
 
+  yield* supplies.checkAndResupply()
   game.log('[mephisto] starting run')
   yield* move.journeyTo(Area.DuranceofHateLvl3)
 

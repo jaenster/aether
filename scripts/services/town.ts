@@ -1,132 +1,85 @@
-import { createService, type Game, UiFlags } from "diablo:game"
+import { createService, type Game, type NPC, UiFlags } from "diablo:game"
 import { Config, townAreas } from "../config.js"
 import { Movement } from "./movement.js"
-import { findHealNpc, findRepairNpc, findNpc, NpcService, type NpcInfo } from "../lib/npcs.js"
-import { npcSession, npcClose, npcRepair } from "../lib/packets.js"
 import { getTown } from "../lib/waypoints.js"
+import { npcClose } from "../lib/packets.js"
 
 export const Town = createService((game: Game, services) => {
   const cfg = services.get(Config)
   const move = services.get(Movement)
 
-  /** Walk to an NPC in town and interact via client (visual). */
-  function* goToNpc(npc: NpcInfo) {
-    // Find the actual unit in the world
-    const unit = game.objects.find(o => o.classid === npc.classid)
-    if (!unit) {
-      game.log(`[town] ${npc.name} not found in area`)
-      return null
-    }
-
-    // Walk close to NPC
-    yield* move.walkTo(unit.x, unit.y)
-
-    // Client-side interact — opens NPC menu visually
-    game.interact(unit)
-
-    // Wait for NPC menu to appear
-    const ok: unknown = yield* game.waitUntil(() =>
-      game.getUIFlag(UiFlags.NPCMenu) || game.getUIFlag(UiFlags.Shop)
-    )
-    if (!ok) {
-      game.log(`[town] ${npc.name} interaction timed out`)
-      return null
-    }
-    return unit
-  }
-
-  /** Close any open NPC dialog */
-  function* closeNpc(npcUnitId: number) {
-    game.sendPacket(npcClose(1, npcUnitId))
-    yield* game.delay(200)
-  }
-
   return {
-    /** Go to town for the current act. */
     *goToTown() {
       const town = getTown(game.area)
       if (game.area === town) return
-
-      // Use town portal — we should have one active
-      // For now, use waypoint to town
       yield* move.useWaypoint(town)
     },
 
-    /** Ensure we're in town. */
     get inTown(): boolean {
       return townAreas.has(game.area)
     },
 
-    /** Heal at NPC if health/mana is low. */
+    /** Heal at the nearest heal NPC if health/mana is low. */
     *heal() {
       if (game.player.hp >= game.player.hpmax && game.player.mp >= game.player.mpmax) return
 
-      const npc = findHealNpc(game.area)
+      const npc = game.npcs.find(n => n.canHeal)
       if (!npc) {
-        game.log(`[town] no heal NPC in area ${game.area}`)
+        game.log(`[town] no heal NPC found in area ${game.area}`)
         return
       }
 
-      game.log(`[town] healing at ${npc.name}`)
-      const unit = yield* goToNpc(npc)
-      if (!unit) return
-
-      // Just interacting with a heal NPC heals you
-      yield* game.delay(500)
-
-      // Close dialog
-      yield* closeNpc(unit.unitId)
+      game.log(`[town] healing at ${npc.name} cls=${npc.classid} dist=${npc.distance|0} (hp=${game.player.hp}/${game.player.hpmax} mp=${game.player.mp}/${game.player.mpmax})`)
+      yield* move.walkTo(npc.x, npc.y)
+      game.log(`[town] walked to ${npc.name}, dist=${npc.distance|0}`)
+      yield* npc.heal()
+      game.log(`[town] healed hp=${game.player.hp}/${game.player.hpmax} mp=${game.player.mp}/${game.player.mpmax}`)
     },
 
-    /** Repair all items at the repair NPC. */
+    /** Repair all items at the nearest repair NPC. */
     *repair() {
-      const npc = findRepairNpc(game.area)
+      const npc = game.npcs.find(n => n.canRepair)
       if (!npc) {
-        game.log(`[town] no repair NPC in area ${game.area}`)
+        game.log(`[town] no repair NPC found in area ${game.area}`)
         return
       }
 
       game.log(`[town] repairing at ${npc.name}`)
-      const unit = yield* goToNpc(npc)
-      if (!unit) return
+      yield* move.walkTo(npc.x, npc.y)
 
-      // Open repair shop
-      game.sendPacket(npcSession(1, unit.unitId))
-      const ok: unknown = yield* game.waitUntil(() => game.getUIFlag(UiFlags.Shop))
-      if (!ok) {
-        game.log(`[town] repair shop didn't open`)
-        yield* closeNpc(unit.unitId)
-        return
+      // If this NPC also heals (e.g. Fara), heal first
+      if (npc.canHeal && (game.player.hp < game.player.hpmax || game.player.mp < game.player.mpmax)) {
+        yield* npc.heal()
       }
 
-      // Repair all: itemId=0, cost=0x80000000
-      game.sendPacket(npcRepair(unit.unitId, 0, 0, 0x80000000 | 0))
-      yield* game.delay(200)
-
-      yield* closeNpc(unit.unitId)
+      yield* npc.repair()
       game.log(`[town] repair done`)
     },
 
-    /** Open trade with an NPC. Returns the unit or null. */
-    *openTrade(npc: NpcInfo) {
-      const unit = yield* goToNpc(npc)
-      if (!unit) return null
-
-      // Send open-trade packet
-      game.sendPacket(npcSession(0, unit.unitId))
-      const ok: unknown = yield* game.waitUntil(() => game.getUIFlag(UiFlags.Shop))
-      if (!ok) {
-        game.log(`[town] trade didn't open with ${npc.name}`)
-        yield* closeNpc(unit.unitId)
+    /** Open trade with an NPC. Returns the NPC or null. */
+    *openTrade(pred: (n: NPC) => boolean) {
+      const npc = game.npcs.find(pred)
+      if (!npc) {
+        game.log(`[town] no matching trade NPC found`)
         return null
       }
 
-      return unit
+      yield* move.walkTo(npc.x, npc.y)
+      const ok = yield* npc.openTrade()
+      if (!ok) {
+        game.log(`[town] trade didn't open with ${npc.name}`)
+        yield* npc.close()
+        return null
+      }
+      return npc
     },
 
-    /** Close the current trade/NPC interaction */
     *closeTrade(npcUnitId: number) {
-      yield* closeNpc(npcUnitId)
+      // Use a temporary NPC wrapper to close
+      const npc = game.npcs.find(n => n.unitId === npcUnitId)
+      if (npc) {
+        yield* npc.close()
+      }
     },
 
     /** Full town routine: heal, repair, then return. */
@@ -143,19 +96,18 @@ export const Town = createService((game: Game, services) => {
 
     /** Identify all items at Cain. */
     *identify() {
-      const npc = findNpc(game.area, NpcService.Identify)
+      const npc = game.npcs.find(n => n.canIdentify)
       if (!npc) {
         game.log(`[town] no identify NPC in area ${game.area}`)
         return
       }
 
       game.log(`[town] identifying at ${npc.name}`)
-      const unit = yield* goToNpc(npc)
-      if (!unit) return
-
+      yield* move.walkTo(npc.x, npc.y)
+      yield* npc.interact()
       // Cain identifies automatically on interaction
       yield* game.delay(1000)
-      yield* closeNpc(unit.unitId)
+      yield* npc.close()
     },
   }
 })

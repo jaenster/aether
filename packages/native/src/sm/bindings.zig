@@ -704,6 +704,25 @@ fn jsGetSkillLevel(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c
     return 1;
 }
 
+// ── Locale strings ──────────────────────────────────────────────────
+
+/// getLocaleString(index: i32) -> string
+/// Returns the D2 locale string for the given string table index.
+fn jsGetLocaleString(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const index: u16 = @intCast(@as(u32, @bitCast(argInt32(argc, vp, 0))));
+    const name_w = d2.GetLocaleString.call(.{index}) orelse { retString(cx, argc, vp, ""); return 1; };
+    var buf: [256]u8 = undefined;
+    var i: usize = 0;
+    while (i < buf.len - 1) {
+        const ch = name_w[i];
+        if (ch == 0) break;
+        buf[i] = if (ch < 128) @intCast(ch) else '?';
+        i += 1;
+    }
+    retString(cx, argc, vp, buf[0..i]);
+    return 1;
+}
+
 // ── Txt record field access ─────────────────────────────────────────
 
 /// txtReadField(table: i32, recordId: i32, offset: i32, size: i32) -> i32
@@ -772,6 +791,12 @@ fn jsTxtReadFieldU(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c
 }
 
 // ── Game control ────────────────────────────────────────────────────
+
+fn jsCloseNPCInteract(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    d2.CloseNPCInteract.call(.{});
+    retUndefined(argc, vp);
+    return 1;
+}
 
 fn jsExitGame(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     log.print("js: exitGame — leaving game gracefully");
@@ -946,10 +971,13 @@ const bindings = [_]Binding{
     .{ .name = "findPreset", .func = &jsFindPreset, .nargs = 2 },
     // Skills
     .{ .name = "getSkillLevel", .func = &jsGetSkillLevel, .nargs = 2 },
+    // Locale strings
+    .{ .name = "getLocaleString", .func = &jsGetLocaleString, .nargs = 1 },
     // Txt record access
     .{ .name = "txtReadField", .func = &jsTxtReadField, .nargs = 4 },
     .{ .name = "txtReadFieldU", .func = &jsTxtReadFieldU, .nargs = 4 },
     // Process control
+    .{ .name = "closeNPCInteract", .func = &jsCloseNPCInteract, .nargs = 0 },
     .{ .name = "exitGame", .func = &jsExitGame, .nargs = 0 },
     .{ .name = "exitClient", .func = &jsExitClient, .nargs = 0 },
     .{ .name = "takeWaypoint", .func = &jsTakeWaypoint, .nargs = 2 },

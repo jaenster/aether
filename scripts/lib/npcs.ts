@@ -85,6 +85,13 @@ const Lysander: NpcInfo = {
   services: [NpcService.Trade],
 }
 
+const Atma: NpcInfo = {
+  name: "Atma",
+  classid: 176,
+  area: Area.LutGholein,
+  services: [NpcService.Heal],
+}
+
 const Greiz: NpcInfo = {
   name: "Greiz",
   classid: 198,
@@ -208,7 +215,7 @@ const Cain5: NpcInfo = {
 /** All NPCs indexed by area */
 const npcsByArea: Record<number, NpcInfo[]> = {
   [Area.RogueEncampment]: [Akara, Charsi, Gheed, Kashya, Cain1],
-  [Area.LutGholein]: [Fara, Drognan, Elzix, Lysander, Greiz, Cain2],
+  [Area.LutGholein]: [Fara, Drognan, Elzix, Lysander, Atma, Greiz, Cain2],
   [Area.KurastDocks]: [Ormus, Hratli, Alkor, Asheara, Cain3],
   [Area.PandemoniumFortress]: [Halbu, Jamella, Tyrael, Cain4],
   [Area.Harrogath]: [Larzuk, Malah, Anya, QualKehk, Cain5],

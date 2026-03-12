@@ -141,6 +141,8 @@ pub const GetTextSize = fastcall(0x502520, fn ([*:0]const u16, *DWORD, *DWORD) D
 
 pub const GetUnitName = fastcall(0x464A60, fn (?*UnitAny) ?[*:0]u16);
 
+pub const GetLocaleString = fastcall(0x524A30, fn (u16) ?[*:0]u16);
+
 // ============================================================================
 // Drawing (__stdcall)
 // ============================================================================
@@ -530,6 +532,10 @@ pub fn interactWithUnit(player: *UnitAny, target: *UnitAny) void {
         InteractWithUnit(@bitCast(target.dwUnitId), &under_mouse);
     }
 }
+
+/// CloseNPCInteract — closes all NPC menus (dialog, shop, stash) on both client and server.
+/// __fastcall, no params. Sends 0x30 packet internally, resets UI flags, clears dialog panels.
+pub const CloseNPCInteract = fastcall(0x004b3f10, fn () void);
 
 // ============================================================================
 // ClickMap / Movement

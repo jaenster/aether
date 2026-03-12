@@ -5,8 +5,12 @@ import {
   monGetSpecType, monGetEnchants,
   itemGetQuality, itemGetFlags, itemGetLocation, itemGetCode,
   tileGetDestArea,
+  sendPacket as nativeSendPacket,
+  interact as nativeInteract,
+  getUIFlag as nativeGetUIFlag,
+  closeNPCInteract as nativeCloseNPCInteract,
 } from "diablo:native"
-import { UnitType, PlayerMode } from "diablo:constants";
+import { UnitType, PlayerMode, UiFlags } from "diablo:constants";
 
 export abstract class Unit {
   constructor(readonly type: number, readonly unitId: number) {}
@@ -85,6 +89,117 @@ export class Monster extends Unit {
     const s = monGetEnchants(this.unitId)
     if (!s) return []
     return s.filter((n: number) => n > 0)
+  }
+
+  get isNpc(): boolean { return NPC.npcClassIds.has(this.classid) }
+}
+
+// NPC classid → service sets (from Ghidra decompilation + monstats)
+const healClassIds = new Set([148, 178, 176, 255, 405, 513])    // Akara, Fara, Atma, Ormus, Jamella, Malah
+const repairClassIds = new Set([154, 178, 253, 257, 511])        // Charsi, Fara, Hratli, Halbu, Larzuk
+const tradeClassIds = new Set([148, 154, 178, 177, 202, 255, 253, 257, 405, 511, 513, 512]) // all who sell
+const gambleClassIds = new Set([147, 199, 254, 405, 512])        // Gheed, Elzix, Alkor, Jamella, Anya
+const identifyClassIds = new Set([146, 244, 245, 246, 527])      // Cain (all acts)
+const resurrectClassIds = new Set([150, 198, 252, 367, 515])     // Kashya, Greiz, Asheara, Tyrael, Qual-Kehk
+
+/** Build a D2GS client→server packet: [u8 opcode, ...dwords LE] */
+function buildPacket(opcode: number, ...dwords: number[]): Uint8Array {
+  const buf = new ArrayBuffer(1 + dwords.length * 4)
+  const view = new DataView(buf)
+  view.setUint8(0, opcode)
+  for (let i = 0; i < dwords.length; i++) {
+    view.setInt32(1 + i * 4, dwords[i]!, true)
+  }
+  return new Uint8Array(buf)
+}
+
+function* delay(ms: number) {
+  const ticks = Math.ceil(ms / 40)
+  for (let i = 0; i < ticks; i++) yield
+}
+
+function* waitUntil(pred: () => boolean, maxFrames = 150) {
+  for (let i = 0; i < maxFrames; i++) {
+    if (pred()) return true
+    yield
+  }
+  return false
+}
+
+export class NPC extends Monster {
+  static readonly npcClassIds = new Set([
+    ...healClassIds, ...repairClassIds, ...tradeClassIds,
+    ...gambleClassIds, ...identifyClassIds, ...resurrectClassIds,
+  ])
+
+  get canHeal(): boolean { return healClassIds.has(this.classid) }
+  get canRepair(): boolean { return repairClassIds.has(this.classid) }
+  get canTrade(): boolean { return tradeClassIds.has(this.classid) }
+  get canGamble(): boolean { return gambleClassIds.has(this.classid) }
+  get canIdentify(): boolean { return identifyClassIds.has(this.classid) }
+  get canResurrect(): boolean { return resurrectClassIds.has(this.classid) }
+
+  /** Open interaction with this NPC (client-side walk + menu). */
+  *interact() {
+    nativeInteract(this.type, this.unitId)
+    const ok: unknown = yield* waitUntil(() =>
+      nativeGetUIFlag(UiFlags.NPCMenu) || nativeGetUIFlag(UiFlags.Shop)
+    )
+    return !!ok
+  }
+
+  /** Close any open NPC dialog (client + server). */
+  *close() {
+    nativeCloseNPCInteract()
+    yield* waitUntil(() =>
+      !nativeGetUIFlag(UiFlags.NPCMenu) && !nativeGetUIFlag(UiFlags.Shop)
+    , 50)
+    yield* delay(100)
+  }
+
+  /** Heal at this NPC — the game auto-heals on NPC interaction (HealByPlayerByNPC). */
+  *heal() {
+    nativeInteract(this.type, this.unitId)
+    yield* waitUntil(() =>
+      nativeGetUIFlag(UiFlags.NPCMenu) || nativeGetUIFlag(UiFlags.Shop)
+    )
+    yield* delay(200)
+    yield* this.close()
+  }
+
+  /** Open repair session and repair all items. */
+  *repair() {
+    nativeInteract(this.type, this.unitId)
+    // Wait for NPC menu
+    yield* waitUntil(() =>
+      nativeGetUIFlag(UiFlags.NPCMenu) || nativeGetUIFlag(UiFlags.Shop)
+    )
+    yield* delay(200)
+    // 0x38 mode=1: open repair session
+    nativeSendPacket(buildPacket(0x38, 1, this.unitId, 0))
+    yield* delay(300)
+    // 0x35: repair all — npcId, itemId=0, animMode=0, cost=0x80000000
+    nativeSendPacket(buildPacket(0x35, this.unitId, 0, 0, 0x80000000 | 0))
+    yield* delay(200)
+    yield* this.close()
+  }
+
+  /** Open trade window. Returns true if shop opened. */
+  *openTrade() {
+    nativeInteract(this.type, this.unitId)
+    yield* delay(500)
+    // 0x38 mode=0: open trade
+    nativeSendPacket(buildPacket(0x38, 0, this.unitId, 0))
+    return yield* waitUntil(() => nativeGetUIFlag(UiFlags.Shop))
+  }
+
+  /** Open gamble window. Returns true if shop opened. */
+  *openGamble() {
+    nativeInteract(this.type, this.unitId)
+    yield* delay(500)
+    // 0x38 mode=2: gamble
+    nativeSendPacket(buildPacket(0x38, 2, this.unitId, 0))
+    return yield* waitUntil(() => nativeGetUIFlag(UiFlags.Shop))
   }
 }
 

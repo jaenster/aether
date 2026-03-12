@@ -71,9 +71,15 @@
   // Skills
   export function getSkillLevel(skillId: number, includeItems: number): number;
 
+  // Locale strings
+  export function getLocaleString(index: number): string;
+
   // Txt record access
   export function txtReadField(table: number, row: number, column: number, signed: number): number;
   export function txtReadFieldU(table: number, row: number, column: number, signed: number): number;
+
+  // NPC interaction
+  export function closeNPCInteract(): void;
 
   // Game control
   export function exitGame(): void;
@@ -91,3 +97,6 @@
 
   // Collision
   export function getCollision(x: number, y: number): number;
+
+  // Screen output
+  export function printScreen(message: string, color: number): void;

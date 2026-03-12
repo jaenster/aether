@@ -77,13 +77,26 @@ export const Movement = createService((game: Game, services) => {
 
     *walkTo(targetX: number, targetY: number) {
       const path = game.findPath(targetX, targetY)
-      if (path.length === 0) return
+      if (path.length === 0) {
+        game.log(`[move] walkTo: no path to ${targetX},${targetY} from ${game.player.x},${game.player.y}`)
+        return
+      }
 
       for (const wp of path) {
-        for (let ticks = 0; ticks < 30; ticks++) {
-          if (dist(game.player.x, game.player.y, wp.x, wp.y) < 5) break
-          game.move(wp.x, wp.y)
-          yield* game.delay(100)
+        for (let ticks = 0; ticks < 50; ticks++) {
+          const d = dist(game.player.x, game.player.y, wp.x, wp.y)
+          if (d < 5) break
+
+          // Take small steps — click max 10 tiles at a time to avoid wall clicks
+          let clickX = wp.x, clickY = wp.y
+          if (d > 10) {
+            const ratio = 10 / d
+            clickX = Math.round(game.player.x + (wp.x - game.player.x) * ratio)
+            clickY = Math.round(game.player.y + (wp.y - game.player.y) * ratio)
+          }
+
+          game.move(clickX, clickY)
+          yield* game.delay(80)
         }
       }
     },
@@ -180,6 +193,7 @@ export const Movement = createService((game: Game, services) => {
         return false
       }
 
+      // Walk to preset first (loads the area/rooms so the unit becomes visible)
       yield* this.moveTo(preset.x, preset.y)
 
       const wpUnit = this.findWaypointUnit(preset.x, preset.y)
@@ -188,18 +202,23 @@ export const Movement = createService((game: Game, services) => {
         return false
       }
 
+      // If unit is offset from preset, walk the rest of the way
+      const d = dist(game.player.x, game.player.y, wpUnit.x, wpUnit.y)
+      if (d > 5) {
+        yield* this.moveTo(wpUnit.x, wpUnit.y)
+      }
+
       game.interact(wpUnit)
       yield* game.delay(500)
 
       game.log(`[move] waypoint → area ${destArea} (wpUnit=${wpUnit.unitId})`)
       game.takeWaypoint(wpUnit.unitId, destArea)
 
-      if (yield* game.waitForArea(destArea)) {
+      if (yield* game.waitForArea(destArea, 200)) {
         game.log(`[move] waypoint travel succeeded, now in area ${game.area}`)
         return true
       }
-      game.log(`[move] waypoint travel timed out (still in area ${game.area})`)
-      return false
+      throw new Error(`[move] waypoint travel failed (still in area ${game.area}, target was ${destArea})`)
     },
 
     *journeyTo(targetArea: Area) {

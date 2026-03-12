@@ -1,5 +1,6 @@
 import { getUnitStat, getDifficulty, getUnitHP, getUnitMaxHP, getUnitMP, getSkillLevel as _getSkillLevel } from "diablo:native";
 import { getBaseStat } from "./txt.js";
+import type { SkillProjectile } from "./attack-types.js"
 
 // Stat IDs
 const STAT_LEVEL = 12;
@@ -23,7 +24,90 @@ const resistMap: Record<string, number> = {
 // Conviction-eligible elements
 const convictionEligible: Record<string, boolean> = { Fire: true, Lightning: true, Cold: true };
 
+// Lower Resist-eligible elements (includes Poison, unlike Conviction)
+const lowerResistEligible: Record<string, boolean> = { Fire: true, Lightning: true, Cold: true, Poison: true };
+
 const damageTypes = ["Physical", "Fire", "Lightning", "Magic", "Cold", "Poison", "?", "?", "?", "Physical"];
+
+// --- Skills to ignore (armor/buff auras evaluated as attacks) ---
+const ignoreSkill: Record<number, boolean> = {
+  // Sorc armor skills
+  40: true,   // Frozen Armor
+  50: true,   // Shiver Armor
+  60: true,   // Chilling Armor
+  // Sorc warmth
+  37: true,   // Warmth
+  // Sorc energy shield
+  58: true,   // Energy Shield
+  // Paladin auras (non-damaging)
+  99: true,   // Prayer
+  100: true,  // Defiance
+  104: true,  // Cleansing
+  105: true,  // Vigor
+  108: true,  // Meditation
+  109: true,  // Redemption
+  110: true,  // Salvation
+  111: true,  // Concentration
+  113: true,  // Fanaticism
+  115: true,  // Conviction (debuff, not attack)
+  125: true,  // Resist Fire/Cold/Lightning
+  // Necro curses (handled as debuffs, not attacks)
+  66: true,   // Amplify Damage
+  71: true,   // Dim Vision
+  72: true,   // Weaken
+  76: true,   // Iron Maiden
+  77: true,   // Terror
+  81: true,   // Confuse
+  82: true,   // Life Tap
+  86: true,   // Attract
+  87: true,   // Decrepify
+  91: true,   // Lower Resist
+  // Barb warcries (buffs)
+  130: true,  // Howl
+  132: true,  // Find Potion
+  137: true,  // Shout
+  138: true,  // Find Item
+  139: true,  // Taunt
+  146: true,  // Battle Cry
+  149: true,  // War Cry (debuff)
+  150: true,  // Battle Orders
+  155: true,  // Battle Command
+  // Druid summon/buff
+  226: true,  // Raven (summon, skip as attack)
+  231: true,  // Poison Creeper (summon)
+  236: true,  // Carrion Vine (summon)
+  241: true,  // Solar Creeper (summon)
+  246: true,  // Heart of Wolverine (summon)
+  247: true,  // Summon Spirit Wolf (summon)
+  237: true,  // Summon Dire Wolf (summon)
+  248: true,  // Summon Grizzly (summon)
+  227: true,  // Spirit of Barbs (summon)
+  221: true,  // Oak Sage (summon)
+  // Assassin shadow/blade
+  268: true,  // Burst of Speed
+  269: true,  // Cloak of Shadows
+  277: true,  // Shadow Warrior
+  278: true,  // Shadow Master
+  279: true,  // Venom
+  // Amazon passives
+  8: true,    // Inner Sight
+  17: true,   // Slow Missiles
+  28: true,   // Decoy
+  29: true,   // Avoid
+  30: true,   // Valkyrie
+  // Teleport itself (not an attack)
+  54: true,   // Teleport
+};
+
+// Pre-attack skills (cast before engaging, not during combat loop)
+const preAttackable: Record<number, boolean> = {
+  138: true,  // Find Item
+  149: true,  // War Cry
+  150: true,  // Battle Orders
+  155: true,  // Battle Command
+  279: true,  // Venom
+  268: true,  // Burst of Speed
+};
 
 // Synergy calc table: skillId → [synergySkillId, bonus, ...]
 const synergyCalc: Record<number, number[]> = {
@@ -91,15 +175,96 @@ const nonDamage: Record<number, boolean> = {
   261: true, 271: true, 276: true, 262: true, 272: true,
 };
 
-// Skill radius for AoE modifier
+// Skill radius for AoE modifier (explosion/splash radius in game units)
 const skillRadius: Record<number, number> = {
-  55: 3, 56: 12, 92: 24, 154: 12, 249: 24, 250: 24, 251: 3,
+  36: 2,   // Fire Bolt — no splash, but small AoE on impact
+  42: 10,  // Static Field — nova radius ~3.3 yards = ~10 units
+  44: 7,   // Frost Nova
+  47: 4,   // Fireball — explosion radius
+  48: 7,   // Nova
+  55: 6,   // Blizzard
+  56: 12,  // Meteor
+  59: 4,   // Blizzard (Ice Blast)
+  64: 5,   // Frozen Orb — shards fan out
+  67: 0,   // Teeth — projectile
+  83: 0,   // Bone Spear — line
+  84: 0,   // Bone Spirit — seeking single
+  92: 24,  // Corpse Explosion
+  112: 6,  // Blessed Hammer — spiral
+  154: 12, // War Cry
+  229: 4,  // Tornado
+  234: 3,  // Fissure
+  244: 5,  // Volcano
+  249: 24, // Armageddon
+  250: 24, // Hurricane
+  251: 3,  // Fire Blast (trap)
 };
 
 // Nova-like skills (centered on caster, not target)
 const novaLike: Record<number, boolean> = {
   44: true, 48: true, 92: true, 112: true, 154: true, 249: true, 250: true,
 };
+
+// --- Projectile behavior classification ---
+
+// Skills whose projectiles pierce through multiple targets
+const piercingSkills = new Set<number>([
+  38,   // Charged Bolt (spreads)
+  49,   // Lightning (pierces)
+  53,   // Chain Lightning (jumps)
+  84,   // Bone Spirit (seeking, effectively reaches target)
+  34,   // Lightning Fury (pierces)
+  35,   // Lightning Strike
+  24,   // Charged Strike (bolts spread from target)
+]);
+
+// Ground-targeted AoE skills (land at target position, ignore obstacles)
+const groundAoeSkills = new Set<number>([
+  55,   // Blizzard
+  56,   // Meteor
+  64,   // Frozen Orb
+  59,   // Ice Blast (but more projectile-like — keep for now)
+  62,   // Hydra
+  249,  // Armageddon
+]);
+
+/** Classify a skill's projectile behavior for line-of-fire evaluation */
+export function skillProjectileType(skillId: number): SkillProjectile {
+  if (novaLike[skillId]) return 'nova'
+  if (groundAoeSkills.has(skillId)) return 'ground_aoe'
+  if (piercingSkills.has(skillId)) return 'pierces'
+
+  // Check if melee: no missile, range < 2
+  const srvMissile = getBaseStat("skills", skillId, "srvmissile") as number
+  const cltMissile = getBaseStat("skills", skillId, "cltmissile") as number
+  const range = getBaseStat("skills", skillId, "range") as number
+  if (srvMissile <= 0 && cltMissile <= 0 && range < 2) return 'melee'
+
+  // Default projectile: stops on first hit
+  return 'stops'
+}
+
+// --- Static Field ---
+
+/** Static Field: % of current HP as damage, capped by difficulty.
+ *  Returns effective HP removed per cast (not a skill damage calc). */
+export function staticFieldDamage(monCurrentHp: number, diff: number): number {
+  // Static Field removes 25% of current HP
+  // But has a floor: Normal=0%, NM=33%, Hell=50%
+  const floors = [0, 0.33, 0.50]
+  const floor = floors[diff] ?? 0.50
+  // If monster HP% is already at or below the floor, static does nothing
+  // We need monMaxHp to compute this properly, but approximate: if hp > floor * maxHp
+  // For now, assume it works (caller should check the floor condition)
+  return monCurrentHp * 0.25
+}
+
+/** Can Static Field still reduce this monster? Checks HP% > difficulty floor. */
+export function staticFieldEffective(monHp: number, monMaxHp: number, diff: number): boolean {
+  const floors = [0, 0.33, 0.50]
+  const floor = floors[diff] ?? 0.50
+  return monMaxHp > 0 && (monHp / monMaxHp) > floor
+}
 
 // HP lookup table per monster level [normal, nightmare, hell]
 const HPLookup = [
@@ -367,10 +532,9 @@ export function monsterEffort(monId: number, areaId: number, conviction = 0, amp
   const hp = monsterMaxHP(monId, areaId);
   const isUndead = getBaseStat("monstats", monId, "hUndead") || getBaseStat("monstats", monId, "lUndead");
 
-  // Iterate known skill IDs (the player's skills)
-  // For now, check all common skill IDs and skip ones we don't have
   for (let sk = 0; sk < 360; sk++) {
     if (nonDamage[sk]) continue;
+    if (ignoreSkill[sk]) continue;
     if (skillLevel(sk) < 1) continue;
     if (skillCooldown(sk)) continue;
     if (minRange > 0 && skillRange(sk) < minRange) continue;
@@ -414,7 +578,6 @@ export function monsterEffort(monId: number, areaId: number, conviction = 0, amp
     effort /= dmgModifier(sk, monId);
 
     // Mana penalty
-    // TODO: use Skill.getManaCost when available
     const mp = getUnitMP();
     if (mp < 20) effort *= 5;
 
@@ -432,6 +595,11 @@ export function castingFrames(skillId: number, charClass: number): number {
   const fcr = getUnitStat(STAT_FCR, 0);
   const effectiveFCR = Math.min(75, (fcr * 120 / (fcr + 120)) | 0);
   const isLightning = skillId === 49 || skillId === 53;
+
+  // Druid form detection: state 139=werewolf, 140=werebear
+  // In shifted form, use human form cast rate (forms can't cast most spells)
+  // TODO: read shifted form cast frames when we add melee druid support
+
   const baseCastRate = [20, isLightning ? 19 : 14, 16, 16, 14, 15, 17][charClass]!;
 
   if (isLightning) {
@@ -530,70 +698,191 @@ export function splashRadius(skillId: number): number {
   return skillRadius[skillId] || 0
 }
 
+// --- Line-of-fire check ---
+
+/** Check if any monster blocks the projectile line from caster to target.
+ *  Returns list of monsters along the line (within ~2 unit radius of the path). */
+function monstersAlongLine(casterPos: Pos, targetPos: Pos, monsters: Monster[], target: Monster): Monster[] {
+  const dx = targetPos.x - casterPos.x
+  const dy = targetPos.y - casterPos.y
+  const len = Math.sqrt(dx * dx + dy * dy)
+  if (len < 1) return []
+
+  const nx = dx / len, ny = dy / len
+  const blockers: Monster[] = []
+  const hitRadius = 2 // approximate unit collision radius
+
+  for (const mon of monsters) {
+    if (mon.unitId === target.unitId) continue // skip the target itself
+    // Project monster position onto the line
+    const mx = mon.x - casterPos.x, my = mon.y - casterPos.y
+    const proj = mx * nx + my * ny
+    if (proj < 0 || proj > len) continue // behind caster or past target
+    // Perpendicular distance from the line
+    const perp = Math.abs(mx * ny - my * nx)
+    if (perp <= hitRadius) {
+      blockers.push(mon)
+    }
+  }
+
+  // Sort by distance from caster (first hit first)
+  blockers.sort((a, b) => {
+    const da = (a.x - casterPos.x) ** 2 + (a.y - casterPos.y) ** 2
+    const db = (b.x - casterPos.x) ** 2 + (b.y - casterPos.y) ** 2
+    return da - db
+  })
+
+  return blockers
+}
+
+/** Compute reach factor: how much of the skill's damage reaches the primary target.
+ *  1.0 = full damage, 0.0 = completely blocked. */
+function reachFactor(skillId: number, casterPos: Pos, targetPos: Pos, monsters: Monster[], target: Monster): number {
+  const projType = skillProjectileType(skillId)
+
+  switch (projType) {
+    case 'nova':
+    case 'ground_aoe':
+      return 1.0 // no pathing modifier
+
+    case 'pierces':
+      return 1.0 // reaches target regardless
+
+    case 'melee': {
+      // Melee: can only hit adjacent. If target is behind others, factor is low.
+      const blockers = monstersAlongLine(casterPos, targetPos, monsters, target)
+      return blockers.length === 0 ? 1.0 : 0.3
+    }
+
+    case 'stops': {
+      // Projectile stops on first hit. Check if anything is in the way.
+      const blockers = monstersAlongLine(casterPos, targetPos, monsters, target)
+      if (blockers.length === 0) return 1.0
+
+      // If the closest blocker is close to the target, splash may still reach
+      const closestBlocker = blockers[0]!
+      const blockerToTarget = distXY(closestBlocker.x, closestBlocker.y, target.x, target.y)
+      const splash = splashRadius(skillId)
+      if (splash > 0 && blockerToTarget <= splash) {
+        // Splash reaches — diminished based on distance
+        return Math.max(0.3, 1.0 - blockerToTarget / (splash * 2))
+      }
+      return 0.1 // blocked, minimal splash
+    }
+  }
+}
+
 /**
- * Evaluate a skill cast from `casterPos` aimed at `targetPos` against a group of monsters.
- * For nova-like skills, all monsters within radius of casterPos are hit.
- * For projectile/AoE skills, monsters near targetPos within splash radius are hit.
- * charClass is needed for cast frame calculation.
+ * Evaluate a skill cast from `castFromPos` aimed at `targetPos` against a group of monsters.
+ *
+ * @param actualCasterPos - Where the caster actually is right now (for reposition calc)
+ * @param castFromPos - Where the caster would cast from (=actualCasterPos for targeted, =desired pos for nova)
+ *
+ * Scoring: totalUsefulDmg / (frameCost * sqrt(manaCost))
+ * - "useful damage" is capped at each monster's current HP (overkill penalty)
+ * - Line-of-fire affects reach to primary target for 'stops' skills
+ * - Piercing skills score bonus for monsters along the projectile path
+ * - groupModifier scales urgency per monster
  */
 export function evaluateBattlefield(
   skillId: number,
-  casterPos: Pos,
+  actualCasterPos: Pos,
+  castFromPos: Pos,
   targetPos: Pos,
   monsters: Monster[],
   charClass: number,
   primaryTarget?: Monster,
+  groupModifier?: (target: Monster, nearby: Monster[]) => number,
 ): ActionScore {
   const range = skillRange(skillId)
   const splash = splashRadius(skillId)
   const nova = isNova(skillId)
   const frames = castingFrames(skillId, charClass)
+  const projType = skillProjectileType(skillId)
 
-  let totalDmg = 0
+  let totalUsefulDmg = 0
   let primaryDmg = 0
   let hit = 0
 
+  // For piercing skills: also score monsters along the projectile line
+  const pierceLineHits: Set<number> = new Set()
+  if (projType === 'pierces' && primaryTarget) {
+    const lineMonsters = monstersAlongLine(castFromPos, { x: primaryTarget.x, y: primaryTarget.y }, monsters, primaryTarget)
+    for (const m of lineMonsters) {
+      const dmg = skillDamageVsUnit(skillId, m)
+      if (dmg <= 0) continue
+      const monHp = m.hp > 0 ? m.hp : 1
+      const useful = Math.min(dmg, monHp)
+      const urgency = groupModifier ? groupModifier(m, monsters) : 1.0
+      totalUsefulDmg += useful * urgency
+      hit++
+      pierceLineHits.add(m.unitId)
+    }
+  }
+
   for (const mon of monsters) {
-    // For nova: distance from caster. For targeted: distance from target point.
+    if (pierceLineHits.has(mon.unitId)) continue // already counted for pierce
+
+    // For nova: distance from cast position. For targeted: distance from target point.
     const d = nova
-      ? distXY(casterPos.x, casterPos.y, mon.x, mon.y)
+      ? distXY(castFromPos.x, castFromPos.y, mon.x, mon.y)
       : distXY(targetPos.x, targetPos.y, mon.x, mon.y)
 
-    // Check if monster is in range
-    const effectiveRadius = nova ? range : (splash > 0 ? splash : 3)
+    // Check if monster is in range of the effect
+    const effectiveRadius = nova ? splash || range : (splash > 0 ? splash : 3)
     if (d > effectiveRadius) continue
 
     const dmg = skillDamageVsUnit(skillId, mon)
     if (dmg <= 0) continue
 
-    totalDmg += dmg
-    hit++
-    if (primaryTarget && mon.unitId === primaryTarget.unitId) {
+    // Cap useful damage at monster's current HP (overkill penalty)
+    const monHp = mon.hp > 0 ? mon.hp : 1
+    let useful = Math.min(dmg, monHp)
+
+    // Apply group urgency modifier
+    const urgency = groupModifier ? groupModifier(mon, monsters) : 1.0
+    useful *= urgency
+
+    // Line-of-fire: if this is the primary target and skill stops, apply reach factor
+    const isPrimary = primaryTarget && mon.unitId === primaryTarget.unitId
+    if (isPrimary && projType === 'stops') {
+      const reach = reachFactor(skillId, castFromPos, targetPos, monsters, primaryTarget)
+      useful *= reach
+      primaryDmg = dmg * reach
+    } else if (isPrimary) {
       primaryDmg = dmg
     }
+
+    totalUsefulDmg += useful
+    hit++
   }
 
-  // Check if caster needs to reposition to cast
-  const castDist = distXY(casterPos.x, casterPos.y, targetPos.x, targetPos.y)
-  const needsReposition = nova ? false : castDist > range
-  // Rough teleport cost: 1 frame per 30 units of distance
-  const teleFrames = needsReposition ? Math.ceil(castDist / 30) : 0
+  // Check if caster needs to reposition — compare ACTUAL position to desired cast position
+  const moveDist = distXY(actualCasterPos.x, actualCasterPos.y, castFromPos.x, castFromPos.y)
+  const needsReposition = nova ? moveDist > 5 : distXY(actualCasterPos.x, actualCasterPos.y, targetPos.x, targetPos.y) > range
+  const teleFrames = needsReposition ? Math.max(1, Math.ceil(moveDist / 30)) : 0
   const totalFrames = frames + teleFrames
 
-  // Mana cost — penalize skills we can't sustain
+  // Mana cost — score = totalUsefulDmg / (frameCost * sqrt(manaCost))
   const manaCost = skillManaCost(skillId)
   const currentMp = getUnitMP()
-  let manaFactor = 1.0
-  if (manaCost > 0) {
-    if (manaCost > currentMp) manaFactor = 0 // can't afford it
-    else manaFactor = Math.min(1, currentMp / (manaCost * 3)) // penalize if < 3 casts left
+  let score = 0
+
+  if (totalFrames > 0 && hit > 0) {
+    const manaDenom = manaCost > 0 ? Math.sqrt(manaCost) : 1
+    score = totalUsefulDmg / (totalFrames * manaDenom)
+
+    // Can't afford it: score 0
+    if (manaCost > currentMp) score = 0
+    // Low mana: penalize if < 3 casts remaining
+    else if (manaCost > 0) score *= Math.min(1, currentMp / (manaCost * 3))
   }
 
   return {
     skillId,
-    casterPos,
-    targetPos: nova ? casterPos : targetPos,
-    dpsPerFrame: totalFrames > 0 ? (totalDmg / totalFrames) * manaFactor : 0,
+    casterPos: nova ? castFromPos : actualCasterPos,
+    targetPos: nova ? castFromPos : targetPos,
+    dpsPerFrame: score,
     primaryDmg,
     monstersHit: hit,
     frameCost: totalFrames,
@@ -603,27 +892,8 @@ export function evaluateBattlefield(
 }
 
 /**
- * Find the best skill + position for a caster against visible monsters.
- *
- * @param casterPos Where the caster is now (parameter, not hardcoded — for multi-player).
- * @param monsterFilter Predicate to select which monsters to consider (e.g. alive + in range).
- *   Called with each monster from allMonsters. Keeps the caller in control of targeting.
- * @param allMonsters Full monster list to filter from (game.monsters).
- * @param charClass Caster's class for frame calculation.
- * @param primaryTarget Optional focus target — used to evaluate positions near it.
- * @param skillFilter Optional skill predicate.
- */
-/**
  * Rank all viable skill+position combos for a caster against visible monsters.
  * Returns sorted list (best first) so the caller can skip cooldown/unavailable skills.
- *
- * @param casterPos Where the caster is now (parameter for multi-player support).
- * @param monsterFilter Predicate selecting which monsters to consider.
- * @param allMonsters Full monster list to filter from.
- * @param charClass Caster's class for frame calculation.
- * @param primaryTarget Optional focus target for position evaluation.
- * @param skillFilter Optional skill predicate.
- * @param maxResults Cap the returned list (default 5).
  */
 export function rankActions(
   casterPos: Pos,
@@ -633,18 +903,26 @@ export function rankActions(
   primaryTarget?: Monster,
   skillFilter?: (skillId: number) => boolean,
   maxResults = 5,
+  groupModifier?: (target: Monster, nearby: Monster[]) => number,
 ): ActionScore[] {
   const monsters = allMonsters.filter(monsterFilter)
   if (monsters.length === 0) return []
 
   const results: ActionScore[] = []
 
-  // Candidate positions to evaluate from/at
-  const positions: Pos[] = [casterPos]
-  if (primaryTarget) {
-    positions.push({ x: primaryTarget.x, y: primaryTarget.y })
+  // Build candidate target positions from actual monsters
+  // For targeted skills: aim at each monster. For novas: cast from near each monster.
+  const monsterPositions: Pos[] = []
+  const seen = new Set<string>()
+  for (const m of monsters) {
+    const key = `${m.x},${m.y}`
+    if (!seen.has(key)) {
+      seen.add(key)
+      monsterPositions.push({ x: m.x, y: m.y })
+    }
   }
-  // Densest cluster center
+
+  // Also add cluster center for AoE skills
   if (monsters.length > 2) {
     let sx = 0, sy = 0, n = 0
     for (const m of monsters) {
@@ -652,26 +930,83 @@ export function rankActions(
         sx += m.x; sy += m.y; n++
       }
     }
-    if (n > 0) positions.push({ x: (sx / n) | 0, y: (sy / n) | 0 })
+    if (n > 0) {
+      const cx = (sx / n) | 0, cy = (sy / n) | 0
+      const key = `${cx},${cy}`
+      if (!seen.has(key)) monsterPositions.push({ x: cx, y: cy })
+    }
   }
 
   // Track best score per skill (don't add same skill twice at different positions)
   const bestPerSkill = new Map<number, ActionScore>()
 
+  // Combined filter: ignoreSkill + user-provided filter
+  const effectiveFilter = (sk: number) => {
+    if (ignoreSkill[sk]) return false
+    return skillFilter ? skillFilter(sk) : true
+  }
+
+  // Check for Static Field (skill 42) as a special case
+  const staticLevel = skillLevel(42)
+  if (staticLevel > 0 && effectiveFilter(42)) {
+    const diff = getDifficulty()
+    for (const castPos of monsterPositions) {
+      let totalUseful = 0, hitCount = 0
+      for (const mon of monsters) {
+        const d = distXY(castPos.x, castPos.y, mon.x, mon.y)
+        if (d > 10) continue
+        if (!staticFieldEffective(mon.hp, mon.hpmax, diff)) continue
+        totalUseful += staticFieldDamage(mon.hp, diff)
+        hitCount++
+      }
+      if (hitCount > 0) {
+        const frames = castingFrames(42, charClass)
+        const manaCost = skillManaCost(42)
+        const manaDenom = manaCost > 0 ? Math.sqrt(manaCost) : 1
+        const moveDist = distXY(casterPos.x, casterPos.y, castPos.x, castPos.y)
+        const needsRepo = moveDist > 5
+        const teleFrames = needsRepo ? Math.max(1, Math.ceil(moveDist / 30)) : 0
+        const totalFrames = frames + teleFrames
+        let score = totalUseful / (totalFrames * manaDenom)
+        const currentMp = getUnitMP()
+        if (manaCost > currentMp) score = 0
+        else if (manaCost > 0) score *= Math.min(1, currentMp / (manaCost * 3))
+
+        const prev = bestPerSkill.get(42)
+        if (!prev || score > prev.dpsPerFrame) {
+          bestPerSkill.set(42, {
+            skillId: 42,
+            casterPos: castPos,
+            targetPos: castPos,
+            dpsPerFrame: score,
+            primaryDmg: primaryTarget ? staticFieldDamage(primaryTarget.hp, diff) : 0,
+            monstersHit: hitCount,
+            frameCost: totalFrames,
+            manaCost,
+            needsReposition: needsRepo,
+          })
+        }
+      }
+    }
+  }
+
   for (let sk = 0; sk < 360; sk++) {
+    if (sk === 42) continue // Static Field handled above
     if (nonDamage[sk]) continue
+    if (!effectiveFilter(sk)) continue
     if (skillLevel(sk) < 1) continue
     if (skillCooldown(sk)) continue
-    if (skillFilter && !skillFilter(sk)) continue
 
     const dmg = skillDamage(sk)
     if (dmg.pmin === 0 && dmg.pmax === 0 && dmg.min === 0 && dmg.max === 0) continue
 
     const nova = isNova(sk)
 
-    for (const targetPos of positions) {
-      const evalCasterPos = nova ? targetPos : casterPos
-      const score = evaluateBattlefield(sk, evalCasterPos, targetPos, monsters, charClass, primaryTarget)
+    for (const targetPos of monsterPositions) {
+      // For novas: cast from the target position (we teleport there).
+      // For targeted: cast from actual caster position, aim at monster.
+      const castFromPos = nova ? targetPos : casterPos
+      const score = evaluateBattlefield(sk, casterPos, castFromPos, targetPos, monsters, charClass, primaryTarget, groupModifier)
       if (score.monstersHit === 0) continue
 
       const prev = bestPerSkill.get(sk)
@@ -694,9 +1029,137 @@ export function findBestAction(
   charClass: number,
   primaryTarget?: Monster,
   skillFilter?: (skillId: number) => boolean,
+  groupModifier?: (target: Monster, nearby: Monster[]) => number,
 ): ActionScore | null {
-  const ranked = rankActions(casterPos, monsterFilter, allMonsters, charClass, primaryTarget, skillFilter, 1)
+  const ranked = rankActions(casterPos, monsterFilter, allMonsters, charClass, primaryTarget, skillFilter, 1, groupModifier)
   return ranked[0] ?? null
 }
 
-export { resistMap, pierceMap, masteryMap, convictionEligible, nonDamage, damageTypes };
+// --- Pre-attack (spawn prediction) functions ---
+
+import type { SpawnEvent, PreAttackAction } from "./attack-types.js"
+
+// Impact delay in frames for skills with meaningful delay between cast and damage landing.
+// Most skills are instant (cast frames only). These are the exceptions.
+const impactDelay: Record<number, number> = {
+  56: 60,   // Meteor — ~60 frames after cast animation
+  55: 20,   // Blizzard — ~20 frames for first shard wave
+  64: 12,   // Frozen Orb — ~12 frames travel to center
+  234: 30,  // Fissure — ~30 frames for fissure eruptions
+  244: 40,  // Volcano — ~40 frames for eruption
+  249: 20,  // Armageddon — ~20 frames for first rock
+}
+
+/** Total frames from button press to damage landing at target position. */
+export function skillLeadTime(skillId: number, distance: number, charClass: number): number {
+  const castFrames = castingFrames(skillId, charClass)
+  const delay = impactDelay[skillId] ?? 0
+
+  // Projectile travel time for missile skills (not ground AoE)
+  let travelTime = 0
+  if (delay === 0 && !groundAoeSkills.has(skillId) && !novaLike[skillId]) {
+    const missile = getBaseStat("skills", skillId, "srvmissile") as number
+    if (missile > 0) {
+      const speed = getBaseStat("missiles", missile, "Vel") as number
+      if (speed > 0) travelTime = Math.ceil(distance / speed)
+    }
+  }
+
+  return castFrames + delay + travelTime
+}
+
+/** Compute average damage of a skill against a classId using txt resists (no live unit needed). */
+export function skillDamageVsClassId(skillId: number, classId: number): number {
+  const dmg = skillDamage(skillId)
+  if (dmg.pmin === 0 && dmg.pmax === 0 && dmg.min === 0 && dmg.max === 0) return 0
+
+  const isUndeadMon = getBaseStat("monstats", classId, "hUndead") || getBaseStat("monstats", classId, "lUndead")
+  if (dmg.undeadOnly && !isUndeadMon) return 0
+
+  let total = 0
+
+  const avgP = (dmg.pmin + dmg.pmax) / 2
+  if (avgP > 0) {
+    const presist = Math.max(-100, Math.min(100, monsterResist(classId, "Physical")))
+    total += avgP * (100 - presist) / 100
+  }
+
+  const avgE = (dmg.min + dmg.max) / 2
+  if (avgE > 0) {
+    let resist = monsterResist(classId, dmg.type)
+    const pierceStat = pierceMap[dmg.type]
+    const pierce = pierceStat ? getUnitStat(pierceStat, 0) : 0
+    if (resist < 100) {
+      resist = Math.max(-100, resist - pierce)
+    } else {
+      resist = 100
+    }
+    total += avgE * (100 - resist) / 100
+  }
+
+  return total
+}
+
+function distPos(a: Pos, b: Pos): number {
+  const dx = a.x - b.x, dy = a.y - b.y
+  return Math.sqrt(dx * dx + dy * dy)
+}
+
+/**
+ * Decide what to do right now given a predicted spawn event.
+ * Returns cast/reposition/wait based on timing.
+ */
+export function preAttackAdvice(myPos: Pos, event: SpawnEvent, charClass: number): PreAttackAction {
+  // Find best skill: highest damage / castFrames ratio vs this classId
+  let bestSkill = -1
+  let bestRatio = 0
+
+  for (let sk = 0; sk < 360; sk++) {
+    if (nonDamage[sk]) continue
+    if (ignoreSkill[sk]) continue
+    if (skillLevel(sk) < 1) continue
+    if (skillCooldown(sk)) continue
+
+    const dmg = skillDamageVsClassId(sk, event.classId)
+    if (dmg <= 0) continue
+
+    const frames = castingFrames(sk, charClass)
+    const ratio = dmg / frames
+    if (ratio > bestRatio) {
+      bestRatio = ratio
+      bestSkill = sk
+    }
+  }
+
+  if (bestSkill < 0) return { type: 'wait' }
+
+  const range = skillRange(bestSkill)
+  const nova = isNova(bestSkill)
+
+  // Where to stand for casting
+  const castPos: Pos = nova ? event.pos : myPos
+  const dist = distPos(myPos, event.pos)
+  const needsReposition = nova ? dist > 5 : dist > range
+
+  // Teleport cost: ~1 frame per 30 units + cast frames
+  const teleFrames = needsReposition ? Math.max(1, Math.ceil(dist / 30)) : 0
+  const leadTime = skillLeadTime(bestSkill, distPos(castPos, event.pos), charClass) + teleFrames
+
+  const timing = event.framesUntilSpawn - leadTime
+
+  // Fire window: timing is within [-2, +4] — cast now
+  if (timing >= -2 && timing <= 4) {
+    const aimPos = nova ? event.pos : event.pos
+    return { type: 'cast', skill: bestSkill, x: aimPos.x, y: aimPos.y }
+  }
+
+  // Need to reposition and have time — do it now if we'd arrive with enough lead time
+  if (needsReposition && timing > 4) {
+    const repoTarget = nova ? event.pos : myPos // for non-nova, stay put — only move if nova
+    if (nova) return { type: 'reposition', x: event.pos.x, y: event.pos.y }
+  }
+
+  return { type: 'wait' }
+}
+
+export { resistMap, pierceMap, masteryMap, convictionEligible, lowerResistEligible, nonDamage, damageTypes, ignoreSkill, preAttackable, piercingSkills };

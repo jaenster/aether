@@ -1,13 +1,23 @@
 import { createBot } from "diablo:game"
 import { Chicken } from "./threads/chicken.js"
-import { Mephisto } from "./sequences/mephisto.js"
 import { Chaos } from "./sequences/chaos.js"
+import { Town } from "./services/town.js"
+import { Buffs } from "./services/buffs.js"
 
 export default createBot('sorc-farmer', function*(game, svc) {
   game.load.inGame(Chicken)
+  const town = svc.get(Town)
+  const buffs = svc.get(Buffs)
 
   while (true) {
     while (!game.inGame) yield
+
+    // Heal + repair in town before starting the run
+    yield* town.doTownChores()
+
+    // Buff up before leaving town
+    yield* buffs.refreshAll()
+
     yield* Chaos.factory(game, svc)
     game.exitGame()
     while (game.inGame) yield

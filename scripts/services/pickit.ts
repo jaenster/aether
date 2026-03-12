@@ -1,15 +1,17 @@
 import { createService, type Game } from "diablo:game"
 import { Config } from "../config.js"
+import { ItemGrading } from "../lib/item/evaluator.js"
 
 export const Pickit = createService((game: Game, services) => {
   const cfg = services.get(Config)
+  const grading = services.get(ItemGrading)
 
   return {
     *lootGround() {
       const items = game.items.filter(i =>
         i.location === 3 &&
         i.distance < cfg.pickRange &&
-        i.quality >= cfg.pickMinQuality
+        grading.shouldPickup(i)
       )
 
       for (const item of items) {

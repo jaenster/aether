@@ -22,7 +22,7 @@ import {
   getCollision as nativeGetCollision,
 } from "diablo:native"
 import { UnitCollection } from "./unit.collection.js";
-import { ItemUnit, Missile, Monster, ObjectUnit, PlayerUnit, Tile } from "./unit.js";
+import { ItemUnit, Missile, Monster, NPC, ObjectUnit, PlayerUnit, Tile } from "./unit.js";
 import type { ScriptToken } from './service.js'
 
 
@@ -71,6 +71,11 @@ export class Game {
   get missiles() { return this._missiles }
   get items() { return this._items }
   get tiles() { return this._tiles }
+
+  /** NPCs in the current area — filtered view of monsters with known NPC classids */
+  get npcs(): NpcView {
+    return new NpcView(this._monsters)
+  }
 
   clickMap(type: number, x: number, y: number, shift: boolean = false) {
     clickMap(type, shift ? 1 : 0, x, y)
@@ -196,6 +201,45 @@ export class Game {
   /** Print colored text on the game screen (chat area). No-op in headless mode. */
   print(msg: string, color: GameColor = GameColor.White) {
     nativePrintScreen(msg, color)
+  }
+}
+
+class NpcView {
+  constructor(private monsters: UnitCollection<Monster>) {}
+
+  *[Symbol.iterator](): Iterator<NPC> {
+    for (const m of this.monsters) {
+      if (NPC.npcClassIds.has(m.classid)) {
+        yield new NPC(m.unitId)
+      }
+    }
+  }
+
+  find(pred: (n: NPC) => boolean): NPC | undefined {
+    for (const n of this) {
+      if (pred(n)) return n
+    }
+    return undefined
+  }
+
+  filter(pred: (n: NPC) => boolean): NPC[] {
+    const result: NPC[] = []
+    for (const n of this) {
+      if (pred(n)) result.push(n)
+    }
+    return result
+  }
+
+  /** Find the closest NPC matching a predicate */
+  closest(pred?: (n: NPC) => boolean): NPC | undefined {
+    let best: NPC | undefined
+    let bestDist = Infinity
+    for (const n of this) {
+      if (pred && !pred(n)) continue
+      const d = n.distance
+      if (d < bestDist) { bestDist = d; best = n }
+    }
+    return best
   }
 }
 

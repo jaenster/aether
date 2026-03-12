@@ -73,3 +73,9 @@ export function npcSell(npcId: number, itemId: number, animMode: number, cost: n
 export function npcRepair(npcId: number, itemId: number, animMode: number, cost: number) {
   return new Packet(0x35, 16).dword(npcId).dword(itemId).dword(animMode).dword(cost).toUint8Array()
 }
+
+/** 0x2F: NPC interact — triggers heal for healing NPCs (Akara, Fara, Ormus, Jamella, Malah, Atma).
+ *  Server calls HealByPlayerByNPC: restores HP, MP, stamina, removes poison+freeze. */
+export function npcHeal(npcId: number) {
+  return new Packet(0x2F, 8).dword(1).dword(npcId).toUint8Array()
+}

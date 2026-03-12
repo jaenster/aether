@@ -1,8 +1,8 @@
-import { createService, type Game, UiFlags } from "diablo:game"
+import { createService, type Game, type NPC, UiFlags } from "diablo:game"
 import { Config } from "../config.js"
 import { Town } from "./town.js"
 import { findNpc, NpcService, type NpcInfo } from "../lib/npcs.js"
-import { npcSession, npcClose, npcBuy } from "../lib/packets.js"
+import { npcBuy } from "../lib/packets.js"
 
 export interface ShopFilter {
   /** Item code to look for (e.g. "amu", "rin", "wnd") */
@@ -22,18 +22,16 @@ export const Shopping = createService((game: Game, services) => {
      * Shop at an NPC repeatedly, refreshing inventory by closing/reopening trade.
      * Calls `onItem` for each interesting item found; buy by returning true.
      */
-    *shopAt(npc: NpcInfo, filters: ShopFilter[], maxCycles = 100) {
-      game.log(`[shop] starting at ${npc.name}, ${maxCycles} cycles`)
+    *shopAt(npcInfo: NpcInfo, filters: ShopFilter[], maxCycles = 100) {
+      game.log(`[shop] starting at ${npcInfo.name}, ${maxCycles} cycles`)
 
       for (let cycle = 0; cycle < maxCycles; cycle++) {
-        // Open trade with NPC
-        const unit: unknown = yield* town.openTrade(npc)
-        if (!unit || typeof unit !== 'object' || !('unitId' in unit)) {
+        const npcUnit: NPC | null = yield* town.openTrade((n: NPC) => n.classid === npcInfo.classid)
+        if (!npcUnit) {
           game.log(`[shop] failed to open trade, retrying...`)
           yield* game.delay(500)
           continue
         }
-        const npcUnit = unit as { unitId: number }
 
         // Scan shop items
         for (const item of game.items) {
@@ -56,7 +54,7 @@ export const Shopping = createService((game: Game, services) => {
         }
 
         // Close and reopen to refresh inventory
-        yield* town.closeTrade(npcUnit.unitId)
+        yield* npcUnit.close()
         yield* game.delay(200)
 
         // Log progress periodically
