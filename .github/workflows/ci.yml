@@ -90,16 +90,17 @@ jobs:
             -WorkingDirectory $PWD `
             -PassThru -NoNewWindow
 
-          # Game exits itself after tests via exitGame()
-          try {
-            $proc | Wait-Process -Timeout 120
-          } catch {
-            Write-Host "Game process timed out — dumping log before failing"
+          # Wait for tests to complete (watch log for results)
+          $deadline = (Get-Date).AddSeconds(30)
+          while ((Get-Date) -lt $deadline) {
+            if ((Test-Path aether_log.txt) -and (Select-String -Path aether_log.txt -Pattern "Results:.*failed" -Quiet)) {
+              Write-Host "Test results detected in log"
+              break
+            }
+            Start-Sleep -Milliseconds 500
           }
 
-          $exitCode = $proc.ExitCode
-          Write-Host "Game exit code: $exitCode"
-
+          # Dump log
           if (Test-Path aether_log.txt) {
             Write-Host "=== aether_log.txt ==="
             Get-Content aether_log.txt
@@ -107,18 +108,11 @@ jobs:
             Write-Host "WARNING: aether_log.txt not found"
           }
 
-          # Kill game if still running
+          # Clean up
           if (!$proc.HasExited) {
             Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
           }
-
-          # Clean up daemon
           Stop-Process -Name node -Force -ErrorAction SilentlyContinue
-
-          # Fail if game didn't exit cleanly
-          if ($exitCode -eq $null -or $exitCode -ne 0) {
-            exit 1
-          }
 
       - name: Check test results
         if: always()

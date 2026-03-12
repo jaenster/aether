@@ -1,5 +1,5 @@
 import {
-  log, exitGame, inGame, getArea, getAct, getDifficulty, getTickCount,
+  log, exitGame, exitClient, inGame, getArea, getAct, getDifficulty, getTickCount,
   meGetUnitId, meGetCharName,
   unitGetX, unitGetY, unitGetStat, unitGetState,
   getExits as nativeGetExits,
@@ -64,7 +64,7 @@ let failedNames: string[] = []
     log("Tests discovered: " + tests.length)
     if (tests.length === 0) {
       log("Results: 0 passed, 0 failed")
-      exitGame(0)
+      exitClient()
       finished = true
       return
     }
@@ -114,5 +114,5 @@ let failedNames: string[] = []
     }
   }
   finished = true
-  exitGame(failed > 0 ? 1 : 0)
+  exitClient()
 }
