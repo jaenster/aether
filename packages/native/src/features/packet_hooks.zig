@@ -14,7 +14,8 @@ const SIZE_TABLE: usize = 0x00730AE8;
 const MAX_OPCODES = 175;
 const ENTRY_SIZE = 12;
 
-const HandlerFn = *const fn ([*]const u8) callconv(.c) void;
+// Handlers are __fastcall with 1 arg: pBytes in ECX. Thiscall is equivalent for single-arg.
+const HandlerFn = *const fn ([*]const u8) callconv(.{ .x86_thiscall = .{} }) void;
 
 // Original handler pointers saved at init
 var original_handlers: [MAX_OPCODES]?HandlerFn = .{null} ** MAX_OPCODES;
@@ -38,7 +39,7 @@ pub var on_packet_callback: ?*const fn (u8) bool = null;
 
 fn MakeWrapper(comptime opcode: u8) type {
     return struct {
-        fn handler(pBytes: [*]const u8) callconv(.c) void {
+        fn handler(pBytes: [*]const u8) callconv(.{ .x86_thiscall = .{} }) void {
             if (js_registered[opcode]) {
                 current_packet_ptr = pBytes;
                 current_packet_len = packet_sizes[opcode];
