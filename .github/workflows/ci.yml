@@ -82,11 +82,11 @@ jobs:
           $proc = Start-Process -FilePath .\Game.exe `
             -ArgumentList "-w -nosound --headless -loaddll `"$PWD\Aether.dll`"" `
             -PassThru -NoNewWindow
-          
+
           # Game exits itself after tests via exitGame()
           $proc | Wait-Process -Timeout 120
           Get-Content aether_log.txt
-          
+
           # Clean up daemon
           Stop-Process -Name node -Force -ErrorAction SilentlyContinue
 

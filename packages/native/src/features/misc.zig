@@ -39,6 +39,12 @@ fn init() void {
     // NOP "draw all states" overlay rendering
     _ = patch.writeNops(0x46e46f, 0x46e486 - 0x46e46f);
 
+    // Sleepy patches — reduce CPU usage by ensuring Sleep is always called
+    // MessageGameLoop: NOP the JNZ that skips Sleep(10) when mouse events are active
+    _ = patch.writeNops(0x451C31, 2);
+    // MessagePump (OOG): change conditional JZ to unconditional JMP so Sleep(0) always yields
+    _ = patch.writeBytes(0x4FA66F, &[_]u8{0xEB});
+
     // Fix LRUCACHE_Unlink null deref at 0x6091E5 (d2bs GameCrashFix)
     // Rewrite 18-byte unguarded unlink with null-checked version:
     //   mov ecx,[eax+10] / jecxz +0D / mov edx,[eax+0C] / test edx,edx / jz +06 / mov [ecx+0C],edx / mov [edx+10],ecx
@@ -64,6 +70,8 @@ fn deinit() void {
     patch.revertRange(0x4781AC, 5);
     patch.revertRange(0x4666A5, 1);
     patch.revertRange(0x46e46f, 0x46e486 - 0x46e46f);
+    patch.revertRange(0x451C31, 2);
+    patch.revertRange(0x4FA66F, 1);
     patch.revertRange(0x6091D6, 18);
 }
 
