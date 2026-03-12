@@ -34,7 +34,7 @@ export const Attack = createService((game: Game, services) => {
       let casts = 0
       let currentSkill = -1
       while (casts < cfg.maxAttacks) {
-        const target = game.monsters.find(m => m.hp > 0 && m.distance < cfg.killRange)
+        const target = game.monsters.find(m => m.hp > 0 && m.mode !== 0 && m.mode !== 12 && m.distance < cfg.killRange)
         if (!target) return
 
         const best = bestSkill(target.classid)
@@ -56,19 +56,37 @@ export const Attack = createService((game: Game, services) => {
       let best = bestSkill(classid, 10)
       if (best.skill < 0) best = bestSkill(classid)
       let { skill, range, frames: castFrames } = best
-      game.log(`[atk] killing classid=${classid} skill=${skill} range=${range} frames=${castFrames}`)
+      const effort = monsterEffort(classid, game.area, 0, 0, 0)
+      game.log(`[atk] killing classid=${classid} skill=${skill} type=${effort.type} effort=${effort.effort|0} range=${range}`)
 
       yield* preSelect(skill)
 
       let casts = 0
+      let lastHp = -1
+      let staleCount = 0
       while (casts < cfg.maxAttacks) {
-        const target = game.monsters.find(m => m.classid === classid && m.hp > 0)
+        const target = game.monsters.find(m => m.classid === classid && m.hp > 0 && m.mode !== 0 && m.mode !== 12)
         if (!target) {
           game.log(`[atk] target dead after ${casts} casts`)
           return
         }
 
-        game.log(`[atk] cast=${casts} hp=${target.hp} dist=${target.distance|0} rSkill=${game.rightSkill} mode=${game.player.mode}`)
+        // Log every 5th cast to reduce spam
+        if (casts % 5 === 0) {
+          game.log(`[atk] cast=${casts} hp=${target.hp} dist=${target.distance|0} mMode=${target.mode}`)
+        }
+
+        // Detect immunity: hp unchanged for 10+ casts
+        if (target.hp === lastHp) {
+          staleCount++
+          if (staleCount >= 10) {
+            game.log(`[atk] hp stuck at ${target.hp} for ${staleCount} casts — likely immune, giving up`)
+            return
+          }
+        } else {
+          staleCount = 0
+          lastHp = target.hp
+        }
 
         if (target.distance > range) {
           yield* move.moveNear(target.x, target.y, range)

@@ -76,10 +76,10 @@ export class Monster extends Unit {
   constructor(id: number) { super(1, id) }
 
   get spectype(): number { return monGetSpecType(this.unitId) }
-  get isChampion(): boolean { return (this.spectype & 0x02) !== 0 }
-  get isUnique(): boolean { return (this.spectype & 0x04) !== 0 }
-  get isMinion(): boolean { return (this.spectype & 0x08) !== 0 }
-  get isSuperUnique(): boolean { return (this.spectype & 0x01) !== 0 }
+  get isSuperUnique(): boolean { return (this.spectype & 0x02) !== 0 }
+  get isChampion(): boolean { return (this.spectype & 0x04) !== 0 }
+  get isUnique(): boolean { return (this.spectype & 0x08) !== 0 }
+  get isMinion(): boolean { return (this.spectype & 0x10) !== 0 }
 
   get enchants(): number[] {
     const s = monGetEnchants(this.unitId)

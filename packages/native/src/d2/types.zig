@@ -309,8 +309,8 @@ pub const ItemData = extern struct {
 
 pub const MonsterData = extern struct {
     _00: [22]BYTE, // 0x00
-    type_flags: BYTE, // 0x16
-    _17: [5]BYTE, // 0x17
+    type_flags: WORD, // 0x16 — eMonsterType flags (0x02=SUPERUNIQUE,0x04=CHAMPION,0x08=UNIQUE,0x10=MINION)
+    _18: DWORD, // 0x18
     enchants: [9]BYTE, // 0x1C
     _25: BYTE, // 0x25 padding
     wUniqueNo: WORD, // 0x26
