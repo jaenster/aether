@@ -22,6 +22,8 @@ export const Mephisto = createScript(function*(game, svc) {
   // Teleport near Mephisto
   yield* move.moveTo(mephPreset.x, mephPreset.y)
 
+  const mephDist = Math.sqrt((game.player.x - mephPreset.x)**2 + (game.player.y - mephPreset.y)**2)
+  game.log(`[mephisto] after tele: dist to preset=${mephDist|0}, player at ${game.player.x},${game.player.y}`)
   game.log('[mephisto] engaging mephisto')
   yield* atk.kill(242) // Mephisto
 

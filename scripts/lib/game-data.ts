@@ -362,7 +362,7 @@ function dmgModifier(skillId: number, monId: number): number {
   return Math.min(avgPack || 1, hitcap);
 }
 
-export function monsterEffort(monId: number, areaId: number, conviction = 0, ampDmg = 0): EffortResult {
+export function monsterEffort(monId: number, areaId: number, conviction = 0, ampDmg = 0, minRange = 0): EffortResult {
   const result: EffortResult = { effort: Infinity, skill: -1, type: "Physical" };
   const hp = monsterMaxHP(monId, areaId);
   const isUndead = getBaseStat("monstats", monId, "hUndead") || getBaseStat("monstats", monId, "lUndead");
@@ -373,6 +373,7 @@ export function monsterEffort(monId: number, areaId: number, conviction = 0, amp
     if (nonDamage[sk]) continue;
     if (skillLevel(sk) < 1) continue;
     if (skillCooldown(sk)) continue;
+    if (minRange > 0 && skillRange(sk) < minRange) continue;
 
     const dmg = skillDamage(sk);
     if (dmg.pmin === 0 && dmg.pmax === 0 && dmg.min === 0 && dmg.max === 0) continue;

@@ -11,6 +11,16 @@ export const Movement = createService((game: Game, services) => {
   const cfg = services.get(Config)
 
   return {
+    /** Yield frame-by-frame until position changes or maxFrames exceeded. */
+    *waitForMove(maxFrames = 20) {
+      const px = game.player.x, py = game.player.y
+      for (let f = 0; f < maxFrames; f++) {
+        yield // single frame
+        if (game.player.x !== px || game.player.y !== py) return true
+      }
+      return false
+    },
+
     *teleportTo(targetX: number, targetY: number, threshold = 5) {
       if (dist(game.player.x, game.player.y, targetX, targetY) < threshold) return
 
@@ -20,24 +30,33 @@ export const Movement = createService((game: Game, services) => {
         return
       }
 
-      for (const wp of path) {
-        for (let retries = 0; retries < 5; retries++) {
+      // Select teleport skill once, cast on self to trigger the switch
+      game.useSkill(cfg.teleport, game.player.x, game.player.y)
+      yield* game.delay(250)
+
+      for (let wi = 0; wi < path.length; wi++) {
+        const wp = path[wi]
+        for (let retries = 0; retries < 3; retries++) {
           if (dist(game.player.x, game.player.y, wp.x, wp.y) < threshold) break
 
-          const px = game.player.x, py = game.player.y
-          game.useSkill(cfg.teleport, wp.x, wp.y)
-          yield* game.delay(200)
+          // Skip if closer to next waypoint already
+          if (wi + 1 < path.length) {
+            const next = path[wi + 1]
+            if (dist(game.player.x, game.player.y, next.x, next.y) <
+                dist(game.player.x, game.player.y, wp.x, wp.y)) break
+          }
 
-          const nx = game.player.x, ny = game.player.y
-          if (nx === px && ny === py) continue // didn't move, retry
+          game.castSkill(wp.x, wp.y)
+          const moved: unknown = yield* this.waitForMove()
+          if (!moved) continue
         }
       }
 
-      // Final approach — keep teleporting until within threshold
-      for (let i = 0; i < 5; i++) {
+      // Final approach — cast directly to destination
+      for (let i = 0; i < 3; i++) {
         if (dist(game.player.x, game.player.y, targetX, targetY) < threshold) break
-        game.useSkill(cfg.teleport, targetX, targetY)
-        yield* game.delay(200)
+        game.castSkill(targetX, targetY)
+        yield* this.waitForMove()
       }
     },
 
@@ -94,6 +113,7 @@ export const Movement = createService((game: Game, services) => {
 
       // Teleport close to exit
       yield* this.teleportTo(exit.x, exit.y, 5)
+      game.log(`[move] after tele to exit: dist=${dist(game.player.x, game.player.y, exit.x, exit.y)|0}`)
 
       for (let attempt = 0; attempt < 5; attempt++) {
         // If still far, direct teleport
@@ -113,6 +133,7 @@ export const Movement = createService((game: Game, services) => {
         // Find warp tile unit for our target area and interact
         const tile = game.tiles.find(t => t.destArea === areaId)
         if (tile) {
+          game.log(`[move] interacting with tile at dist=${dist(game.player.x, game.player.y, tile.x, tile.y)|0}`)
           game.interact(tile)
         }
 

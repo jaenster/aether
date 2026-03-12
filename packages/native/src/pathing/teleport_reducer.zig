@@ -4,6 +4,7 @@
 const std = @import("std");
 const act_map = @import("act_map.zig");
 const astar = @import("astar.zig");
+const log = @import("../log.zig");
 const Point = astar.Point;
 
 // --- CollisionFlags (from Ghidra: PLAYER_COLLISION_DEFAULT = 0x1C09) ---
@@ -20,10 +21,11 @@ fn euclidean(sx: i32, sy: i32, ex: i32, ey: i32) i32 {
     return @intFromFloat(@sqrt(dx * dx + dy * dy) * 10.0);
 }
 
-// --- PathingPointList: fixed-size open-addressing hash set ---
+// --- PathingPointList: fixed-size open-addressing hash set with generation counter ---
 const PPL_CAPACITY = 8192;
 var ppl_keys: [PPL_CAPACITY]u64 = undefined;
-var ppl_used: [PPL_CAPACITY]bool = undefined;
+var ppl_gens: [PPL_CAPACITY]u32 = [_]u32{0} ** PPL_CAPACITY;
+var ppl_generation: u32 = 0;
 var ppl_count: u32 = 0;
 
 fn pplHash(x: i32, y: i32) u64 {
@@ -35,7 +37,7 @@ fn pplContains(x: i32, y: i32) bool {
     var idx: usize = @truncate(key & (PPL_CAPACITY - 1));
     var i: u32 = 0;
     while (i < PPL_CAPACITY) : (i += 1) {
-        if (!ppl_used[idx]) return false;
+        if (ppl_gens[idx] != ppl_generation) return false;
         if (ppl_keys[idx] == key) return true;
         idx = (idx + 1) & (PPL_CAPACITY - 1);
     }
@@ -46,17 +48,21 @@ fn pplInsert(x: i32, y: i32) void {
     if (ppl_count >= PPL_CAPACITY - 1) return;
     const key = pplHash(x, y);
     var idx: usize = @truncate(key & (PPL_CAPACITY - 1));
-    while (ppl_used[idx]) {
+    while (ppl_gens[idx] == ppl_generation) {
         if (ppl_keys[idx] == key) return;
         idx = (idx + 1) & (PPL_CAPACITY - 1);
     }
     ppl_keys[idx] = key;
-    ppl_used[idx] = true;
+    ppl_gens[idx] = ppl_generation;
     ppl_count += 1;
 }
 
 fn pplClear() void {
-    @memset(&ppl_used, false);
+    ppl_generation +%= 1;
+    if (ppl_generation == 0) {
+        @memset(&ppl_gens, 0);
+        ppl_generation = 1;
+    }
     ppl_count = 0;
 }
 
@@ -158,7 +164,9 @@ pub fn getOpenNodes(cx: i32, cy: i32, ex: i32, ey: i32, buf: []Point) u32 {
 }
 
 pub fn reject(x: i32, y: i32) bool {
-    return checkFlag(act_map.spaceGetData(x, y));
+    // Single-point check for teleport landing (no need for 5-point cross —
+    // teleport doesn't walk through adjacent tiles, it lands directly).
+    return checkFlag(act_map.getMapData(x, y));
 }
 
 pub fn getPenalty(x: i32, y: i32) i32 {
@@ -245,6 +253,17 @@ pub fn reduce(path: []const Point, out: []Point) u32 {
         idx += 1;
     }
 
+    // Always include the final path point (A* destination).
+    // The skip-then-backup loop drops it when the last segment is shorter than range.
+    if (count > 0 and path.len > 0 and count < out.len) {
+        const last_out = out[count - 1];
+        const last_path = path[path.len - 1];
+        if (last_out.x != last_path.x or last_out.y != last_path.y) {
+            out[count] = last_path;
+            count += 1;
+        }
+    }
+
     return count;
 }
 
@@ -274,8 +293,9 @@ pub fn findPath(sx: i32, sy: i32, ex: i32, ey: i32, tp_range: u32) u32 {
     // astar internally calls reduce(), result goes directly into waypoints
     waypoint_count = astar.FindPath(@This()).findPath(sx, sy, ex, ey, &waypoints);
 
-    // Ensure the final destination is always the last waypoint.
-    // reduce() can drop it when the last hop is shorter than teleport range.
+    // Always append the original destination as the final waypoint.
+    // A* may mutate the endpoint via mutatePoint (shifting it to walkable space),
+    // so reduce() can end at a different point than the caller requested.
     if (waypoint_count > 0 and waypoint_count < MAX_WAYPOINTS) {
         const last = waypoints[waypoint_count - 1];
         if (last.x != ex or last.y != ey) {

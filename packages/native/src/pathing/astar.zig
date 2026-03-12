@@ -62,10 +62,19 @@ const NULL_NODE: u32 = 0xFFFFFFFF;
 
 const ClosedSet = struct {
     keys: [CLOSED_CAPACITY]u64,
-    used: [CLOSED_CAPACITY]bool,
+    gens: [CLOSED_CAPACITY]u32,
+    generation: u32,
 
     fn init(self: *ClosedSet) void {
-        @memset(&self.used, false);
+        // Generation counter avoids clearing 262K entries each call.
+        // On first use (gen=0→1) we must zero the gens array once.
+        if (self.generation == 0) @memset(&self.gens, 0);
+        self.generation +%= 1;
+        if (self.generation == 0) {
+            // Wrapped — force full clear (extremely rare)
+            @memset(&self.gens, 0);
+            self.generation = 1;
+        }
     }
 
     fn hash(x: i32, y: i32) u64 {
@@ -75,7 +84,7 @@ const ClosedSet = struct {
     fn contains(self: *const ClosedSet, x: i32, y: i32) bool {
         const key = hash(x, y);
         var idx = @as(u32, @truncate(key % CLOSED_CAPACITY));
-        while (self.used[idx]) {
+        while (self.gens[idx] == self.generation) {
             if (self.keys[idx] == key) return true;
             idx = (idx + 1) % CLOSED_CAPACITY;
         }
@@ -85,12 +94,12 @@ const ClosedSet = struct {
     fn insert(self: *ClosedSet, x: i32, y: i32) void {
         const key = hash(x, y);
         var idx = @as(u32, @truncate(key % CLOSED_CAPACITY));
-        while (self.used[idx]) {
+        while (self.gens[idx] == self.generation) {
             if (self.keys[idx] == key) return;
             idx = (idx + 1) % CLOSED_CAPACITY;
         }
         self.keys[idx] = key;
-        self.used[idx] = true;
+        self.gens[idx] = self.generation;
     }
 };
 

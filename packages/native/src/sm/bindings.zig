@@ -560,7 +560,10 @@ fn jsFindTelePath(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c
     const ey = argInt32(argc, vp, 1);
 
     ensureActMap();
-    const tp_range: u32 = 40; // same as auto_move TP_RANGE
+    // JS teleport lacks room reachability checks, so use shorter hops
+    // to stay within current+adjacent room bounds (server validates via
+    // DRLGROOM_FindBetterNearbyRoom). 20 tiles is safe for all dungeon types.
+    const tp_range: u32 = 20;
     const wp_count = teleport_reducer.findPath(sx, sy, ex, ey, tp_range);
     if (wp_count == 0) { retString(cx, argc, vp, "[]"); return 1; }
 
