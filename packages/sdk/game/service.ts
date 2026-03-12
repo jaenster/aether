@@ -1,4 +1,4 @@
-import { Game } from "./game.js"
+import { Game, GameColor, colorText } from "./game.js"
 
 // ── Services ──
 
@@ -104,7 +104,9 @@ export function createBot(name: string, factory: BotFactory): BotToken {
       const r = mainGen.next()
       if (r.done) mainGen = null
     } catch (e: any) {
-      game.log('[' + name + '] FATAL: ' + (e.message || String(e)))
+      const errMsg = '[' + name + '] FATAL: ' + (e.message || String(e))
+      game.log(errMsg)
+      game.print(colorText(errMsg, GameColor.Red))
       mainGen = null
       game.exitGame()
       return
@@ -117,7 +119,9 @@ export function createBot(name: string, factory: BotFactory): BotToken {
         const r = gen.next()
         if (!r.done) alive.push(gen)
       } catch (e: any) {
-        game.log('[' + name + '] script error: ' + (e.message || String(e)))
+        const errMsg = '[' + name + '] script error: ' + (e.message || String(e))
+        game.log(errMsg)
+        game.print(colorText(errMsg, GameColor.Red))
       }
     }
     activeGens = alive

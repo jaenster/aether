@@ -62,6 +62,7 @@
   // Map & pathfinding
   export function getExits(): string | null;
   export function findPath(x: number, y: number): string | null;
+  export function findTelePath(x: number, y: number): string | null;
   export function findPreset(type: number, classid: number): string | undefined;
 
   // Skills

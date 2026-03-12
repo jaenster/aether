@@ -2,29 +2,41 @@ import { createService, type Game, Area } from "diablo:game"
 import { Config, townAreas } from "../config.js"
 import { findBestWaypoint, waypointClassIds } from "../lib/waypoints.js"
 
+function dist(x1: number, y1: number, x2: number, y2: number) {
+  const dx = x1 - x2, dy = y1 - y2
+  return Math.sqrt(dx * dx + dy * dy)
+}
+
 export const Movement = createService((game: Game, services) => {
   const cfg = services.get(Config)
 
-  function dist(x1: number, y1: number, x2: number, y2: number) {
-    const dx = x1 - x2, dy = y1 - y2
-    return Math.sqrt(dx * dx + dy * dy)
-  }
-
   return {
-    *teleportTo(targetX: number, targetY: number) {
-      for (let attempts = 0; attempts < 50; attempts++) {
-        const px = game.player.x, py = game.player.y
-        const d = dist(px, py, targetX, targetY)
-        if (d < 5) return
+    *teleportTo(targetX: number, targetY: number, threshold = 5) {
+      if (dist(game.player.x, game.player.y, targetX, targetY) < threshold) return
 
-        if (d <= cfg.teleRange) {
-          game.useSkill(cfg.teleport, targetX, targetY)
-        } else {
-          const ratio = cfg.teleRange / d
-          game.useSkill(cfg.teleport,
-            Math.floor(px + (targetX - px) * ratio),
-            Math.floor(py + (targetY - py) * ratio))
+      const path = game.findTelePath(targetX, targetY)
+      if (path.length === 0) {
+        game.log(`[move] no tele path to ${targetX},${targetY}`)
+        return
+      }
+
+      for (const wp of path) {
+        for (let retries = 0; retries < 5; retries++) {
+          if (dist(game.player.x, game.player.y, wp.x, wp.y) < threshold) break
+
+          const px = game.player.x, py = game.player.y
+          game.useSkill(cfg.teleport, wp.x, wp.y)
+          yield* game.delay(200)
+
+          const nx = game.player.x, ny = game.player.y
+          if (nx === px && ny === py) continue // didn't move, retry
         }
+      }
+
+      // Final approach — keep teleporting until within threshold
+      for (let i = 0; i < 5; i++) {
+        if (dist(game.player.x, game.player.y, targetX, targetY) < threshold) break
+        game.useSkill(cfg.teleport, targetX, targetY)
         yield* game.delay(200)
       }
     },
@@ -50,6 +62,28 @@ export const Movement = createService((game: Game, services) => {
       }
     },
 
+    /** Teleport/walk near a target, stopping at `range` tiles distance. */
+    *moveNear(targetX: number, targetY: number, range: number) {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const d = dist(game.player.x, game.player.y, targetX, targetY)
+        if (d <= range + 2) return
+
+        if (range <= 5) {
+          // Short range: teleport directly onto the target
+          yield* this.teleportTo(targetX, targetY, range + 2)
+        } else {
+          // Long range: approach to within range
+          const dx = targetX - game.player.x
+          const dy = targetY - game.player.y
+          const ratio = (d - range) / d
+          yield* this.moveTo(
+            Math.round(game.player.x + dx * ratio),
+            Math.round(game.player.y + dy * ratio)
+          )
+        }
+      }
+    },
+
     *takeExit(areaId: number) {
       const exits = game.getExits()
       const exit = exits.find(e => e.area === areaId)
@@ -57,26 +91,40 @@ export const Movement = createService((game: Game, services) => {
         game.log(`[move] no exit to area ${areaId}`)
         return false
       }
-      yield* this.moveTo(exit.x, exit.y)
 
-      // Find the tile unit and interact, or click the exit position
-      const tile = game.tiles.find(t => t.destArea === areaId)
-      if (tile) {
-        game.interact(tile)
-      } else {
-        game.clickMap(0, exit.x, exit.y)
-      }
+      // Teleport close to exit
+      yield* this.teleportTo(exit.x, exit.y, 5)
 
-      // Wait for area transition
-      for (let i = 0; i < 50; i++) {
-        yield* game.delay(100)
-        if (game.area === areaId) return true
+      for (let attempt = 0; attempt < 5; attempt++) {
+        // If still far, direct teleport
+        if (dist(game.player.x, game.player.y, exit.x, exit.y) > 8) {
+          game.useSkill(cfg.teleport, exit.x, exit.y)
+          yield* game.delay(200)
+        }
+
+        // Walk the last few tiles
+        for (let step = 0; step < 15; step++) {
+          if (dist(game.player.x, game.player.y, exit.x, exit.y) < 5) break
+          game.move(exit.x, exit.y)
+          yield* game.delay(100)
+          if (game.area === areaId) return true
+        }
+
+        // Find warp tile unit for our target area and interact
+        const tile = game.tiles.find(t => t.destArea === areaId)
+        if (tile) {
+          game.interact(tile)
+        }
+
+        for (let i = 0; i < 30; i++) {
+          yield* game.delay(100)
+          if (game.area === areaId) return true
+        }
       }
-      game.log(`[move] exit transition timed out`)
+      game.log(`[move] exit to area ${areaId} timed out`)
       return false
     },
 
-    // Find a waypoint in the current area by scanning presets for known classids
     findWaypointPreset() {
       for (const classid of waypointClassIds) {
         const pos = game.findPreset(2, classid)
@@ -85,7 +133,6 @@ export const Movement = createService((game: Game, services) => {
       return null
     },
 
-    // Find the live waypoint unit near a position
     findWaypointUnit(nearX: number, nearY: number) {
       const wpSet = new Set(waypointClassIds)
       return game.objects.find(obj =>
@@ -94,17 +141,14 @@ export const Movement = createService((game: Game, services) => {
     },
 
     *useWaypoint(destArea: Area) {
-      // Find waypoint preset in current area
       const preset = this.findWaypointPreset()
       if (!preset) {
         game.log(`[move] no waypoint preset in area ${game.area}`)
         return false
       }
 
-      // Move to the waypoint
       yield* this.moveTo(preset.x, preset.y)
 
-      // Find the live unit and interact
       const wpUnit = this.findWaypointUnit(preset.x, preset.y)
       if (!wpUnit) {
         game.log(`[move] waypoint unit not found near ${preset.x},${preset.y}`)
@@ -114,16 +158,13 @@ export const Movement = createService((game: Game, services) => {
       game.interact(wpUnit)
       yield* game.delay(500)
 
-      // Send waypoint travel packet
       game.log(`[move] waypoint → area ${destArea} (wpUnit=${wpUnit.unitId})`)
       game.takeWaypoint(wpUnit.unitId, destArea)
 
-      // Wait for area transition
       for (let i = 0; i < 50; i++) {
         yield* game.delay(100)
-        const curArea = game.area
-        if (curArea === destArea) {
-          game.log(`[move] waypoint travel succeeded, now in area ${curArea}`)
+        if (game.area === destArea) {
+          game.log(`[move] waypoint travel succeeded, now in area ${game.area}`)
           return true
         }
       }
@@ -142,13 +183,11 @@ export const Movement = createService((game: Game, services) => {
         return
       }
 
-      // Take waypoint if needed
       if (game.area !== route.wpArea) {
         const ok: unknown = yield* this.useWaypoint(route.wpArea)
         if (!ok) return
       }
 
-      // Follow exits
       for (const nextArea of route.exitPath) {
         const ok: unknown = yield* this.takeExit(nextArea)
         if (!ok) return

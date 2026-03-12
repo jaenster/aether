@@ -274,6 +274,16 @@ pub fn findPath(sx: i32, sy: i32, ex: i32, ey: i32, tp_range: u32) u32 {
     // astar internally calls reduce(), result goes directly into waypoints
     waypoint_count = astar.FindPath(@This()).findPath(sx, sy, ex, ey, &waypoints);
 
+    // Ensure the final destination is always the last waypoint.
+    // reduce() can drop it when the last hop is shorter than teleport range.
+    if (waypoint_count > 0 and waypoint_count < MAX_WAYPOINTS) {
+        const last = waypoints[waypoint_count - 1];
+        if (last.x != ex or last.y != ey) {
+            waypoints[waypoint_count] = .{ .x = ex, .y = ey };
+            waypoint_count += 1;
+        }
+    }
+
     return waypoint_count;
 }
 

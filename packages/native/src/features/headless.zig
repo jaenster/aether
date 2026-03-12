@@ -15,6 +15,10 @@ const crash_handler = @import("../crash_handler.zig");
 
 var headless_rendering: bool = false;
 
+pub fn isHeadless() bool {
+    return headless_rendering;
+}
+
 pub fn enableHeadlessMode() void {
     headless_rendering = true;
 

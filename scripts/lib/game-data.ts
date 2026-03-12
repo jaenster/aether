@@ -439,4 +439,17 @@ export function castingFrames(skillId: number, charClass: number): number {
   return Math.ceil(256 * baseCastRate / Math.floor(256 * (100 + effectiveFCR) / 100)) - 1;
 }
 
+export function skillRange(skillId: number): number {
+  // Ranged/AoE: skill has a missile → default 25 (like kolbot)
+  const missile = getBaseStat("skills", skillId, "srvmissile") as number
+  if (missile > 0) return 25
+
+  // range field: 0=melee, 1=h2h/both, 2+=ranged
+  const r = getBaseStat("skills", skillId, "range") as number
+  if (r >= 2) return 25
+
+  // Melee
+  return 3
+}
+
 export { resistMap, pierceMap, masteryMap, convictionEligible, nonDamage, damageTypes };

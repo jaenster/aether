@@ -5,11 +5,14 @@ import {
   getUIFlag as nativeGetUIFlag, say as nativeSay,
   getExits as nativeGetExits,
   findPath as nativeFindPath,
+  findTelePath as nativeFindTelePath,
   findPreset as nativeFindPreset,
   interact as nativeInteract,
+  runToEntity as nativeRunToEntity,
   exitGame as nativeExitGame,
   exitClient as nativeExitClient,
   takeWaypoint as nativeTakeWaypoint,
+  printScreen as nativePrintScreen,
 } from "diablo:native"
 import { UnitCollection } from "./unit.collection.js";
 import { ItemUnit, Missile, Monster, ObjectUnit, PlayerUnit, Tile } from "./unit.js";
@@ -71,6 +74,7 @@ export class Game {
   say(msg: string) { nativeSay(msg) }
   getUIFlag(flag: number) { return nativeGetUIFlag(flag) }
   interact(unit: { type: number, unitId: number }) { nativeInteract(unit.type, unit.unitId) }
+  runToEntity(unit: { type: number, unitId: number }) { nativeRunToEntity(unit.type, unit.unitId) }
 
   exitGame() { nativeExitGame() }
   exitClient() { nativeExitClient() }
@@ -92,6 +96,13 @@ export class Game {
     return arr.map(function(p: number[]) { return { x: p[0]!, y: p[1]! } })
   }
 
+  findTelePath(x: number, y: number) {
+    const raw = nativeFindTelePath(x, y)
+    if (!raw) return []
+    const arr = JSON.parse(raw) as number[][]
+    return arr.map(function(p: number[]) { return { x: p[0]!, y: p[1]! } })
+  }
+
   findPreset(type: number, classid: number) {
     const raw = nativeFindPreset(type, classid)
     if (!raw) return undefined
@@ -107,4 +118,45 @@ export class Game {
   log(...args: any[]) {
     nativeLog(args.map(a => String(a)).join(' '))
   }
+
+  /** Print colored text on the game screen (chat area). No-op in headless mode. */
+  print(msg: string, color: GameColor = GameColor.White) {
+    nativePrintScreen(msg, color)
+  }
+}
+
+/** D2 game text color codes (ÿcX escape sequence index) */
+export enum GameColor {
+  White = 0,
+  Red = 1,
+  Green = 2,
+  Blue = 3,
+  Gold = 4,
+  Grey = 5,
+  Black = 6,
+  Tan = 7,
+  Orange = 8,
+  Yellow = 9,
+  DarkGreen = 10,
+  Purple = 11,
+}
+
+/** Color code characters for D2 text: ÿc + this char */
+const colorChars = "0123456789:;"
+
+/** Wrap text with a D2 color code prefix */
+export function colorText(text: string, color: GameColor): string {
+  const ch = colorChars[color] ?? "0"
+  return "\xffc" + ch + text
+}
+
+// Extend String.prototype for composable colored text: "hello".color(GameColor.Red)
+declare global {
+  interface String {
+    color(c: GameColor): string
+  }
+}
+
+String.prototype.color = function(this: string, c: GameColor): string {
+  return colorText(this, c)
 }

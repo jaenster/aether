@@ -9,6 +9,7 @@ const types = @import("../d2/types.zig");
 const feature = @import("../feature.zig");
 const units = @import("units.zig");
 const walk_reducer = @import("../pathing/walk_reducer.zig");
+const teleport_reducer = @import("../pathing/teleport_reducer.zig");
 const act_map = @import("../pathing/act_map.zig");
 
 // SM arg/ret helpers — argc required for correct JS::CallArgs layout
@@ -122,6 +123,33 @@ fn jsLog(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const len = c.sm_arg_string(cx, argc, vp, 0, &buf, buf.len);
     if (len > 0) {
         log.printStr("js: ", buf[0..@intCast(len)]);
+    }
+    retUndefined(argc, vp);
+    return 1;
+}
+
+fn jsPrintScreen(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const headless = @import("../features/headless.zig");
+    if (headless.isHeadless()) {
+        retUndefined(argc, vp);
+        return 1;
+    }
+
+    var buf: [512]u8 = undefined;
+    const len = c.sm_arg_string(cx, argc, vp, 0, &buf, buf.len);
+    const color: i32 = if (argc >= 2) argInt32(argc, vp, 1) else 0;
+
+    if (len > 0) {
+        // Convert ASCII to UTF-16
+        var wbuf: [256]u16 = undefined;
+        const slen: usize = @intCast(len);
+        const wlen = @min(slen, wbuf.len - 1);
+        for (0..wlen) |i| {
+            wbuf[i] = buf[i];
+        }
+        wbuf[wlen] = 0;
+        const wptr: [*:0]const u16 = @ptrCast(&wbuf);
+        d2.PrintGameString.call(.{ wptr, color });
     }
     retUndefined(argc, vp);
     return 1;
@@ -351,21 +379,22 @@ fn jsItemGetCode(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_
 fn jsTileGetDestArea(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const unit_id: u32 = @bitCast(argInt32(argc, vp, 0));
     const unit = units.findUnit(5, unit_id) orelse { retInt32(argc, vp, -1); return 1; };
-    // For room tiles, pPath leads to the warp destination info
-    // The RoomTile linked via the room2 has the dest area
     const room1 = unit.getRoom1() orelse { retInt32(argc, vp, -1); return 1; };
     const room2 = room1.pRoom2 orelse { retInt32(argc, vp, -1); return 1; };
-    // Walk room tiles to find the one matching this unit's classid
+    // Match unit's warp number (dwTxtFileNo) against RoomTile.nNum to find correct dest
+    const warp_no = unit.dwTxtFileNo;
     var tile: ?*types.RoomTile = room2.pRoomTiles;
-    while (tile) |t| {
-        if (t.pRoom2) |dest_room2| {
-            if (dest_room2.pLevel) |dest_level| {
-                // The tile's classid (dwTxtFileNo) corresponds to the warp ID
-                retInt32(argc, vp, @bitCast(dest_level.dwLevelNo));
-                return 1;
+    while (tile) |t| : (tile = t.pNext) {
+        if (t.nNum) |n| {
+            if (n.* == warp_no) {
+                if (t.pRoom2) |dest_room2| {
+                    if (dest_room2.pLevel) |dest_level| {
+                        retInt32(argc, vp, @bitCast(dest_level.dwLevelNo));
+                        return 1;
+                    }
+                }
             }
         }
-        tile = t.pNext;
     }
     retInt32(argc, vp, -1);
     return 1;
@@ -519,46 +548,64 @@ fn jsFindPath(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int
     return 1;
 }
 
+/// A* pathfind for teleporting from current position to (x, y).
+/// Uses teleport_reducer which finds waypoints at teleport range intervals.
+/// Returns JSON: [[x,y],[x,y],...]
+fn jsFindTelePath(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const player = globals.playerUnit().* orelse { retString(cx, argc, vp, "[]"); return 1; };
+    const ppath = player.dynamicPath() orelse { retString(cx, argc, vp, "[]"); return 1; };
+    const sx: i32 = @intCast(ppath.xPos);
+    const sy: i32 = @intCast(ppath.yPos);
+    const ex = argInt32(argc, vp, 0);
+    const ey = argInt32(argc, vp, 1);
+
+    ensureActMap();
+    const tp_range: u32 = 40; // same as auto_move TP_RANGE
+    const wp_count = teleport_reducer.findPath(sx, sy, ex, ey, tp_range);
+    if (wp_count == 0) { retString(cx, argc, vp, "[]"); return 1; }
+
+    var buf: [8192]u8 = undefined;
+    var pos: usize = 0;
+    buf[0] = '[';
+    pos = 1;
+    var i: u32 = 0;
+    while (i < wp_count) : (i += 1) {
+        const wp = teleport_reducer.waypoints[i];
+        const written = std.fmt.bufPrint(buf[pos..], "{s}[{d},{d}]", .{
+            if (i > 0) @as([]const u8, ",") else @as([]const u8, ""),
+            wp.x, wp.y,
+        }) catch break;
+        pos += written.len;
+    }
+    buf[pos] = ']';
+    pos += 1;
+    retString(cx, argc, vp, buf[0..pos]);
+    return 1;
+}
+
 // ── Map/exit bindings ───────────────────────────────────────────────
 
-/// Get level exits by walking Room2 RoomTile list.
+/// Get level exits using act_map's proper exit detection (presets + linkage).
 /// Returns comma-separated "area:x:y" entries.
 fn jsGetExits(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
-    const player = globals.playerUnit().* orelse { retString(cx, argc, vp, ""); return 1; };
-    const path = player.dynamicPath() orelse { retString(cx, argc, vp, ""); return 1; };
-    const room1 = path.pRoom1 orelse { retString(cx, argc, vp, ""); return 1; };
-    const my_room2 = room1.pRoom2 orelse { retString(cx, argc, vp, ""); return 1; };
-    const level = my_room2.pLevel orelse { retString(cx, argc, vp, ""); return 1; };
-    const my_level = level.dwLevelNo;
+    ensureActMap();
+
+    var exits: [32]act_map.Exit = undefined;
+    const exit_count = act_map.getExits(&exits);
+    if (exit_count == 0) { retString(cx, argc, vp, ""); return 1; }
 
     var buf: [512]u8 = undefined;
     var pos: usize = 0;
-
-    // Walk all rooms in this level, check their RoomTile links
-    var room_it = level.pRoom2First;
-    while (room_it) |room| : (room_it = room.pRoom2Next) {
-        const room_level = room.pLevel orelse continue;
-        if (room_level.dwLevelNo != my_level) continue;
-
-        var tile: ?*types.RoomTile = room.pRoomTiles;
-        while (tile) |t| : (tile = t.pNext) {
-            const dest_room2 = t.pRoom2 orelse continue;
-            const dest_level = dest_room2.pLevel orelse continue;
-            const dest_area = dest_level.dwLevelNo;
-            // Position: center of the SOURCE room (where the warp tile is)
-            const tile_x = room.dwPosX * 5 + room.dwSizeX * 5 / 2;
-            const tile_y = room.dwPosY * 5 + room.dwSizeY * 5 / 2;
-
-            // Append "area:x:y,"
-            if (pos > 0 and pos < buf.len) {
-                buf[pos] = ',';
-                pos += 1;
-            }
-            const written = std.fmt.bufPrint(buf[pos..], "{d}:{d}:{d}", .{
-                dest_area, tile_x, tile_y,
-            }) catch break;
-            pos += written.len;
+    var i: u32 = 0;
+    while (i < exit_count) : (i += 1) {
+        if (pos > 0 and pos < buf.len) {
+            buf[pos] = ',';
+            pos += 1;
         }
+        const written = std.fmt.bufPrint(buf[pos..], "{d}:{d}:{d}", .{
+            exits[i].target, exits[i].x, exits[i].y,
+        }) catch break;
+        pos += written.len;
     }
 
     retString(cx, argc, vp, buf[0..pos]);
@@ -740,6 +787,7 @@ const bindings = [_]Binding{
     .{ .name = "getDifficulty", .func = &jsGetDifficulty, .nargs = 0 },
     .{ .name = "getTickCount", .func = &jsGetTickCount, .nargs = 0 },
     .{ .name = "log", .func = &jsLog, .nargs = 1 },
+    .{ .name = "printScreen", .func = &jsPrintScreen, .nargs = 2 },
     // Unit iteration
     .{ .name = "unitCount", .func = &jsUnitCount, .nargs = 1 },
     .{ .name = "unitAtIndex", .func = &jsUnitAtIndex, .nargs = 1 },
@@ -781,6 +829,7 @@ const bindings = [_]Binding{
     // Map & pathfinding
     .{ .name = "getExits", .func = &jsGetExits, .nargs = 0 },
     .{ .name = "findPath", .func = &jsFindPath, .nargs = 2 },
+    .{ .name = "findTelePath", .func = &jsFindTelePath, .nargs = 2 },
     .{ .name = "findPreset", .func = &jsFindPreset, .nargs = 2 },
     // Skills
     .{ .name = "getSkillLevel", .func = &jsGetSkillLevel, .nargs = 2 },

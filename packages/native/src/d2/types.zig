@@ -103,9 +103,9 @@ pub const UnitAny = extern struct {
     pMsgFirst: ?*anyopaque, // 0xEC
     pMsgLast: ?*anyopaque, // 0xF0
 
-    /// Objects (2) and items (4) use StaticPath, everything else uses DynamicPath
+    /// Objects (2), items (4), and tiles (5) use StaticPath, everything else uses DynamicPath
     pub fn isStaticUnit(self: *const UnitAny) bool {
-        return self.dwType == 2 or self.dwType == 4;
+        return self.dwType == 2 or self.dwType == 4 or self.dwType == 5;
     }
 
     pub fn dynamicPath(self: *const UnitAny) ?*DynamicPath {

@@ -639,6 +639,10 @@ pub const TxtMonStatsGetLine = fastcall(0x00451F80, fn (i32) ?[*]u8);
 /// ECX=eSkill
 pub const TxtSkillsGetLine = fastcall(0x0045C4B0, fn (i32) ?[*]u8);
 
+/// TEXT_PrintGameString: prints a message in the game chat area.
+/// ECX=wMessage (wchar_t*), EDX=nColor
+pub const PrintGameString = fastcall(0x0049E3A0, fn ([*:0]const u16, i32) void);
+
 /// TXT_Levels_GetRecord: returns pointer to D2LevelsTxt record or null.
 /// stdcall, same as GetLevelText but raw bytes.
 pub const TxtLevelsGetLine = struct {
