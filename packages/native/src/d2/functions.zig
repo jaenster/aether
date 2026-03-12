@@ -54,7 +54,10 @@ fn u32ToRet(comptime T: type, raw: u32) T {
             .pointer => if (raw == 0) null else @ptrFromInt(raw),
             else => @bitCast(raw),
         },
-        .int => @bitCast(raw),
+        .int => |int_info| if (int_info.bits < 32)
+            @bitCast(@as(std.meta.Int(.unsigned, int_info.bits), @truncate(raw)))
+        else
+            @bitCast(raw),
         .bool => raw != 0,
         else => @compileError("unsupported return type for fastcall: " ++ @typeName(T)),
     };

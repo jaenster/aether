@@ -19,6 +19,7 @@ import {
   registerPacketHook,
   getPacketData,
   injectPacket as nativeInjectPacket,
+  getCollision as nativeGetCollision,
 } from "diablo:native"
 import { UnitCollection } from "./unit.collection.js";
 import { ItemUnit, Missile, Monster, ObjectUnit, PlayerUnit, Tile } from "./unit.js";
@@ -133,7 +134,7 @@ export class Game {
     for (let i = 0; i < ticks; i++) yield
   }
 
-  /** Yield per-frame until area changes to target, or maxFrames exceeded. */
+  /* Yield per-frame until area changes to target, or maxFrames exceeded. */
   *waitForArea(area: number, maxFrames = 150) {
     for (let i = 0; i < maxFrames; i++) {
       if (this.area === area) return true
@@ -179,6 +180,11 @@ export class Game {
 
   /** Inject a fake S2C packet — calls the original handler as if server sent it. */
   injectPacket(data: Uint8Array) { nativeInjectPacket(data) }
+
+  // ── Collision ─────────────────────────────────────────────────────
+
+  /** Check collision flags at (x,y). Returns 0 if walkable, >0 if blocked, -1 on error. */
+  getCollision(x: number, y: number): number { return nativeGetCollision(x, y) }
 
   // ── Logging ────────────────────────────────────────────────────────
 

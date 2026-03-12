@@ -88,3 +88,6 @@
   export function getPacketData(): Uint8Array;
   export function getPacketSize(): number;
   export function injectPacket(data: Uint8Array): void;
+
+  // Collision
+  export function getCollision(x: number, y: number): number;

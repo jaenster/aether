@@ -856,6 +856,25 @@ fn jsInjectPacket(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c
     return 1;
 }
 
+// ── Collision ───────────────────────────────────────────────────────
+
+/// getCollision(x, y) → collision flags at (x,y), 0 = free
+fn jsGetCollision(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const x = argInt32(argc, vp, 0);
+    const y = argInt32(argc, vp, 1);
+    const player = globals.playerUnit().* orelse { retInt32(argc, vp, -1); return 1; };
+    const path = player.dynamicPath() orelse { retInt32(argc, vp, -1); return 1; };
+    const room1 = path.pRoom1 orelse { retInt32(argc, vp, -1); return 1; };
+    const target_room = d2.FindBetterNearbyRoom.call(.{ room1, x, y }) orelse {
+        retInt32(argc, vp, -1);
+        return 1;
+    };
+    // Unit size 1 (player), collision mask 0x1C09 (PLAYER_COLLISION_DEFAULT)
+    const coll = d2.CheckCollisionWidth.call(.{ target_room, x, y, @as(u32, 1), @as(u16, 0x1C09) });
+    retInt32(argc, vp, @as(i32, coll));
+    return 1;
+}
+
 // ── Binding table ───────────────────────────────────────────────────
 
 const Binding = struct {
@@ -941,6 +960,8 @@ const bindings = [_]Binding{
     .{ .name = "getPacketData", .func = &jsGetPacketData, .nargs = 0 },
     .{ .name = "getPacketSize", .func = &jsGetPacketSize, .nargs = 0 },
     .{ .name = "injectPacket", .func = &jsInjectPacket, .nargs = 1 },
+    // Collision
+    .{ .name = "getCollision", .func = &jsGetCollision, .nargs = 2 },
 };
 
 /// Comptime-generated ES module source for "diablo:native".
