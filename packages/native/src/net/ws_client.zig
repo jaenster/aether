@@ -57,6 +57,10 @@ const WS_CLOSE: u8 = 0x8;
 const WS_PING: u8 = 0x9;
 const WS_PONG: u8 = 0xA;
 
+const alloc = std.heap.page_allocator;
+const INITIAL_BUF_SIZE: usize = 64 * 1024; // 64 KB
+const MAX_BUF_SIZE: usize = 16 * 1024 * 1024; // 16 MB hard cap
+
 pub const WsState = enum {
     disconnected,
     connecting,
@@ -75,11 +79,15 @@ pub const WsClient = struct {
     host: [64]u8 = .{0} ** 64,
     host_len: usize = 0,
     port: u16 = 0,
-    recv_buf: [524288]u8 = undefined,
+    recv_buf: ?[]u8 = null,
+    recv_cap: usize = 0,
     recv_len: usize = 0,
-    // Buffered frame assembly
-    frame_buf: [524288]u8 = undefined,
+    frame_buf: ?[]u8 = null,
+    frame_cap: usize = 0,
     frame_len: usize = 0,
+    // Small scratch buffer for send masking (avoids borrowing frame_buf)
+    send_scratch: ?[]u8 = null,
+    send_scratch_cap: usize = 0,
     wsa_initialized: bool = false,
     handshake_sent: bool = false,
     handshake_done: bool = false,
@@ -100,14 +108,72 @@ pub const WsClient = struct {
         self.host[len] = 0;
         self.host_len = len;
         self.port = port;
+
+        // Allocate initial buffers
+        self.ensureBufSize(INITIAL_BUF_SIZE);
     }
 
     pub fn deinit(self: *WsClient) void {
         self.disconnect();
+        if (self.recv_buf) |buf| alloc.free(buf);
+        if (self.frame_buf) |buf| alloc.free(buf);
+        if (self.send_scratch) |buf| alloc.free(buf);
+        self.recv_buf = null;
+        self.frame_buf = null;
+        self.send_scratch = null;
+        self.recv_cap = 0;
+        self.frame_cap = 0;
+        self.send_scratch_cap = 0;
         if (self.wsa_initialized) {
             _ = WSACleanup();
             self.wsa_initialized = false;
         }
+    }
+
+    fn ensureBufSize(self: *WsClient, min_size: usize) void {
+        if (self.recv_cap >= min_size and self.frame_cap >= min_size) return;
+
+        // Round up to next power of 2
+        var size = if (self.recv_cap > self.frame_cap) self.recv_cap else self.frame_cap;
+        if (size < INITIAL_BUF_SIZE) size = INITIAL_BUF_SIZE;
+        while (size < min_size) size *= 2;
+        if (size > MAX_BUF_SIZE) size = MAX_BUF_SIZE;
+
+        if (self.recv_cap < size) {
+            const new_buf = alloc.alloc(u8, size) catch {
+                log.print("ws: recv_buf alloc failed");
+                return;
+            };
+            if (self.recv_buf) |old| {
+                if (self.recv_len > 0) @memcpy(new_buf[0..self.recv_len], old[0..self.recv_len]);
+                alloc.free(old);
+            }
+            self.recv_buf = new_buf;
+            self.recv_cap = size;
+        }
+
+        if (self.frame_cap < size) {
+            const new_buf = alloc.alloc(u8, size) catch {
+                log.print("ws: frame_buf alloc failed");
+                return;
+            };
+            if (self.frame_buf) |old| alloc.free(old);
+            self.frame_buf = new_buf;
+            self.frame_cap = size;
+        }
+
+        // Send scratch matches frame_buf
+        if (self.send_scratch_cap < size) {
+            const new_buf = alloc.alloc(u8, size) catch {
+                log.print("ws: send_scratch alloc failed");
+                return;
+            };
+            if (self.send_scratch) |old| alloc.free(old);
+            self.send_scratch = new_buf;
+            self.send_scratch_cap = size;
+        }
+
+        log.hex("ws: buffers resized to ", @as(u32, @intCast(size / 1024)));
     }
 
     pub fn tryConnect(self: *WsClient) bool {
@@ -134,7 +200,6 @@ pub const WsClient = struct {
         };
 
         if (connect(self.sock, &addr, @sizeOf(SockaddrIn)) == SOCKET_ERROR) {
-            log.print("ws: connect() failed");
             _ = closesocket(self.sock);
             self.sock = INVALID_SOCKET;
             return false;
@@ -229,9 +294,6 @@ pub const WsClient = struct {
             _ = closesocket(self.sock);
             self.sock = INVALID_SOCKET;
         }
-        if (self.state == .connected) {
-            log.print("ws: disconnected");
-        }
         self.state = .disconnected;
         self.recv_len = 0;
         self.frame_len = 0;
@@ -246,7 +308,12 @@ pub const WsClient = struct {
     // ── Internal ──────────────────────────────────────────────────────
 
     fn recvSome(self: *WsClient) c_int {
-        if (self.recv_len >= self.recv_buf.len) return 0;
+        const r_buf = self.recv_buf orelse return 0;
+        if (self.recv_len >= self.recv_cap) {
+            // Buffer full — grow it
+            self.ensureBufSize(self.recv_cap * 2);
+            if (self.recv_len >= self.recv_cap) return 0; // growth failed
+        }
 
         // Non-blocking select with zero timeout
         var read_fds = FdSet{ .fd_count = 1, .fd_array = .{0} ** 64 };
@@ -255,8 +322,9 @@ pub const WsClient = struct {
         const sel = select(0, &read_fds, null, null, &tv);
         if (sel <= 0) return 0;
 
-        const space = self.recv_buf.len - self.recv_len;
-        const n = recv(self.sock, @ptrCast(self.recv_buf[self.recv_len..].ptr), @intCast(space), 0);
+        const cur_buf = self.recv_buf orelse return 0; // re-read after potential growth
+        const space = self.recv_cap - self.recv_len;
+        const n = recv(self.sock, @ptrCast(cur_buf[self.recv_len..].ptr), @intCast(space), 0);
         if (n == 0) {
             // Connection closed
             return -1;
@@ -267,12 +335,14 @@ pub const WsClient = struct {
             return -1;
         }
         self.recv_len += @intCast(n);
+        _ = r_buf;
         return n;
     }
 
     fn checkHandshakeResponse(self: *WsClient) bool {
+        const r_buf = self.recv_buf orelse return false;
         // Look for the end of HTTP response headers
-        const data = self.recv_buf[0..self.recv_len];
+        const data = r_buf[0..self.recv_len];
         const end = findSubstring(data, "\r\n\r\n") orelse return false;
 
         // Check for "101 Switching Protocols"
@@ -286,17 +356,18 @@ pub const WsClient = struct {
         const consumed = end + 4;
         const remaining = self.recv_len - consumed;
         if (remaining > 0) {
-            std.mem.copyForwards(u8, self.recv_buf[0..remaining], self.recv_buf[consumed..self.recv_len]);
+            std.mem.copyForwards(u8, r_buf[0..remaining], r_buf[consumed..self.recv_len]);
         }
         self.recv_len = remaining;
         return true;
     }
 
     fn tryReadFrame(self: *WsClient) ?WsMessage {
+        const r_buf = self.recv_buf orelse return null;
         if (self.recv_len < 2) return null;
 
-        const b0 = self.recv_buf[0];
-        const b1 = self.recv_buf[1];
+        const b0 = r_buf[0];
+        const b1 = r_buf[1];
         const opcode = b0 & 0x0F;
         const masked = (b1 & 0x80) != 0;
         var payload_len: usize = b1 & 0x7F;
@@ -304,14 +375,14 @@ pub const WsClient = struct {
 
         if (payload_len == 126) {
             if (self.recv_len < 4) return null;
-            payload_len = (@as(usize, self.recv_buf[2]) << 8) | self.recv_buf[3];
+            payload_len = (@as(usize, r_buf[2]) << 8) | r_buf[3];
             header_len = 4;
         } else if (payload_len == 127) {
             if (self.recv_len < 10) return null;
-            // 64-bit length — we only support up to frame_buf size
+            // 64-bit length
             payload_len = 0;
             for (2..10) |i| {
-                payload_len = (payload_len << 8) | self.recv_buf[i];
+                payload_len = (payload_len << 8) | r_buf[i];
             }
             header_len = 10;
         }
@@ -319,22 +390,35 @@ pub const WsClient = struct {
         if (masked) header_len += 4; // mask key
 
         const total = header_len + payload_len;
-        if (self.recv_len < total) return null;
-        if (payload_len > self.frame_buf.len) {
-            // Frame too large, skip it
-            self.consumeRecv(total);
-            return null;
+
+        // Grow buffers if frame is larger than current capacity
+        if (payload_len > self.frame_cap or total > self.recv_cap) {
+            const needed = if (total > payload_len) total else payload_len;
+            if (needed > MAX_BUF_SIZE) {
+                log.print("ws: frame exceeds max buffer size, dropping");
+                self.consumeRecv(total);
+                return null;
+            }
+            self.ensureBufSize(needed);
+            // After growth, recv_buf pointer may have changed — re-read
+            return self.tryReadFrame();
         }
+
+        if (self.recv_len < total) return null;
+
+        const f_buf = self.frame_buf orelse return null;
 
         // Copy payload, unmask if needed
         const payload_start = header_len;
-        @memcpy(self.frame_buf[0..payload_len], self.recv_buf[payload_start .. payload_start + payload_len]);
+        // Re-read recv_buf since it may have been reallocated
+        const cur_recv = self.recv_buf orelse return null;
+        @memcpy(f_buf[0..payload_len], cur_recv[payload_start .. payload_start + payload_len]);
 
         if (masked) {
             const mask_start = header_len - 4;
-            const mask = self.recv_buf[mask_start .. mask_start + 4];
+            const mask = cur_recv[mask_start .. mask_start + 4];
             for (0..payload_len) |i| {
-                self.frame_buf[i] ^= mask[i % 4];
+                f_buf[i] ^= mask[i % 4];
             }
         }
 
@@ -342,7 +426,7 @@ pub const WsClient = struct {
 
         // Handle control frames
         if (opcode == WS_PING) {
-            _ = self.sendFrame(WS_PONG, self.frame_buf[0..payload_len]);
+            _ = self.sendFrame(WS_PONG, f_buf[0..payload_len]);
             return null;
         }
         if (opcode == WS_CLOSE) {
@@ -352,7 +436,7 @@ pub const WsClient = struct {
 
         self.frame_len = payload_len;
         return WsMessage{
-            .data = self.frame_buf[0..payload_len],
+            .data = f_buf[0..payload_len],
             .opcode = opcode,
         };
     }
@@ -372,11 +456,11 @@ pub const WsClient = struct {
             hlen = 4;
         } else {
             header[1] = 0x80 | 127;
-            var len = data.len;
+            var l = data.len;
             var i: usize = 9;
             while (i >= 2) : (i -= 1) {
-                header[i] = @intCast(len & 0xFF);
-                len >>= 8;
+                header[i] = @intCast(l & 0xFF);
+                l >>= 8;
             }
             hlen = 10;
         }
@@ -392,19 +476,23 @@ pub const WsClient = struct {
         // Send header
         if (!self.sendAll(header[0..hlen])) return false;
 
-        // Send masked payload
+        // Send masked payload using send_scratch
         if (data.len > 0) {
-            // Mask in-place into frame_buf, then send
-            const chunk_size = @min(data.len, self.frame_buf.len);
+            // Ensure scratch buffer is big enough
+            if (self.send_scratch_cap < data.len) {
+                self.ensureBufSize(data.len);
+            }
+            const scratch = self.send_scratch orelse return false;
+            const chunk_size = self.send_scratch_cap;
             var offset: usize = 0;
             while (offset < data.len) {
                 const end = @min(offset + chunk_size, data.len);
                 const n = end - offset;
-                @memcpy(self.frame_buf[0..n], data[offset..end]);
+                @memcpy(scratch[0..n], data[offset..end]);
                 for (0..n) |j| {
-                    self.frame_buf[j] ^= mask[(offset + j) % 4];
+                    scratch[j] ^= mask[(offset + j) % 4];
                 }
-                if (!self.sendAll(self.frame_buf[0..n])) return false;
+                if (!self.sendAll(scratch[0..n])) return false;
                 offset = end;
             }
         }
@@ -423,9 +511,10 @@ pub const WsClient = struct {
     }
 
     fn consumeRecv(self: *WsClient, n: usize) void {
+        const r_buf = self.recv_buf orelse return;
         const remaining = self.recv_len - n;
         if (remaining > 0) {
-            std.mem.copyForwards(u8, self.recv_buf[0..remaining], self.recv_buf[n..self.recv_len]);
+            std.mem.copyForwards(u8, r_buf[0..remaining], r_buf[n..self.recv_len]);
         }
         self.recv_len = remaining;
     }
