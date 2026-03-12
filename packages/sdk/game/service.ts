@@ -73,6 +73,12 @@ export function createBot(name: string, factory: BotFactory): BotToken {
   }
 
   const __g = Function('return this')()
+
+  // Packet hook — called synchronously from native before S2C handler dispatch
+  __g.__onPacket = function onPacket(opcode: number): boolean {
+    return game._handlePacket(opcode)
+  }
+
   __g.__onTick = function onTick() {
     frameCount++
     game._frame = frameCount

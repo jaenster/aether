@@ -376,6 +376,35 @@ void sm_ret_int32array(void* context, unsigned argc, void* vp,
     args.rval().setObject(*arr);
 }
 
+void sm_ret_uint8array(void* context, unsigned argc, void* vp,
+                       const unsigned char* data, int count) {
+    auto* cx = static_cast<JSContext*>(context);
+    JS::CallArgs args = JS::CallArgsFromVp(argc, static_cast<JS::Value*>(vp));
+
+    if (count <= 0 || !data) {
+        JSObject* arr = JS_NewUint8Array(cx, 0);
+        if (arr)
+            args.rval().setObject(*arr);
+        else
+            args.rval().setUndefined();
+        return;
+    }
+
+    JSObject* arr = JS_NewUint8Array(cx, static_cast<uint32_t>(count));
+    if (!arr) {
+        args.rval().setUndefined();
+        return;
+    }
+
+    bool isShared = false;
+    uint8_t* buf = static_cast<uint8_t*>(
+        JS_GetArrayBufferViewData(arr, &isShared, JS::AutoCheckCannotGC()));
+    if (buf) {
+        memcpy(buf, data, static_cast<size_t>(count));
+    }
+    args.rval().setObject(*arr);
+}
+
 // ── Module system ────────────────────────────────────────────────────
 
 // Find a module in the registry by specifier

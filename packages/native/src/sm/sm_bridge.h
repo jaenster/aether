@@ -61,6 +61,9 @@ SM_API int      sm_arg_uint8array(void* context, unsigned argc, void* vp, unsign
 // Return a new Int32Array (copies data). Used for structured data like path coordinates.
 SM_API void     sm_ret_int32array(void* context, unsigned argc, void* vp,
                                   const int* data, int count);
+// Return a new Uint8Array (copies data). Used for packet data.
+SM_API void     sm_ret_uint8array(void* context, unsigned argc, void* vp,
+                                  const unsigned char* data, int count);
 
 // Module system
 SM_API int      sm_module_init(void* context);

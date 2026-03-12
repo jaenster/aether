@@ -811,6 +811,51 @@ fn jsTakeWaypoint(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_
     return 1;
 }
 
+// ── Packet hooks ────────────────────────────────────────────────────
+
+const packet_hooks = @import("../features/packet_hooks.zig");
+
+/// Register JS interest in an S2C packet opcode. JS __onPacket(opcode) will be called.
+fn jsRegisterPacketHook(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const opcode = argInt32(argc, vp, 0);
+    if (opcode >= 0 and opcode < 175) {
+        packet_hooks.registerOpcode(@intCast(@as(u32, @bitCast(opcode))));
+    }
+    retUndefined(argc, vp);
+    return 1;
+}
+
+/// Get current packet data as a copy. Only valid inside __onPacket callback.
+/// Returns the raw packet bytes (including opcode at [0]) via Uint8Array.
+fn jsGetPacketData(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const ptr = packet_hooks.current_packet_ptr;
+    const len = packet_hooks.current_packet_len;
+    if (ptr != null and len > 0) {
+        c.sm_ret_uint8array(cx, argc, vp, @ptrCast(ptr.?), @intCast(len));
+    } else {
+        retUndefined(argc, vp);
+    }
+    return 1;
+}
+
+/// Get current packet size. Only valid inside __onPacket callback.
+fn jsGetPacketSize(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    retInt32(argc, vp, @intCast(packet_hooks.current_packet_len));
+    return 1;
+}
+
+/// Inject a fake S2C packet — calls the original handler as if the server sent it.
+fn jsInjectPacket(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    var data_ptr: [*c]const u8 = null;
+    const len = c.sm_arg_uint8array(cx, argc, vp, 0, &data_ptr);
+    if (len > 0 and data_ptr != null) {
+        const ptr: [*]const u8 = @ptrCast(data_ptr);
+        packet_hooks.injectPacket(ptr, @intCast(len));
+    }
+    retUndefined(argc, vp);
+    return 1;
+}
+
 // ── Binding table ───────────────────────────────────────────────────
 
 const Binding = struct {
@@ -891,6 +936,11 @@ const bindings = [_]Binding{
     .{ .name = "takeWaypoint", .func = &jsTakeWaypoint, .nargs = 2 },
     // Raw packet sending — accepts Uint8Array
     .{ .name = "sendPacket", .func = &jsSendPacket, .nargs = 1 },
+    // Packet hooks — S2C interception
+    .{ .name = "registerPacketHook", .func = &jsRegisterPacketHook, .nargs = 1 },
+    .{ .name = "getPacketData", .func = &jsGetPacketData, .nargs = 0 },
+    .{ .name = "getPacketSize", .func = &jsGetPacketSize, .nargs = 0 },
+    .{ .name = "injectPacket", .func = &jsInjectPacket, .nargs = 1 },
 };
 
 /// Comptime-generated ES module source for "diablo:native".

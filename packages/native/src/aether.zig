@@ -30,6 +30,7 @@ const esc_menu = @import("features/esc_menu.zig");
 const arcane_portal = @import("features/arcane_portal.zig");
 const spawn_capture = @import("features/spawn_capture.zig");
 const auto_enter = @import("features/auto_enter.zig");
+const packet_hooks = @import("features/packet_hooks.zig");
 const scripting = @import("features/scripting.zig");
 
 const BOOL = win.BOOL;
@@ -88,6 +89,7 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
                 log.print("aether: spawn capture enabled");
             }
             feature.register(&auto_enter.hooks);
+            feature.register(&packet_hooks.hooks);
             feature.register(&scripting.hooks);
             // Init features, then install hooks
             feature.initAll();

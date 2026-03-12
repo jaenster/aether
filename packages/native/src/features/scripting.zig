@@ -1,9 +1,11 @@
+const std = @import("std");
 const feature = @import("../feature.zig");
 const log = @import("../log.zig");
 const Engine = @import("../sm/engine.zig").Engine;
 const bindings = @import("../sm/bindings.zig");
 const DaemonConnection = @import("../net/daemon.zig").DaemonConnection;
 const ScriptLoader = @import("../net/script_loader.zig").ScriptLoader;
+const packet_hooks = @import("packet_hooks.zig");
 
 var engine: ?Engine = null;
 var daemon: DaemonConnection = .{};
@@ -19,9 +21,26 @@ fn setupContext(eng: *Engine, ctx: *anyopaque) void {
     _ = eng.eval(ctx, polyfill);
 }
 
+/// Called synchronously from packet_hooks when a registered S2C packet arrives.
+/// Returns false to block the packet from being processed.
+fn onPacketReceived(opcode: u8) bool {
+    const eng = &(engine orelse return true);
+    const ctx = eng.oog_context orelse return true;
+
+    // Format: __onPacket(opcode) — JS returns "false" to block
+    var buf: [48]u8 = undefined;
+    const code = std.fmt.bufPrint(&buf, "__onPacket({d})", .{opcode}) catch return true;
+    const result = eng.eval(ctx, code) orelse return true;
+    // If JS returned "false", block the packet
+    return !std.mem.eql(u8, result, "false");
+}
+
 fn ensureInit() void {
     if (initialized) return;
     initialized = true;
+
+    // Wire up the packet hook callback
+    packet_hooks.on_packet_callback = &onPacketReceived;
 
     engine = Engine.init(96);
     if (engine.?.runtime == null) {

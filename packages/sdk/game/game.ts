@@ -16,6 +16,9 @@ import {
   getRightSkill as nativeGetRightSkill,
   sendPacket as nativeSendPacket,
   castSkillPacket as nativeCastSkillPacket,
+  registerPacketHook,
+  getPacketData,
+  injectPacket as nativeInjectPacket,
 } from "diablo:native"
 import { UnitCollection } from "./unit.collection.js";
 import { ItemUnit, Missile, Monster, ObjectUnit, PlayerUnit, Tile } from "./unit.js";
@@ -147,6 +150,37 @@ export class Game {
     }
     return false
   }
+
+  // ── Packet hooks (S2C interception) ──────────────────────────────
+
+  private _packetHandlers = new Map<number, Array<(data: Uint8Array) => boolean | void>>()
+
+  /** Register a handler for incoming S2C packets. Return false to block. */
+  onPacket(opcode: number, handler: (data: Uint8Array) => boolean | void) {
+    let handlers = this._packetHandlers.get(opcode)
+    if (!handlers) {
+      handlers = []
+      this._packetHandlers.set(opcode, handlers)
+      registerPacketHook(opcode)
+    }
+    handlers.push(handler)
+  }
+
+  /** Called from native __onPacket(opcode). Returns false to block. */
+  _handlePacket(opcode: number): boolean {
+    const handlers = this._packetHandlers.get(opcode)
+    if (!handlers) return true
+    const data = getPacketData()
+    for (const h of handlers) {
+      if (h(data) === false) return false
+    }
+    return true
+  }
+
+  /** Inject a fake S2C packet — calls the original handler as if server sent it. */
+  injectPacket(data: Uint8Array) { nativeInjectPacket(data) }
+
+  // ── Logging ────────────────────────────────────────────────────────
 
   log(...args: any[]) {
     const msg = args.map(a => String(a)).join(' ')

@@ -82,3 +82,9 @@
 
   // Raw packet sending — accepts Uint8Array with packet bytes
   export function sendPacket(data: Uint8Array): void;
+
+  // Packet hooks — S2C interception
+  export function registerPacketHook(opcode: number): void;
+  export function getPacketData(): Uint8Array;
+  export function getPacketSize(): number;
+  export function injectPacket(data: Uint8Array): void;
