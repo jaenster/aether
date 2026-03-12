@@ -58,6 +58,7 @@ export function createBot(name: string, factory: BotFactory): BotToken {
   let mainGen: Generator<void> | null = null
   let activeGens: Generator<void>[] = []
   let wasInGame = false
+  let frameCount = 0
 
   function startScripts(scripts: ScriptToken[]): Generator<void>[] {
     const gens: Generator<void>[] = []
@@ -73,11 +74,15 @@ export function createBot(name: string, factory: BotFactory): BotToken {
 
   const __g = Function('return this')()
   __g.__onTick = function onTick() {
+    frameCount++
+    game._frame = frameCount
     const nowInGame = game.inGame
 
     // Detect game state transitions
     if (!wasInGame && nowInGame) {
       // Joined game — start inGame + always scripts
+      frameCount = 0
+      game._frame = 0
       game.log('[' + name + '] joined game')
       activeGens = [
         ...startScripts(game.load.inGameScripts),

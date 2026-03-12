@@ -40,6 +40,8 @@ export class Game {
   private _items = new UnitCollection<ItemUnit>(4)
   private _tiles = new UnitCollection<Tile>(5)
 
+  _frame = 0
+
   get inGame() { return inGame() }
   get area() { return getArea() }
   get act() { return getAct() }
@@ -119,7 +121,8 @@ export class Game {
   }
 
   log(...args: any[]) {
-    nativeLog(args.map(a => String(a)).join(' '))
+    const msg = args.map(a => String(a)).join(' ')
+    nativeLog(`[f${this._frame}] ${msg}`)
   }
 
   /** Print colored text on the game screen (chat area). No-op in headless mode. */
