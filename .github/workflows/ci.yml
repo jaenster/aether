@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   test:
-    runs-on: windows-latest
+    runs-on: windows-2022
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -80,7 +80,8 @@ jobs:
           AETHER_ENTRY: main.ts
         run: |
           cd packages\native\minimal
-          # List DLLs to verify they're present
+          # Debug: show architecture and DLLs
+          Write-Host "Processor: $env:PROCESSOR_ARCHITECTURE"
           Write-Host "DLLs in game dir:"
           Get-ChildItem *.dll | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
 
