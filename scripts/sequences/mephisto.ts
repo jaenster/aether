@@ -19,16 +19,28 @@ export const Mephisto = createScript(function*(game, svc) {
   }
   game.log(`[mephisto] preset at ${mephPreset.x},${mephPreset.y}`)
 
-  // Teleport near Mephisto
-  yield* move.moveTo(mephPreset.x, mephPreset.y)
+  // Pre-activate the bridge
+  yield* move.moveTo(17590, 8068)
+  yield* game.delay(1500)
 
-  const mephDist = Math.sqrt((game.player.x - mephPreset.x)**2 + (game.player.y - mephPreset.y)**2)
-  game.log(`[mephisto] after tele: dist to preset=${mephDist|0}, player at ${game.player.x},${game.player.y}`)
-  game.log('[mephisto] engaging mephisto')
-  yield* atk.kill(242) // Mephisto
+  // Kill Mephisto
+  yield* move.moveTo(mephPreset.x, mephPreset.y)
+  yield* atk.kill(242)
 
   game.log('[mephisto] looting')
   yield* loot.lootGround()
+
+  // Take red portal to Act 4
+  yield* move.moveTo(17602, 8069)
+  const portal = game.objects.find(o => o.classid === 342)
+    ?? game.objects.find(o => o.classid === 341)
+  if (portal) {
+    game.interact(portal)
+    for (let i = 0; i < 50; i++) {
+      yield* game.delay(100)
+      if (game.area === Area.PandemoniumFortress) break
+    }
+  }
 
   game.log('[mephisto] run complete')
 })

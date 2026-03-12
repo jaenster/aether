@@ -14,7 +14,7 @@ export const Config = createService(() => ({
   teleport: Skill.Teleport,
   castDelay: 600,       // ms between casts
   killRange: 25,        // max distance to engage
-  maxAttacks: 20,       // bail after this many casts per clear
+  maxAttacks: 50,       // bail after this many casts per clear
 
   // Loot — minimum quality to pick up (4=magic, 5=set, 6=rare, 7=unique)
   pickMinQuality: 6,
