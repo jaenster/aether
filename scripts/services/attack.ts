@@ -1,7 +1,7 @@
 import { createService, type Game, type Monster } from "diablo:game"
 import { Config } from "../config.js"
 import { Movement } from "./movement.js"
-import { findBestAction, rankActions, skillRange, unitResist, staticFieldEffective, preAttackAdvice } from "../lib/game-data.js"
+import { findBestAction, rankActions, skillRange, unitResist, staticFieldEffective, preAttackAdvice, isNova } from "../lib/game-data.js"
 import type { AttackOptions, Pos, CombatSnapshot, MonsterSnapshot, SpawnEvent } from "../lib/attack-types.js"
 import { getUnitHP, getUnitMaxHP, getUnitMP, getDifficulty } from "diablo:native"
 
@@ -223,7 +223,7 @@ export const Attack = createService((game: Game, services) => {
           currentSkill = action.skillId
         }
 
-        if (target.distance > skillRange(action.skillId)) {
+        if (!isNova(action.skillId) && target.distance > skillRange(action.skillId)) {
           yield* move.moveNear(target.x, target.y, skillRange(action.skillId))
         }
 
@@ -248,13 +248,14 @@ export const Attack = createService((game: Game, services) => {
 
       if (opts?.debuffs) yield* applyDebuffs(opts)
 
+      let repoFails = 0 // track consecutive failed repositions
       for (let casts = 0; casts < maxCasts; casts++) {
         if (opts?.shouldContinue && !opts.shouldContinue()) return
 
         const allMonsters = [...game.monsters]
         const filtered = allMonsters.filter(filter)
         if (filtered.length === 0) {
-          game.log(`[atk] area clear after ${casts} casts`)
+          if (casts > 0) game.log(`[atk] area clear after ${casts} casts`)
           return
         }
 
@@ -272,7 +273,7 @@ export const Attack = createService((game: Game, services) => {
         )
 
         if (!action) {
-          game.log(`[atk] area clear after ${casts} casts`)
+          if (casts > 0) game.log(`[atk] area clear after ${casts} casts`)
           return
         }
 
@@ -287,12 +288,24 @@ export const Attack = createService((game: Game, services) => {
           emitSnapshot(recordSnapshot(filtered, ranked, action, filters, primary), opts)
         }
 
-        if (casts % 10 === 0) {
-          game.log(`[atk] clearing: hit=${action.monstersHit} skill=${action.skillId} mons=${filtered.length} aim=${action.targetPos.x},${action.targetPos.y}${action.needsReposition ? ' REPO' : ''}`)
+        // Skip REPO if previous repositions failed (position didn't change)
+        const shouldRepo = action.needsReposition && repoFails < 2
+
+        if (casts % 10 === 0 || shouldRepo) {
+          game.log(`[atk] clearing: hit=${action.monstersHit} skill=${action.skillId} mons=${filtered.length} aim=${action.targetPos.x},${action.targetPos.y} me=${game.player.x},${game.player.y}${shouldRepo ? ` REPO→${action.casterPos.x},${action.casterPos.y}` : ''}`)
         }
 
-        if (action.needsReposition) {
+        if (shouldRepo) {
+          const prevX = game.player.x, prevY = game.player.y
           yield* move.teleportTo(action.casterPos.x, action.casterPos.y, 5)
+          const moved = Math.abs(game.player.x - prevX) + Math.abs(game.player.y - prevY)
+          if (moved < 3) {
+            repoFails++
+          } else {
+            repoFails = 0
+          }
+        } else if (!action.needsReposition) {
+          repoFails = 0
         }
 
         if (action.skillId !== currentSkill) {
@@ -300,12 +313,15 @@ export const Attack = createService((game: Game, services) => {
           currentSkill = action.skillId
         }
 
-        const d = Math.sqrt(
-          (game.player.x - action.targetPos.x) ** 2 +
-          (game.player.y - action.targetPos.y) ** 2
-        )
-        if (d > skillRange(action.skillId)) {
-          yield* move.moveNear(action.targetPos.x, action.targetPos.y, skillRange(action.skillId))
+        // Nova skills cast around the player — no need to close distance
+        if (!isNova(action.skillId)) {
+          const d = Math.sqrt(
+            (game.player.x - action.targetPos.x) ** 2 +
+            (game.player.y - action.targetPos.y) ** 2
+          )
+          if (d > skillRange(action.skillId)) {
+            yield* move.moveNear(action.targetPos.x, action.targetPos.y, skillRange(action.skillId))
+          }
         }
 
         game.castSkill(action.targetPos.x, action.targetPos.y)

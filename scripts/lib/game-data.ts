@@ -179,9 +179,9 @@ const nonDamage: Record<number, boolean> = {
 const skillRadius: Record<number, number> = {
   36: 2,   // Fire Bolt — no splash, but small AoE on impact
   42: 10,  // Static Field — nova radius ~3.3 yards = ~10 units
-  44: 7,   // Frost Nova
+  44: 5,   // Frost Nova — ~5 yards effective radius
   47: 4,   // Fireball — explosion radius
-  48: 7,   // Nova
+  48: 5,   // Nova — ~5 yards effective radius
   55: 6,   // Blizzard
   56: 12,  // Meteor
   59: 4,   // Blizzard (Ice Blast)
@@ -857,9 +857,27 @@ export function evaluateBattlefield(
     hit++
   }
 
-  // Check if caster needs to reposition — compare ACTUAL position to desired cast position
+  // Check if caster needs to reposition
   const moveDist = distXY(actualCasterPos.x, actualCasterPos.y, castFromPos.x, castFromPos.y)
-  const needsReposition = nova ? moveDist > 5 : distXY(actualCasterPos.x, actualCasterPos.y, targetPos.x, targetPos.y) > range
+  let needsReposition: boolean
+  if (nova) {
+    // Nova: only reposition if we'd hit significantly fewer monsters from current position
+    // vs from the optimal position. Skip repo if we already cover 80%+.
+    const novaRange = splash || range
+    const hitsFromOptimal = hit // already computed above
+    let hitsFromCurrent = 0
+    for (const mon of monsters) {
+      if (distXY(actualCasterPos.x, actualCasterPos.y, mon.x, mon.y) <= novaRange) {
+        if (skillDamageVsUnit(skillId, mon) > 0) hitsFromCurrent++
+      }
+    }
+    // Nova: don't reposition. The teleport lands on a monster tile (blocked),
+    // wastes a cast cycle, and causes oscillation. Just cast from current position —
+    // nova has enough range to hit nearby groups without perfect centering.
+    needsReposition = false
+  } else {
+    needsReposition = distXY(actualCasterPos.x, actualCasterPos.y, targetPos.x, targetPos.y) > range
+  }
   const teleFrames = needsReposition ? Math.max(1, Math.ceil(moveDist / 30)) : 0
   const totalFrames = frames + teleFrames
 

@@ -83,6 +83,8 @@ export class Game {
   move(x: number, y: number) { nativeMove(x, y) }
   /** Cast the currently selected right skill at (x, y). No skill switch. */
   castSkill(x: number, y: number) { castSkillAt(x, y) }
+  /** Select skill on right hand without casting. */
+  selectSkill(skillId: number) { selectSkill(0, skillId) }
   /** Select skill on right hand and immediately cast at (x, y). */
   useSkill(skillId: number, x: number, y: number) {
     selectSkill(0, skillId)

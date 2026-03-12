@@ -35,6 +35,8 @@
   // Monster properties
   export function monGetSpecType(unitId: number): number;
   export function monGetEnchants(unitId: number): number[];
+  /** Get monster max HP from txt tables for current difficulty. */
+  export function monGetMaxHP(classId: number): number;
 
   // Item properties
   export function itemGetQuality(unitId: number): number;
@@ -80,6 +82,7 @@
 
   // NPC interaction
   export function closeNPCInteract(): void;
+  export function npcMenuSelect(menuIndex: number): boolean;
 
   // Game control
   export function exitGame(): void;

@@ -2,13 +2,14 @@ import {
   unitGetX, unitGetY, unitGetMode, unitGetClassId, unitGetStat, unitGetState,
   unitGetName, unitGetArea, unitGetOwnerId, unitGetOwnerType,
   unitValid, meGetUnitId,
-  monGetSpecType, monGetEnchants,
+  monGetSpecType, monGetEnchants, monGetMaxHP,
   itemGetQuality, itemGetFlags, itemGetLocation, itemGetCode,
   tileGetDestArea,
   sendPacket as nativeSendPacket,
   interact as nativeInteract,
   getUIFlag as nativeGetUIFlag,
   closeNPCInteract as nativeCloseNPCInteract,
+  npcMenuSelect as nativeNpcMenuSelect,
 } from "diablo:native"
 import { UnitType, PlayerMode, UiFlags } from "diablo:constants";
 
@@ -78,6 +79,17 @@ export class PlayerUnit extends Unit {
 
 export class Monster extends Unit {
   constructor(id: number) { super(1, id) }
+
+  /** Monster max HP from txt tables (real value, not encoded 0-128). */
+  get hpmax(): number { return monGetMaxHP(this.classid) }
+
+  /** Monster current HP: decoded from the 0-128 encoded client value using txt max HP. */
+  get hp(): number {
+    const encoded = unitGetStat(this.type, this.unitId, 6, 0) >> 8
+    const max = this.hpmax
+    if (max <= 0) return encoded
+    return (encoded * max / 128) | 0
+  }
 
   get spectype(): number { return monGetSpecType(this.unitId) }
   get isSuperUnique(): boolean { return (this.spectype & 0x02) !== 0 }
@@ -169,14 +181,10 @@ export class NPC extends Monster {
 
   /** Open repair session and repair all items. */
   *repair() {
-    nativeInteract(this.type, this.unitId)
-    // Wait for NPC menu
-    yield* waitUntil(() =>
-      nativeGetUIFlag(UiFlags.NPCMenu) || nativeGetUIFlag(UiFlags.Shop)
-    )
+    yield* this.interact()
     yield* delay(200)
-    // 0x38 mode=1: open repair session
-    nativeSendPacket(buildPacket(0x38, 1, this.unitId, 0))
+    // Use NPC menu callback for repair (typically option index 1)
+    nativeNpcMenuSelect(1)
     yield* delay(300)
     // 0x35: repair all — npcId, itemId=0, animMode=0, cost=0x80000000
     nativeSendPacket(buildPacket(0x35, this.unitId, 0, 0, 0x80000000 | 0))
@@ -186,19 +194,21 @@ export class NPC extends Monster {
 
   /** Open trade window. Returns true if shop opened. */
   *openTrade() {
-    nativeInteract(this.type, this.unitId)
-    yield* delay(500)
-    // 0x38 mode=0: open trade
-    nativeSendPacket(buildPacket(0x38, 0, this.unitId, 0))
+    const interacted = yield* this.interact()
+    if (!interacted) return false
+    yield* delay(200)
+    // Use NPC menu callback for trade (option index 0)
+    const menuOk = nativeNpcMenuSelect(0)
+    if (!menuOk) return false
     return yield* waitUntil(() => nativeGetUIFlag(UiFlags.Shop))
   }
 
   /** Open gamble window. Returns true if shop opened. */
   *openGamble() {
-    nativeInteract(this.type, this.unitId)
-    yield* delay(500)
-    // 0x38 mode=2: gamble
-    nativeSendPacket(buildPacket(0x38, 2, this.unitId, 0))
+    yield* this.interact()
+    yield* delay(200)
+    // Use NPC menu callback for gamble (typically option index 2)
+    nativeNpcMenuSelect(2)
     return yield* waitUntil(() => nativeGetUIFlag(UiFlags.Shop))
   }
 }

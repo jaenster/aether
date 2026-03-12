@@ -537,6 +537,49 @@ pub fn interactWithUnit(player: *UnitAny, target: *UnitAny) void {
 /// __fastcall, no params. Sends 0x30 packet internally, resets UI flags, clears dialog panels.
 pub const CloseNPCInteract = fastcall(0x004b3f10, fn () void);
 
+/// GetInteractedUnit — returns the NPC unit currently being interacted with.
+/// Checks bInteractingWithNpc global, then calls FindClientSideUnit(nCurrentInteractedNpcGUID, UNIT_MONSTER).
+/// Returns null if no NPC interaction is active.
+pub const GetInteractedUnit = struct {
+    const Fn = *const fn () callconv(.winapi) ?*UnitAny;
+    const ptr: Fn = funcPtr(0x004B1620, Fn);
+    pub inline fn call() ?*UnitAny {
+        return ptr();
+    }
+};
+
+/// NPCMenu array: 48 entries of 39 bytes each, defining menu options per NPC classId.
+/// Layout per entry: { i32 nNpcId, i32 nOptionsCount, i16[5] stringIds, u32[5] callbacks, u8 enabled }
+pub const NPCMenuArray: [*]const u8 = @ptrFromInt(0x00726C48);
+pub const NPCMenuCount: *const u32 = @ptrFromInt(0x00725A74);
+
+/// Call an NPC menu option by scanning the menu array for the given NPC classId
+/// and invoking the callback at the given option index.
+pub fn callNpcMenuOption(npc_class_id: u32, option_index: u32) bool {
+    const count = NPCMenuCount.*;
+    const entry_size: u32 = 39;
+
+    var i: u32 = 0;
+    while (i < count) : (i += 1) {
+        const entry = NPCMenuArray + i * entry_size;
+        const entry_npc_id: u32 = @as(*align(1) const u32, @ptrCast(entry)).*;
+        if (entry_npc_id == npc_class_id) {
+            const options_count: u32 = @as(*align(1) const u32, @ptrCast(entry + 4)).*;
+            if (option_index < options_count) {
+                // Callback pointers start at offset 0x12 (18), each is 4 bytes
+                const cb_ptr: u32 = @as(*align(1) const u32, @ptrCast(entry + 18 + option_index * 4)).*;
+                if (cb_ptr != 0) {
+                    const callback: *const fn () callconv(.winapi) void = @ptrFromInt(cb_ptr);
+                    callback();
+                    return true;
+                }
+            }
+            break;
+        }
+    }
+    return false;
+}
+
 // ============================================================================
 // ClickMap / Movement
 // ============================================================================

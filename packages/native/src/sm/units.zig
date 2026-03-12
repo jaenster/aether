@@ -46,6 +46,11 @@ pub fn snapshotUnits(unit_type: u32) u32 {
         }
     }
 
+    // Items: also check client-side hash table (shop items live there)
+    if (unit_type == 4) {
+        snapshotHashTable(globals.clientSideUnits().get(unit_type), unit_type);
+    }
+
     return snapshot_len;
 }
 
@@ -120,6 +125,11 @@ pub fn findUnit(unit_type: u32, unit_id: u32) ?*UnitAny {
     while (unit) |u| {
         if (u.dwUnitId == unit_id) return u;
         unit = u.pListNext;
+    }
+
+    // Items: also check client-side table (shop items)
+    if (unit_type == 4) {
+        if (findInHashTable(globals.clientSideUnits().get(4), unit_id)) |u| return u;
     }
     return null;
 }

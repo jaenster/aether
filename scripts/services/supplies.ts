@@ -98,11 +98,6 @@ export const Supplies = createService((game: Game, services) => {
         yield* town.repair()
       }
 
-      // Snapshot belt item IDs before trade opens (belt and shop both use location=2)
-      const beltIds = new Set(
-        game.items.filter(i => i.location === 2).map(i => i.unitId)
-      )
-
       // 5. Open trade with heal NPC (sells pots + scrolls in every act)
       const healNpc = game.npcs.find(n => n.canHeal)
       if (!healNpc) {
@@ -113,10 +108,13 @@ export const Supplies = createService((game: Game, services) => {
       yield* move.walkTo(healNpc.x, healNpc.y)
       const ok = yield* healNpc.openTrade()
       if (!ok) {
-        game.log(`[supplies] trade didn't open with ${healNpc.name}`)
+        game.log(`[supplies] trade failed with ${healNpc.name}`)
         yield* healNpc.close()
         return
       }
+
+      // Wait for shop inventory to arrive from server
+      yield* game.delay(500)
 
       // 6. Sell junk
       const junk = game.items.filter(i =>
@@ -136,7 +134,9 @@ export const Supplies = createService((game: Game, services) => {
 
       if (hpNeed > 0 || mpNeed > 0) {
         // Find best available potions in shop
-        const shopItems = game.items.filter(i => i.location === 2 && !beltIds.has(i.unitId))
+        // Shop items have location >= 4 (NPC inventory pages)
+        const shopItems = game.items.filter(i => i.location >= 4)
+        game.log(`[supplies] need ${hpNeed}hp ${mpNeed}mp, shop has ${shopItems.length} items`)
 
         if (hpNeed > 0) {
           const bestHpCode = [...HP_POTS].reverse().find(code =>
@@ -170,7 +170,7 @@ export const Supplies = createService((game: Game, services) => {
       // 8. Buy TP scrolls if tome is low
       if (state.tpCount < 20) {
         const tpNeed = 20 - state.tpCount
-        const shopItems = game.items.filter(i => i.location === 2 && !beltIds.has(i.unitId))
+        const shopItems = game.items.filter(i => i.location >= 4)
         const tpScroll = shopItems.find(i => i.code === 'tsc')
         if (tpScroll) {
           game.log(`[supplies] buying ${tpNeed}x TP scrolls`)

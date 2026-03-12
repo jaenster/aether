@@ -299,6 +299,59 @@ fn jsUnitGetName(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_
 
 // ── Monster property bindings ────────────────────────────────────────
 
+// HP lookup table per monster level — [normal, nightmare, hell]
+// Index = monster level (0-109), value = HP multiplier for that difficulty
+const hp_lookup = [111][3]u32{
+    .{1,1,1},.{7,107,830},.{9,113,852},.{12,120,875},.{15,125,897},.{17,132,920},
+    .{20,139,942},.{23,145,965},.{27,152,987},.{31,157,1010},.{35,164,1032},
+    .{36,171,1055},.{40,177,1077},.{44,184,1100},.{48,189,1122},.{52,196,1145},
+    .{56,203,1167},.{60,209,1190},.{64,216,1212},.{68,221,1235},.{73,228,1257},
+    .{78,236,1280},.{84,243,1302},.{89,248,1325},.{94,255,1347},.{100,261,1370},
+    .{106,268,1392},.{113,275,1415},.{120,280,1437},.{126,287,1460},.{134,320,1482},
+    .{142,355,1505},.{150,388,1527},.{158,423,1550},.{166,456,1572},.{174,491,1595},
+    .{182,525,1617},.{190,559,1640},.{198,593,1662},.{206,627,1685},.{215,661,1707},
+    .{225,696,1730},.{234,729,1752},.{243,764,1775},.{253,797,1797},.{262,832,1820},
+    .{271,867,1842},.{281,900,1865},.{290,935,1887},.{299,968,1910},.{310,1003,1932},
+    .{321,1037,1955},.{331,1071,1977},.{342,1105,2000},.{352,1139,2030},.{363,1173,2075},
+    .{374,1208,2135},.{384,1241,2222},.{395,1276,2308},.{406,1309,2394},.{418,1344,2480},
+    .{430,1379,2567},.{442,1412,2653},.{454,1447,2739},.{466,1480,2825},.{477,1515,2912},
+    .{489,1549,2998},.{501,1583,3084},.{513,1617,3170},.{525,1651,3257},.{539,1685,3343},
+    .{552,1720,3429},.{565,1753,3515},.{579,1788,3602},.{592,1821,3688},.{605,1856,3774},
+    .{618,1891,3860},.{632,1924,3947},.{645,1959,4033},.{658,1992,4119},.{673,2027,4205},
+    .{688,2061,4292},.{702,2095,4378},.{717,2129,4464},.{732,2163,4550},.{746,2197,4637},
+    .{761,2232,4723},.{775,2265,4809},.{790,2300,4895},.{805,2333,4982},.{821,2368,5068},
+    .{837,2403,5154},.{853,2436,5240},.{868,2471,5327},.{884,2504,5413},.{900,2539,5499},
+    .{916,2573,5585},.{932,2607,5672},.{948,2641,5758},.{964,2675,5844},.{982,2709,5930},
+    .{999,2744,6017},.{1016,2777,6103},.{1033,2812,6189},.{1051,2845,6275},.{1068,2880,6362},
+    .{1085,2915,6448},.{1103,2948,6534},.{1120,2983,6620},.{1137,3016,6707},.{10000,10000,10000},
+};
+
+// MonStatsTxt field offsets for HP and Level per difficulty
+const MONSTATS_LEVEL_OFF: usize = 0xAA;
+const MONSTATS_MAXHP_OFF = [3]usize{ 0xB6, 0xB8, 0xBA };
+
+/// Compute monster max HP: HPLookup[mlvl][diff] * monstats.maxHP[diff] / 100
+pub fn computeMonsterMaxHP(class_id: u32, diff: u32) u32 {
+    const txt = d2.TxtMonStatsGetLine.call(.{@as(i32, @intCast(class_id))}) orelse return 0;
+    const mlvl_raw: i16 = @as(*align(1) const i16, @ptrCast(txt + MONSTATS_LEVEL_OFF)).*;
+    const mlvl: usize = @intCast(std.math.clamp(mlvl_raw, 0, 110));
+    const d: usize = @intCast(std.math.clamp(diff, 0, 2));
+    const hp_base: i16 = @as(*align(1) const i16, @ptrCast(txt + MONSTATS_MAXHP_OFF[d])).*;
+    if (hp_base <= 0) return 0;
+    return hp_lookup[mlvl][d] * @as(u32, @intCast(hp_base)) / 100;
+}
+
+fn jsMonGetMaxHP(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const class_id: u32 = @bitCast(argInt32(argc, vp, 0));
+    const gi_ptr = globals.gameInfo().*;
+    const diff: u32 = if (gi_ptr) |gi| blk: {
+        const diff_ptr: *u32 = @ptrFromInt(@intFromPtr(gi) + 0x5C);
+        break :blk diff_ptr.*;
+    } else 0;
+    retInt32(argc, vp, @bitCast(computeMonsterMaxHP(class_id, diff)));
+    return 1;
+}
+
 fn jsMonGetSpecType(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const unit_id: u32 = @bitCast(argInt32(argc, vp, 0));
     const unit = units.findUnit(1, unit_id) orelse { retInt32(argc, vp, 0); return 1; };
@@ -367,9 +420,10 @@ fn jsItemGetCode(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_
     const unit_id: u32 = @bitCast(argInt32(argc, vp, 0));
     const unit = units.findUnit(4, unit_id) orelse { retString(cx, argc, vp, ""); return 1; };
     const txt = d2.GetItemText.call(unit.dwTxtFileNo) orelse { retString(cx, argc, vp, ""); return 1; };
-    // szCode is 4 bytes, may not be null-terminated
+    // szCode is 4 bytes, may not be null-terminated, space-padded
     var len: usize = 0;
     while (len < 4 and txt.szCode[len] != 0) len += 1;
+    while (len > 0 and txt.szCode[len - 1] == ' ') len -= 1;
     retString(cx, argc, vp, txt.szCode[0..len]);
     return 1;
 }
@@ -491,6 +545,20 @@ fn jsInteract(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int 
     // Packet 0x13: Entity interaction (dwType, dwId)
     d2.SendIntInt.call(.{ 0x13, unit_type, unit_id });
     retUndefined(argc, vp);
+    return 1;
+}
+
+fn jsNpcMenuSelect(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const menu_index: u32 = @bitCast(argInt32(argc, vp, 0));
+
+    // Get the currently interacted NPC
+    const npc = d2.GetInteractedUnit.call() orelse {
+        retBool(argc, vp, false);
+        return 1;
+    };
+
+    const ok = d2.callNpcMenuOption(npc.dwTxtFileNo, menu_index);
+    retBool(argc, vp, ok);
     return 1;
 }
 
@@ -943,6 +1011,7 @@ const bindings = [_]Binding{
     // Monster properties
     .{ .name = "monGetSpecType", .func = &jsMonGetSpecType, .nargs = 1 },
     .{ .name = "monGetEnchants", .func = &jsMonGetEnchants, .nargs = 1 },
+    .{ .name = "monGetMaxHP", .func = &jsMonGetMaxHP, .nargs = 1 },
     // Item properties
     .{ .name = "itemGetQuality", .func = &jsItemGetQuality, .nargs = 1 },
     .{ .name = "itemGetFlags", .func = &jsItemGetFlags, .nargs = 1 },
@@ -978,6 +1047,7 @@ const bindings = [_]Binding{
     .{ .name = "txtReadFieldU", .func = &jsTxtReadFieldU, .nargs = 4 },
     // Process control
     .{ .name = "closeNPCInteract", .func = &jsCloseNPCInteract, .nargs = 0 },
+    .{ .name = "npcMenuSelect", .func = &jsNpcMenuSelect, .nargs = 1 },
     .{ .name = "exitGame", .func = &jsExitGame, .nargs = 0 },
     .{ .name = "exitClient", .func = &jsExitClient, .nargs = 0 },
     .{ .name = "takeWaypoint", .func = &jsTakeWaypoint, .nargs = 2 },

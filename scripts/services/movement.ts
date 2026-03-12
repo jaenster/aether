@@ -31,11 +31,10 @@ export const Movement = createService((game: Game, services) => {
         game.log(`[move] no tele path to ${targetX},${targetY} dist=${d|0}`)
         return
       }
-      game.log(`[move] tele ${path.length} hops, dist=${d|0}`)
+      game.log(`[move] tele ${path.length} hops, dist=${d|0} from=${game.player.x},${game.player.y} to=${targetX},${targetY}`)
 
-      // Select teleport skill via packet — just the skill switch, no cast
-      game.useSkill(cfg.teleport, game.player.x, game.player.y)
-      // Wait for cast animation + skill switch to finish
+      // Select teleport skill — just switch, do NOT cast
+      game.selectSkill(cfg.teleport)
       yield
       for (let i = 0; i < 20; i++) {
         if (game.player.canCast) break
@@ -43,22 +42,29 @@ export const Movement = createService((game: Game, services) => {
       }
       for (let wi = 0; wi < path.length; wi++) {
         const wp = path[wi]!
+        const hopDist = dist(game.player.x, game.player.y, wp.x, wp.y)
 
-        if (dist(game.player.x, game.player.y, wp.x, wp.y) < threshold) continue
+        if (hopDist < threshold) {
+          game.log(`[move] hop ${wi}/${path.length} SKIP close (d=${hopDist|0}) wp=${wp.x},${wp.y}`)
+          continue
+        }
 
         // Skip if closer to next waypoint already
         if (wi + 1 < path.length) {
           const next = path[wi + 1]!
-          if (dist(game.player.x, game.player.y, next.x, next.y) <
-              dist(game.player.x, game.player.y, wp.x, wp.y)) continue
+          if (dist(game.player.x, game.player.y, next.x, next.y) < hopDist) {
+            game.log(`[move] hop ${wi}/${path.length} SKIP closer-to-next wp=${wp.x},${wp.y}`)
+            continue
+          }
         }
 
-        // Re-select teleport if skill changed
+        // Re-select teleport if skill changed — just switch, do NOT cast
         if (game.rightSkill !== cfg.teleport) {
-          game.useSkill(cfg.teleport, game.player.x, game.player.y)
+          game.selectSkill(cfg.teleport)
           yield* game.delay(150)
         }
 
+        game.log(`[move] hop ${wi}/${path.length} d=${hopDist|0} me=${game.player.x},${game.player.y} → ${wp.x},${wp.y}`)
         for (let retries = 0; retries < 3; retries++) {
           game.castSkillPacket(wp.x, wp.y)
           const moved: unknown = yield* this.waitForMove()
@@ -70,6 +76,7 @@ export const Movement = createService((game: Game, services) => {
       // Final approach — cast directly to destination
       for (let i = 0; i < 3; i++) {
         if (dist(game.player.x, game.player.y, targetX, targetY) < threshold) break
+        game.log(`[move] final approach d=${dist(game.player.x, game.player.y, targetX, targetY)|0} me=${game.player.x},${game.player.y} → ${targetX},${targetY}`)
         game.castSkillPacket(targetX, targetY)
         yield* this.waitForMove()
       }

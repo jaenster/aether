@@ -142,7 +142,8 @@ function* openSeal(game: Game, move: any, atk: any, sealClassid: number, dx: num
   for (let attempt = 0; attempt < 5; attempt++) {
     // Move to preset area first to load the seal
     yield* move.moveTo(preset.x + dx, preset.y + dy)
-    yield* atk.clear({ killRange: 20, maxCasts: 20 })
+    // Minimal cleanup — just enough to not die while opening
+    yield* atk.clear({ killRange: 10, maxCasts: 5 })
 
     const seal = game.objects.find((o: any) => o.classid === sealClassid)
     if (!seal) {
@@ -157,7 +158,7 @@ function* openSeal(game: Game, move: any, atk: any, sealClassid: number, dx: num
 
     // Teleport close to the actual seal object
     yield* move.moveNear(seal.x, seal.y, 5)
-    yield* atk.clear({ killRange: 10, maxCasts: 10 })
+    yield* atk.clear({ killRange: 8, maxCasts: 5 })
 
     game.log(`[chaos] opening seal ${sealClassid} (attempt ${attempt + 1})`)
     game.interact(seal)
