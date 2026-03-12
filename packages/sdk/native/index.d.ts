@@ -77,3 +77,6 @@
   export function exitGame(): void;
   export function exitClient(): void;
   export function takeWaypoint(waypointUnitId: number, destArea: number): void;
+
+  // Raw packet sending — accepts Uint8Array with packet bytes
+  export function sendPacket(data: Uint8Array): void;

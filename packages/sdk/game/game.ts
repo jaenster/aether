@@ -14,6 +14,7 @@ import {
   takeWaypoint as nativeTakeWaypoint,
   printScreen as nativePrintScreen,
   getRightSkill as nativeGetRightSkill,
+  sendPacket as nativeSendPacket,
 } from "diablo:native"
 import { UnitCollection } from "./unit.collection.js";
 import { ItemUnit, Missile, Monster, ObjectUnit, PlayerUnit, Tile } from "./unit.js";
@@ -80,9 +81,12 @@ export class Game {
   /** Get the currently selected right-hand skill ID */
   get rightSkill(): number { return nativeGetRightSkill() }
   say(msg: string) { nativeSay(msg) }
-  getUIFlag(flag: number) { return nativeGetUIFlag(flag) }
+  getUIFlag(flag: number): boolean { return nativeGetUIFlag(flag) }
   interact(unit: { type: number, unitId: number }) { nativeInteract(unit.type, unit.unitId) }
   runToEntity(unit: { type: number, unitId: number }) { nativeRunToEntity(unit.type, unit.unitId) }
+
+  /** Send a raw packet to the game server. Build with Packet helper. */
+  sendPacket(data: Uint8Array) { nativeSendPacket(data) }
 
   exitGame() { nativeExitGame() }
   exitClient() { nativeExitClient() }

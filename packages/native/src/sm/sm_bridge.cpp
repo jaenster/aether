@@ -319,6 +319,63 @@ void sm_ret_undefined(unsigned argc, void* vp) {
     args.rval().setUndefined();
 }
 
+int sm_arg_uint8array(void* context, unsigned argc, void* vp, unsigned idx,
+                      const unsigned char** out_data) {
+    auto* cx = static_cast<JSContext*>(context);
+    JS::CallArgs args = JS::CallArgsFromVp(argc, static_cast<JS::Value*>(vp));
+    if (idx >= args.length() || !args[idx].isObject()) return 0;
+
+    JSObject* obj = &args[idx].toObject();
+    bool isShared = false;
+    uint32_t len = 0;
+    uint8_t* data = nullptr;
+
+    // Try as ArrayBufferView (TypedArray or DataView)
+    if (JS_IsArrayBufferViewObject(obj)) {
+        data = static_cast<uint8_t*>(JS_GetArrayBufferViewData(obj, &isShared, JS::AutoCheckCannotGC()));
+        len = JS_GetArrayBufferViewByteLength(obj);
+    }
+    // Also accept plain ArrayBuffer
+    else if (JS_IsArrayBufferObject(obj)) {
+        data = static_cast<uint8_t*>(JS_GetArrayBufferData(obj, &isShared, JS::AutoCheckCannotGC()));
+        len = JS_GetArrayBufferByteLength(obj);
+    }
+
+    if (!data || len == 0) return 0;
+    *out_data = data;
+    return static_cast<int>(len);
+}
+
+void sm_ret_int32array(void* context, unsigned argc, void* vp,
+                       const int* data, int count) {
+    auto* cx = static_cast<JSContext*>(context);
+    JS::CallArgs args = JS::CallArgsFromVp(argc, static_cast<JS::Value*>(vp));
+
+    if (count <= 0 || !data) {
+        // Return empty Int32Array
+        JSObject* arr = JS_NewInt32Array(cx, 0);
+        if (arr)
+            args.rval().setObject(*arr);
+        else
+            args.rval().setUndefined();
+        return;
+    }
+
+    JSObject* arr = JS_NewInt32Array(cx, static_cast<uint32_t>(count));
+    if (!arr) {
+        args.rval().setUndefined();
+        return;
+    }
+
+    bool isShared = false;
+    int32_t* buf = static_cast<int32_t*>(
+        JS_GetArrayBufferViewData(arr, &isShared, JS::AutoCheckCannotGC()));
+    if (buf) {
+        memcpy(buf, data, static_cast<size_t>(count) * sizeof(int32_t));
+    }
+    args.rval().setObject(*arr);
+}
+
 // ── Module system ────────────────────────────────────────────────────
 
 // Find a module in the registry by specifier

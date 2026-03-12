@@ -54,6 +54,13 @@ SM_API void     sm_ret_int32(unsigned argc, void* vp, int val);
 SM_API void     sm_ret_string(void* context, unsigned argc, void* vp, const char* str, int len);
 SM_API void     sm_ret_bool(unsigned argc, void* vp, int val);
 SM_API void     sm_ret_undefined(unsigned argc, void* vp);
+// TypedArray support — extract raw pointer + length from a TypedArray/ArrayBuffer argument.
+// Returns byte length, or 0 if argument is not a typed array.
+SM_API int      sm_arg_uint8array(void* context, unsigned argc, void* vp, unsigned idx,
+                                  const unsigned char** out_data);
+// Return a new Int32Array (copies data). Used for structured data like path coordinates.
+SM_API void     sm_ret_int32array(void* context, unsigned argc, void* vp,
+                                  const int* data, int count);
 
 // Module system
 SM_API int      sm_module_init(void* context);

@@ -782,6 +782,17 @@ fn jsExitClient(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_in
     return 1;
 }
 
+fn jsSendPacket(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    var data_ptr: [*c]const u8 = null;
+    const len = c.sm_arg_uint8array(cx, argc, vp, 0, &data_ptr);
+    if (len > 0 and data_ptr != null) {
+        const ptr: [*]const u8 = @ptrCast(data_ptr);
+        d2.sendPacket(ptr[0..@intCast(len)]);
+    }
+    retUndefined(argc, vp);
+    return 1;
+}
+
 fn jsTakeWaypoint(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const wp_id: u32 = @bitCast(argInt32(argc, vp, 0));
     const dest_area: u32 = @bitCast(argInt32(argc, vp, 1));
@@ -868,6 +879,8 @@ const bindings = [_]Binding{
     .{ .name = "exitGame", .func = &jsExitGame, .nargs = 0 },
     .{ .name = "exitClient", .func = &jsExitClient, .nargs = 0 },
     .{ .name = "takeWaypoint", .func = &jsTakeWaypoint, .nargs = 2 },
+    // Raw packet sending — accepts Uint8Array
+    .{ .name = "sendPacket", .func = &jsSendPacket, .nargs = 1 },
 };
 
 /// Comptime-generated ES module source for "diablo:native".
