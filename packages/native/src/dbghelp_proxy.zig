@@ -18,6 +18,7 @@ extern "kernel32" fn DisableThreadLibraryCalls(h: HMODULE) callconv(.winapi) BOO
 extern "shell32" fn CommandLineToArgvW(cmd: LPWSTR, pNumArgs: *c_int) callconv(.winapi) ?[*]LPWSTR;
 extern "kernel32" fn LocalFree(hMem: ?*anyopaque) callconv(.winapi) ?*anyopaque;
 extern "user32" fn MessageBoxW(hWnd: ?*anyopaque, text: LPCWSTR, caption: LPCWSTR, uType: u32) callconv(.winapi) c_int;
+extern "kernel32" fn GetLastError() callconv(.winapi) u32;
 
 const log = @import("log.zig");
 
@@ -62,7 +63,9 @@ fn loadInjectedDlls() void {
             const dll_path = argv[i + 1];
             log.print("dbghelp_proxy: loading injected DLL");
             if (LoadLibraryW(dll_path) == null) {
+                const err = GetLastError();
                 log.print("dbghelp_proxy: LoadLibraryW FAILED");
+                log.hex("dbghelp_proxy: GetLastError=0x", err);
             }
             i += 1;
         }

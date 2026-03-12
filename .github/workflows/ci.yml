@@ -79,8 +79,13 @@ jobs:
           AETHER_ENTRY: main.ts
         run: |
           cd packages\native\minimal
+          # List DLLs to verify they're present
+          Write-Host "DLLs in game dir:"
+          Get-ChildItem *.dll | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
+
           $proc = Start-Process -FilePath .\Game.exe `
-            -ArgumentList "-w -nosound --headless -loaddll `"$PWD\Aether.dll`"" `
+            -ArgumentList "-w -nosound --headless -loaddll Aether.dll" `
+            -WorkingDirectory $PWD `
             -PassThru -NoNewWindow
 
           # Game exits itself after tests via exitGame()
