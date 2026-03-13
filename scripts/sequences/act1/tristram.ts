@@ -43,7 +43,7 @@ export const Tristram = createScript(function*(game, svc) {
   yield* town.goToTown()
 
   const AKARA_CLASSID = 148
-  const akara = game.monsters.find(m => m.classid === AKARA_CLASSID)
+  const akara = game.objects.find(o => o.classid === AKARA_CLASSID)
   if (akara) {
     yield* move.walkTo(akara.x, akara.y)
     game.interact(akara)

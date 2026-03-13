@@ -41,7 +41,7 @@ export const RescueBarbs = createScript(function*(game, svc) {
   // Return to town and talk to Qual-Kehk
   yield* town.goToTown()
 
-  const qualKehk = game.monsters.find(m => m.classid === QUALKEHK_CLASSID)
+  const qualKehk = game.objects.find(o => o.classid === QUALKEHK_CLASSID)
   if (qualKehk) {
     yield* move.walkTo(qualKehk.x, qualKehk.y)
     game.interact(qualKehk)

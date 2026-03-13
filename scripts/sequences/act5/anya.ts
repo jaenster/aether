@@ -45,7 +45,7 @@ export const Anya = createScript(function*(game, svc) {
   game.log('[anya] returning to talk to Malah')
   yield* town.goToTown()
 
-  const malah = game.monsters.find(m => m.classid === MALAH_CLASSID)
+  const malah = game.objects.find(o => o.classid === MALAH_CLASSID)
   if (malah) {
     yield* move.walkTo(malah.x, malah.y)
     game.interact(malah)

@@ -91,7 +91,7 @@ export const Duriel = createScript(function*(game, svc) {
   yield* move.walkTo(22578, 15642)
   yield* move.walkTo(22576, 15591)
 
-  const tyrael = game.monsters.find(m => m.classid === TYRAEL_CLASSID)
+  const tyrael = game.objects.find(o => o.classid === TYRAEL_CLASSID)
   if (tyrael) {
     yield* move.walkTo(tyrael.x, tyrael.y)
     game.interact(tyrael)

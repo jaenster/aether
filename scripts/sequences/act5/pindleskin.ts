@@ -21,7 +21,7 @@ export const Pindleskin = createScript(function*(game, svc) {
   yield* town.goToTown()
 
   // Walk to Anya and use her portal to Nihlathak's Temple
-  const anya = game.monsters.find(m => m.classid === ANYA_CLASSID)
+  const anya = game.objects.find(o => o.classid === ANYA_CLASSID)
   if (anya) {
     yield* move.walkTo(anya.x, anya.y)
   }

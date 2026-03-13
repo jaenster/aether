@@ -49,7 +49,7 @@ export const Radament = createScript(function*(game, svc) {
 
   // Talk to Atma to complete quest
   const ATMA_CLASSID = 176
-  const atma = game.monsters.find(m => m.classid === ATMA_CLASSID)
+  const atma = game.objects.find(o => o.classid === ATMA_CLASSID)
   if (atma) {
     yield* move.walkTo(atma.x, atma.y)
     game.interact(atma)
