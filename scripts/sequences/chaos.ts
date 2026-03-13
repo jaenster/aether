@@ -67,6 +67,10 @@ export const Chaos = createScript(function*(game, svc) {
 
   game.log('[chaos] starting run')
   yield* move.journeyTo(Area.RiverofFlame)
+
+  // Buff up now that we're out of town
+  yield* buffs.refreshAll()
+
   yield* move.moveTo(STAR.x, STAR.y)
 
   // Clear around star first
@@ -113,7 +117,7 @@ export const Chaos = createScript(function*(game, svc) {
 
   const spawned: unknown = yield* game.waitUntil(() => {
     return !!game.monsters.find((m: Monster) => m.classid === DIABLO_CLASSID && atk.alive(m))
-  }, 750)
+  }, 1250)
 
   if (spawned) {
     const diablo = game.monsters.find((m: Monster) => m.classid === DIABLO_CLASSID && atk.alive(m))

@@ -100,12 +100,14 @@ pub fn beginGame(seed: u32, difficulty: u8, expansion: bool) void {
 
 var first_level: bool = true;
 
-pub fn beginLevel(level_id: u32, density: i32, boss_min: u8, boss_max: u8, dungeon_level: i32) void {
+pub fn beginLevel(level_id: u32, density: i32, boss_min: u8, boss_max: u8, dungeon_level: i32, level_name: []const u8) void {
     if (!first_level) emitChar(',');
     first_level = false;
     emitChar('"');
     emitUint(level_id);
-    emit("\":{\"density\":");
+    emit("\":{\"name\":");
+    emitStr(level_name);
+    emit(",\"density\":");
     emitInt(density);
     emit(",\"bossMin\":");
     emitUint(boss_min);
@@ -118,11 +120,13 @@ pub fn beginLevel(level_id: u32, density: i32, boss_min: u8, boss_max: u8, dunge
 
 var first_pool_entry: bool = true;
 
-pub fn addPoolEntry(class_id: u16, rarity: u16) void {
+pub fn addPoolEntry(class_id: u16, rarity: u16, name: []const u8) void {
     if (!first_pool_entry) emitChar(',');
     first_pool_entry = false;
     emit("{\"classId\":");
     emitUint(class_id);
+    emit(",\"name\":");
+    emitStr(name);
     emit(",\"rarity\":");
     emitUint(rarity);
     emitChar('}');
@@ -165,11 +169,17 @@ pub fn endRectsBeginSpawns() void {
 var first_spawn: bool = true;
 
 /// spawn_type: 0=unique, 1=champion, 2=normal, 3=superunique, 4=minion
-pub fn addSpawn(class_id: u16, spawn_type: u8, count: u8, mods: []const u8) void {
+pub fn addSpawn(class_id: u16, spawn_type: u8, count: u8, mods: []const u8, name: []const u8, max_hp: u32) void {
     if (!first_spawn) emitChar(',');
     first_spawn = false;
     emit("{\"classId\":");
     emitUint(class_id);
+    emit(",\"name\":");
+    emitStr(name);
+    if (max_hp > 0) {
+        emit(",\"maxHP\":");
+        emitUint(max_hp);
+    }
     emit(",\"type\":");
     switch (spawn_type) {
         0 => emitStr("unique"),

@@ -43,6 +43,7 @@
   export function itemGetFlags(unitId: number): number;
   export function itemGetLocation(unitId: number): number;
   export function itemGetCode(unitId: number): string;
+  export function itemGetRunewordIndex(unitId: number): number;
 
   // Tile properties
   export function tileGetDestArea(unitId: number): number;

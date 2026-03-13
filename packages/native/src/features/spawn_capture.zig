@@ -320,16 +320,54 @@ fn getActForLevel(level_id: u32) ?u8 {
 }
 
 // ============================================================================
+// Name resolution
+// ============================================================================
+
+const MONSTATS_NAMESTR_OFF: usize = 0x06;
+const LEVELSTXT_SZNAME_OFF: usize = 0xF5;
+
+var mon_name_buf: [64]u8 = undefined;
+var level_name_buf: [64]u8 = undefined;
+
+/// Convert a wide (u16) null-terminated string to ASCII, truncating to buf size.
+fn wideToAscii(wide: [*]const u16, out: []u8) []const u8 {
+    var i: usize = 0;
+    while (i < out.len) : (i += 1) {
+        const c = wide[i];
+        if (c == 0) break;
+        out[i] = if (c < 128) @truncate(c) else '?';
+    }
+    return out[0..i];
+}
+
+/// Get monster name from MonStatsTxt → NameStr → GetLocaleString
+fn getMonsterName(class_id: u16) []const u8 {
+    const txt = d2.functions.TxtMonStatsGetLine.call(.{@as(i32, @intCast(class_id))}) orelse return "?";
+    const name_str_idx = @as(*const u16, @ptrCast(@alignCast(txt + MONSTATS_NAMESTR_OFF))).*;
+    const wide = d2.functions.GetLocaleString.call(.{name_str_idx}) orelse return "?";
+    return wideToAscii(wide, &mon_name_buf);
+}
+
+/// Get level name from LevelTxt → szName (ASCII, 40 bytes max)
+fn getLevelName(level_id: u32) []const u8 {
+    const txt_bytes = d2.functions.TxtLevelsGetLine.call(level_id) orelse return "?";
+    const name_ptr = txt_bytes + LEVELSTXT_SZNAME_OFF;
+    var len: usize = 0;
+    while (len < 40 and name_ptr[len] != 0) : (len += 1) {}
+    return name_ptr[0..len];
+}
+
+// ============================================================================
 // Logging
 // ============================================================================
 
 fn logLevelPool(game_ptr: [*]u8, level_id: u32) void {
     const region_array: [*]const ?*D2MonsterRegionStrc = @ptrCast(@alignCast(game_ptr + GAME_MONREGION_OFF));
     const region = region_array[level_id] orelse return;
-    spawn_logger.beginLevel(level_id, region.nMonsterDensity, region.nBossMin, region.nBossMax, region.dwDungeonLevel);
+    spawn_logger.beginLevel(level_id, region.nMonsterDensity, region.nBossMin, region.nBossMax, region.dwDungeonLevel, getLevelName(level_id));
     const count: usize = @intCast(region.nCounter);
     for (0..count) |i| {
-        spawn_logger.addPoolEntry(region.pMonData[i].nClassId, region.pMonData[i].nRarity);
+        spawn_logger.addPoolEntry(region.pMonData[i].nClassId, region.pMonData[i].nRarity, getMonsterName(region.pMonData[i].nClassId));
     }
     spawn_logger.endPoolBeginRooms();
 }
@@ -355,11 +393,12 @@ fn logPresetSuperUniques(room_ptr: [*]u8) void {
         const etype = readU32(p, PRESET_TYPE_OFF);
         if (etype == 1) { // UNIT_MONSTER
             const class_id = readU32(p, PRESET_TXTFILENO_OFF);
+            const cid: u16 = @truncate(class_id);
+            const name = getMonsterName(cid);
             if (isSuperUnique(class_id)) {
-                spawn_logger.addSpawn(@truncate(class_id), 3, 1, &.{});
+                spawn_logger.addSpawn(cid, 3, 1, &.{}, name, 0);
             } else {
-                // Log all other preset monsters as type 5 for debugging
-                spawn_logger.addSpawn(@truncate(class_id), 5, 1, &.{});
+                spawn_logger.addSpawn(cid, 5, 1, &.{}, name, 0);
             }
         }
         preset = readPtr(p, PRESET_PNEXT_OFF);
@@ -414,7 +453,10 @@ fn logRoom(room_ptr: [*]u8) void {
                     spawn_type = 1; // Champion — has mods but no boss/minion flag
                 }
             }
-            spawn_logger.addSpawn(class_id, spawn_type, 1, mods);
+            // Read max HP from the unit's stat list (stat 7 = maxhp, fixed-point >> 8)
+            const unit_any: ?*d2.types.UnitAny = @ptrCast(@alignCast(unit));
+            const max_hp = d2.functions.GetUnitStat.call(unit_any, 7, 0) >> 8;
+            spawn_logger.addSpawn(class_id, spawn_type, 1, mods, getMonsterName(class_id), max_hp);
         }
         unit_ptr = readPtr(unit, UNIT_ROOMNEXT_OFF);
     }

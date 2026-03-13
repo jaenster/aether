@@ -1,6 +1,17 @@
 import { getUnitStat, getDifficulty, getUnitHP, getUnitMaxHP, getUnitMP, getSkillLevel as _getSkillLevel } from "diablo:native";
 import { getBaseStat } from "./txt.js";
+import { Skill } from "diablo:constants";
 import type { SkillProjectile } from "./attack-types.js"
+
+// Reverse map: skill ID → name from enum
+const _skillNames: Record<number, string> = {}
+for (const [name, id] of Object.entries(Skill)) {
+  if (typeof id === 'number' && !_skillNames[id]) _skillNames[id] = name
+}
+
+export function skillName(skillId: number): string {
+  return _skillNames[skillId] ?? `skill${skillId}`
+}
 
 // Stat IDs
 const STAT_LEVEL = 12;
@@ -861,20 +872,31 @@ export function evaluateBattlefield(
   const moveDist = distXY(actualCasterPos.x, actualCasterPos.y, castFromPos.x, castFromPos.y)
   let needsReposition: boolean
   if (nova) {
-    // Nova: only reposition if we'd hit significantly fewer monsters from current position
-    // vs from the optimal position. Skip repo if we already cover 80%+.
+    // Nova: re-evaluate from actual position. Score reflects what we'd hit NOW,
+    // not from the hypothetical optimal position. Add movement cost if we'd need to move.
     const novaRange = splash || range
-    const hitsFromOptimal = hit // already computed above
     let hitsFromCurrent = 0
+    let dmgFromCurrent = 0
     for (const mon of monsters) {
       if (distXY(actualCasterPos.x, actualCasterPos.y, mon.x, mon.y) <= novaRange) {
-        if (skillDamageVsUnit(skillId, mon) > 0) hitsFromCurrent++
+        const d = skillDamageVsUnit(skillId, mon)
+        if (d > 0) {
+          hitsFromCurrent++
+          const monHp = mon.hp > 0 ? mon.hp : 1
+          dmgFromCurrent += Math.min(d, monHp) * (groupModifier ? groupModifier(mon, monsters) : 1.0)
+        }
       }
     }
-    // Nova: don't reposition. The teleport lands on a monster tile (blocked),
-    // wastes a cast cycle, and causes oscillation. Just cast from current position —
-    // nova has enough range to hit nearby groups without perfect centering.
-    needsReposition = false
+    // Use actual hits/damage from current position for scoring
+    if (hitsFromCurrent > 0) {
+      // Can hit from here — use current-position damage, no movement needed
+      totalUsefulDmg = dmgFromCurrent
+      hit = hitsFromCurrent
+      needsReposition = false
+    } else {
+      // Nothing in range — need to move, add movement cost
+      needsReposition = true
+    }
   } else {
     needsReposition = distXY(actualCasterPos.x, actualCasterPos.y, targetPos.x, targetPos.y) > range
   }

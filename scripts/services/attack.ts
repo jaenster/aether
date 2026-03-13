@@ -1,7 +1,7 @@
 import { createService, type Game, type Monster } from "diablo:game"
 import { Config } from "../config.js"
 import { Movement } from "./movement.js"
-import { findBestAction, rankActions, skillRange, unitResist, staticFieldEffective, preAttackAdvice, isNova } from "../lib/game-data.js"
+import { findBestAction, rankActions, skillRange, splashRadius, unitResist, staticFieldEffective, preAttackAdvice, isNova, skillName } from "../lib/game-data.js"
 import type { AttackOptions, Pos, CombatSnapshot, MonsterSnapshot, SpawnEvent } from "../lib/attack-types.js"
 import { getUnitHP, getUnitMaxHP, getUnitMP, getDifficulty } from "diablo:native"
 
@@ -57,7 +57,7 @@ export const Attack = createService((game: Game, services) => {
       if (targets.length === 0) continue
       if (d.checkState && targets[0]!.getState(d.checkState)) continue
 
-      game.log(`[atk] debuff skill=${d.skillId} on ${targets.length} targets`)
+      game.log(`[atk] debuff ${skillName(d.skillId)} on ${targets.length} targets`)
       yield* preSelect(d.skillId)
       game.castSkill(targets[0]!.x, targets[0]!.y)
       yield* waitCastDone()
@@ -135,7 +135,7 @@ export const Attack = createService((game: Game, services) => {
     if (typeof opts.debugCombat === 'function') {
       opts.debugCombat(snap)
     } else {
-      game.log(`[combat] tick=${snap.tick} hp=${snap.casterHp} mp=${snap.casterMp} mons=${snap.monsters.length} chosen=${snap.chosen?.skillId ?? 'none'} dps=${(snap.chosen?.dpsPerFrame ?? 0) | 0}`)
+      game.log(`[combat] tick=${snap.tick} hp=${snap.casterHp} mp=${snap.casterMp} mons=${snap.monsters.length} chosen=${snap.chosen ? skillName(snap.chosen.skillId) : 'none'} dps=${(snap.chosen?.dpsPerFrame ?? 0) | 0}`)
     }
   }
 
@@ -187,7 +187,7 @@ export const Attack = createService((game: Game, services) => {
         }
 
         if (casts % 5 === 0) {
-          game.log(`[atk] cast=${casts} hp=${target.hp}/${target.hpmax} skill=${action.skillId} hit=${action.monstersHit} dps=${action.dpsPerFrame|0} aim=${action.targetPos.x},${action.targetPos.y}${action.needsReposition ? ' REPO' : ''}`)
+          game.log(`[atk] cast=${casts} hp=${target.hp}/${target.hpmax} ${skillName(action.skillId)} hit=${action.monstersHit} dps=${action.dpsPerFrame|0} aim=${action.targetPos.x},${action.targetPos.y}${action.needsReposition ? ' REPO' : ''}`)
         }
 
         // Stale detection — immune monster or Static Field at floor
@@ -223,7 +223,12 @@ export const Attack = createService((game: Game, services) => {
           currentSkill = action.skillId
         }
 
-        if (!isNova(action.skillId) && target.distance > skillRange(action.skillId)) {
+        if (isNova(action.skillId)) {
+          const novaR = splashRadius(action.skillId) || 5
+          if (target.distance > novaR) {
+            yield* move.moveNear(target.x, target.y, novaR)
+          }
+        } else if (target.distance > skillRange(action.skillId)) {
           yield* move.moveNear(target.x, target.y, skillRange(action.skillId))
         }
 
@@ -292,7 +297,7 @@ export const Attack = createService((game: Game, services) => {
         const shouldRepo = action.needsReposition && repoFails < 2
 
         if (casts % 10 === 0 || shouldRepo) {
-          game.log(`[atk] clearing: hit=${action.monstersHit} skill=${action.skillId} mons=${filtered.length} aim=${action.targetPos.x},${action.targetPos.y} me=${game.player.x},${game.player.y}${shouldRepo ? ` REPO→${action.casterPos.x},${action.casterPos.y}` : ''}`)
+          game.log(`[atk] clearing: hit=${action.monstersHit} ${skillName(action.skillId)} mons=${filtered.length} aim=${action.targetPos.x},${action.targetPos.y} me=${game.player.x},${game.player.y}${shouldRepo ? ` REPO→${action.casterPos.x},${action.casterPos.y}` : ''}`)
         }
 
         if (shouldRepo) {
@@ -313,8 +318,17 @@ export const Attack = createService((game: Game, services) => {
           currentSkill = action.skillId
         }
 
-        // Nova skills cast around the player — no need to close distance
-        if (!isNova(action.skillId)) {
+        if (isNova(action.skillId)) {
+          // Nova: move closer if no monsters in splash range
+          const novaR = splashRadius(action.skillId) || 5
+          const d = Math.sqrt(
+            (game.player.x - action.targetPos.x) ** 2 +
+            (game.player.y - action.targetPos.y) ** 2
+          )
+          if (d > novaR) {
+            yield* move.moveNear(action.targetPos.x, action.targetPos.y, novaR)
+          }
+        } else {
           const d = Math.sqrt(
             (game.player.x - action.targetPos.x) ** 2 +
             (game.player.y - action.targetPos.y) ** 2
@@ -341,7 +355,7 @@ export const Attack = createService((game: Game, services) => {
         const advice = preAttackAdvice(casterPos(), { ...event, framesUntilSpawn: f }, game.player.charclass)
 
         if (advice.type === 'cast') {
-          game.log(`[atk] preAttack firing skill=${advice.skill} at ${advice.x},${advice.y} f=${f}`)
+          game.log(`[atk] preAttack firing ${skillName(advice.skill)} at ${advice.x},${advice.y} f=${f}`)
           if (advice.skill !== currentSkill) {
             yield* preSelect(advice.skill)
             currentSkill = advice.skill

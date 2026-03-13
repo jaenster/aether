@@ -408,6 +408,14 @@ fn jsItemGetFlags(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_
     return 1;
 }
 
+fn jsItemGetRunewordIndex(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const unit_id: u32 = @bitCast(argInt32(argc, vp, 0));
+    const unit = units.findUnit(4, unit_id) orelse { retInt32(argc, vp, 0); return 1; };
+    const data: *types.ItemData = @ptrCast(@alignCast(unit.pUnitData orelse { retInt32(argc, vp, 0); return 1; }));
+    retInt32(argc, vp, @as(i32, data.wRuneWordIndex));
+    return 1;
+}
+
 fn jsItemGetLocation(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const unit_id: u32 = @bitCast(argInt32(argc, vp, 0));
     const unit = units.findUnit(4, unit_id) orelse { retInt32(argc, vp, -1); return 1; };
@@ -1017,6 +1025,7 @@ const bindings = [_]Binding{
     .{ .name = "itemGetFlags", .func = &jsItemGetFlags, .nargs = 1 },
     .{ .name = "itemGetLocation", .func = &jsItemGetLocation, .nargs = 1 },
     .{ .name = "itemGetCode", .func = &jsItemGetCode, .nargs = 1 },
+    .{ .name = "itemGetRunewordIndex", .func = &jsItemGetRunewordIndex, .nargs = 1 },
     // Tile properties
     .{ .name = "tileGetDestArea", .func = &jsTileGetDestArea, .nargs = 1 },
     // Player

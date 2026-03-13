@@ -3,7 +3,7 @@ import {
   unitGetName, unitGetArea, unitGetOwnerId, unitGetOwnerType,
   unitValid, meGetUnitId,
   monGetSpecType, monGetEnchants, monGetMaxHP,
-  itemGetQuality, itemGetFlags, itemGetLocation, itemGetCode,
+  itemGetQuality, itemGetFlags, itemGetLocation, itemGetCode, itemGetRunewordIndex,
   tileGetDestArea,
   sendPacket as nativeSendPacket,
   interact as nativeInteract,
@@ -224,6 +224,7 @@ export class ItemUnit extends Unit {
   get ethereal(): boolean { return (itemGetFlags(this.unitId) & 0x400000) !== 0 }
   get identified(): boolean { return (itemGetFlags(this.unitId) & 0x10) !== 0 }
   get runeword(): boolean { return (itemGetFlags(this.unitId) & 0x4000000) !== 0 }
+  get runewordIndex(): number { return itemGetRunewordIndex(this.unitId) }
 
   get location(): number { return itemGetLocation(this.unitId) }
   get durability(): number { return this.getStat(72, 0) }
