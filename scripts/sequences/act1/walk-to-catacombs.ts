@@ -27,6 +27,8 @@ export const WalkToCatacombs = createScript(function*(game, svc) {
     Area.Cathedral,
     Area.CatacombsLvl1,
     Area.CatacombsLvl2,
+    Area.CatacombsLvl3,
+    Area.CatacombsLvl4,
   ]
 
   for (const area of route) {
@@ -46,5 +48,5 @@ export const WalkToCatacombs = createScript(function*(game, svc) {
     }
   }
 
-  game.log('[walk-to-catacombs] complete — at Catacombs Lvl 2')
+  game.log('[walk-to-catacombs] complete — at Catacombs Lvl 4')
 })

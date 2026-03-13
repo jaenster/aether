@@ -16,7 +16,7 @@ export const TransferToAct2 = createScript(function*(game, svc) {
   yield* town.goToTown()
 
   // Find and interact with Warriv
-  const warriv = game.objects.find(o => o.classid === WARRIV_CLASSID)
+  const warriv = game.monsters.find(m => m.classid === WARRIV_CLASSID)
   if (!warriv) {
     game.log('[transfer-act2] Warriv not found')
     return

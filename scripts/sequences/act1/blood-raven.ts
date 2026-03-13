@@ -4,7 +4,8 @@ import { Attack } from "../../services/attack.js"
 import { Pickit } from "../../services/pickit.js"
 import { Town } from "../../services/town.js"
 
-const BLOOD_RAVEN_CLASSID = 805
+const BLOOD_RAVEN_PRESET = 805  // preset classid for findPreset
+const BLOOD_RAVEN_MONSTER = 267 // actual monster classid
 
 /**
  * Blood Raven — kill Blood Raven in the Burial Grounds.
@@ -27,7 +28,7 @@ export const BloodRaven = createScript(function*(game, svc) {
   }
 
   // Find Blood Raven preset and move there
-  const preset = game.findPreset(1, BLOOD_RAVEN_CLASSID)
+  const preset = game.findPreset(1, BLOOD_RAVEN_PRESET)
   if (preset) {
     yield* move.moveTo(preset.x, preset.y)
   }
@@ -35,12 +36,12 @@ export const BloodRaven = createScript(function*(game, svc) {
   // Fight Blood Raven — she moves around, so track and attack
   game.log('[blood-raven] engaging')
   for (let attempts = 0; attempts < 50; attempts++) {
-    const raven = game.monsters.find(m => m.classid === BLOOD_RAVEN_CLASSID && atk.alive(m))
+    const raven = game.monsters.find(m => m.classid === BLOOD_RAVEN_MONSTER && atk.alive(m))
     if (!raven) break
 
     // Clear nearby minions if crowded
     const nearby = game.monsters.filter(m =>
-      m.classid !== BLOOD_RAVEN_CLASSID && atk.alive(m) && m.distance < 6
+      m.classid !== BLOOD_RAVEN_MONSTER && atk.alive(m) && m.distance < 6
     )
     if (nearby.length > 3) {
       yield* atk.clear({ killRange: 6, maxCasts: 10 })
@@ -55,6 +56,7 @@ export const BloodRaven = createScript(function*(game, svc) {
   game.log('[blood-raven] looting')
   yield* loot.lootGround()
 
+  // Talk to Kashya to complete quest
   game.log('[blood-raven] returning to town')
   yield* town.goToTown()
 })

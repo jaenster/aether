@@ -9,8 +9,8 @@ const DIABLO_CLASSID = 243
 // Seal preset classids in Chaos Sanctuary (type 2 objects)
 const SEALS = {
   vizier:   { seals: [395, 396], dx: 2, dy: 0 },
-  deseis:   { seals: [394],      dx: 0, dy: 0 },
-  infector: { seals: [393, 392], dx: 2, dy: 0 },
+  deseis:   { seals: [394],      dx: 5, dy: 5 },
+  infector: { seals: [392, 393], dx: 2, dy: 0 },
 }
 
 /**
@@ -26,7 +26,7 @@ export const Diablo = createScript(function*(game, svc) {
   const loot = svc.get(Pickit)
 
   game.log('[diablo] starting run')
-  yield* move.journeyTo(Area.RiverofFlame)
+  yield* move.journeyTo(Area.ChaosSanctuary)
   yield* move.moveTo(STAR.x, STAR.y)
 
   // Clear around star first

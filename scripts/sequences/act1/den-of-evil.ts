@@ -16,6 +16,9 @@ export const DenOfEvil = createScript(function*(game, svc) {
 
   game.log('[den-of-evil] starting')
 
+  yield* town.goToTown()
+  yield* town.doTownChores()
+
   yield* move.journeyTo(Area.DenofEvil)
 
   // Clear the entire level

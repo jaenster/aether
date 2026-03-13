@@ -39,9 +39,16 @@ export const Tristram = createScript(function*(game, svc) {
     yield* loot.lootGround()
   }
 
-  // Return to town to talk to Akara
+  // Return to town to talk to Akara (she deciphers the scroll)
   yield* town.goToTown()
-  yield* game.delay(500)
+
+  const AKARA_CLASSID = 148
+  const akara = game.monsters.find(m => m.classid === AKARA_CLASSID)
+  if (akara) {
+    yield* move.walkTo(akara.x, akara.y)
+    game.interact(akara)
+    yield* game.delay(1000)
+  }
 
   // Step 2: Go to Stony Field and activate cairn stones
   game.log('[tristram] activating cairn stones')
@@ -63,17 +70,12 @@ export const Tristram = createScript(function*(game, svc) {
     }
   }
 
-  // Wait for and use the portal to Tristram
+  // Wait for the red portal to appear, then use it
   yield* game.delay(1000)
-  if (yield* game.waitForArea(Area.Tristram)) {
-    game.log('[tristram] entered Tristram — should use portal')
-  }
-
-  // Use the red portal
-  const tiles = game.tiles
-  const tristTile = tiles.find(t => t.destArea === Area.Tristram)
-  if (tristTile) {
-    game.interact(tristTile)
+  const portal = game.objects.find(o => o.classid === 60 && o.mode !== 0)
+  if (portal) {
+    yield* move.moveTo(portal.x, portal.y)
+    game.interact(portal)
     yield* game.waitForArea(Area.Tristram)
   }
 
@@ -85,11 +87,15 @@ export const Tristram = createScript(function*(game, svc) {
     { x: 25132, y: 5070 },
     { x: 25092, y: 5054 },
     { x: 25046, y: 5080 },
+    { x: 25026, y: 5103 },
     { x: 25048, y: 5126 },
     { x: 25050, y: 5163 },
     { x: 25074, y: 5183 },
+    { x: 25098, y: 5183 },
+    { x: 25113, y: 5170 },
     { x: 25081, y: 5155 },
     { x: 25119, y: 5124 },
+    { x: 25134, y: 5096 },
   ]
 
   for (const pos of patrol) {

@@ -12,7 +12,7 @@ const wpAreas = new Set<Area>([
   Area.BlackMarsh, Area.OuterCloister, Area.JailLvl1, Area.InnerCloister, Area.CatacombsLvl2,
   // Act 2
   Area.LutGholein, Area.A2SewersLvl2, Area.DryHills, Area.HallsoftheDeadLvl2,
-  Area.FarOasis, Area.LostCity, Area.PalaceCellarLvl1, Area.ArcaneSanctuary,
+  Area.FarOasis, Area.LostCity, Area.PalaceCellarLvl1, Area.ArcaneSanctuary, Area.CanyonofMagic,
   // Act 3
   Area.KurastDocks, Area.SpiderForest, Area.GreatMarsh, Area.FlayerJungle,
   Area.LowerKurast, Area.KurastBazaar, Area.UpperKurast, Area.Travincal, Area.DuranceofHateLvl2,

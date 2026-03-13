@@ -46,5 +46,15 @@ export const Radament = createScript(function*(game, svc) {
   }
 
   yield* town.goToTown()
+
+  // Talk to Atma to complete quest
+  const ATMA_CLASSID = 176
+  const atma = game.monsters.find(m => m.classid === ATMA_CLASSID)
+  if (atma) {
+    yield* move.walkTo(atma.x, atma.y)
+    game.interact(atma)
+    yield* game.delay(1000)
+  }
+
   game.log('[radament] complete')
 })
