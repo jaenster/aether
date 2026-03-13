@@ -28,7 +28,7 @@ export const BloodRaven = createScript(function*(game, svc) {
   }
 
   // Find Blood Raven preset and move there
-  const preset = game.findPreset(1, BLOOD_RAVEN_PRESET)
+  const preset = game.findPreset(2, BLOOD_RAVEN_PRESET)
   if (preset) {
     yield* move.moveTo(preset.x, preset.y)
   }

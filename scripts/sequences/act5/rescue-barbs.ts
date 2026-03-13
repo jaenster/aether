@@ -24,14 +24,14 @@ export const RescueBarbs = createScript(function*(game, svc) {
   // Attack doors at each location to free the barbs
   yield* atk.clear({ killRange: 15, maxCasts: 20 })
 
-  // Find and destroy all cage doors
+  // Find and open all cage doors (doors are objects, not monsters)
   for (let pass = 0; pass < 3; pass++) {
-    const doors = game.monsters.filter(m => m.classid === DOOR_CLASSID && atk.alive(m))
+    const doors = game.objects.filter(o => o.classid === DOOR_CLASSID && o.mode === 0)
     if (doors.length === 0) break
 
     for (const door of doors) {
       yield* move.moveNear(door.x, door.y, 5)
-      yield* atk.kill(door, { maxCasts: 20 })
+      game.interact(door)
       yield* game.delay(500)
     }
   }

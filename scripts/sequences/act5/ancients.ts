@@ -1,4 +1,4 @@
-import { createScript, Area, type Monster } from "diablo:game"
+import { createScript, Area } from "diablo:game"
 import { Movement } from "../../services/movement.js"
 import { Attack } from "../../services/attack.js"
 import { Pickit } from "../../services/pickit.js"
