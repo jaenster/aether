@@ -4,6 +4,7 @@ import { txtReadField, txtReadFieldU } from "diablo:native";
 const TBL_MONSTATS = 0;
 const TBL_SKILLS = 1;
 const TBL_LEVELS = 2;
+const TBL_MISSILES = 3;
 
 // D2MonStatsTxt field offsets (struct size: 0x1A8 = 424 bytes)
 // Verified against Ghidra D2MonStatsTxt struct definition.
@@ -333,12 +334,56 @@ const skillsFields: Record<string, [number, number, boolean?]> = {
   costadd:      [0x238, 4],
 };
 
+// D2MissilesTxt field offsets (struct size: 420 = 0x1A4)
+const missilesFields: Record<string, [number, number, boolean?]> = {
+  Missile:    [0, 2, true],     // 0
+  pCltDoFunc: [8, 2],           // 8
+  pCltHitFunc:[10, 2],          // 10
+  pSrvDoFunc: [12, 2],          // 12
+  pSrvHitFunc:[14, 2],          // 14
+  pSrvDmgFunc:[16, 2],          // 16
+  TravelSound:[18, 2],          // 18
+  HitSound:   [20, 2],          // 20
+  ExplosionMissile: [22, 2],    // 22
+  SubMissile1:[24, 2],          // 24
+  SubMissile2:[26, 2],          // 26
+  SubMissile3:[28, 2],          // 28
+  HitSubMissile1: [38, 2],     // 38
+  HitSubMissile2: [40, 2],     // 40
+  HitSubMissile3: [42, 2],     // 42
+  HitSubMissile4: [44, 2],     // 44
+  Param1:     [56, 4],          // 56
+  Param2:     [60, 4],          // 60
+  Param3:     [64, 4],          // 64
+  Param4:     [68, 4],          // 68
+  Param5:     [72, 4],          // 72
+  HitClass:   [148, 1],        // 148
+  Range:      [150, 2],         // 150 — frames the missile lives
+  LevRange:   [152, 2],         // 152
+  Vel:        [154, 1],         // 154 — velocity (sub-tiles per frame)
+  VelLev:     [155, 1],         // 155
+  MaxVel:     [156, 1],         // 156
+  Accel:      [158, 2],         // 158
+  xoffset:    [162, 2],         // 162
+  yoffset:    [164, 2],         // 164
+  zoffset:    [166, 2],         // 166
+  MinDamage:  [176, 4],         // 176
+  MaxDamage:  [180, 4],         // 180
+  EType:      [228, 1],         // 228
+  EMin:       [232, 4],         // 232
+  EMax:       [236, 4],         // 236
+  Size:       [396, 1],         // 396
+  Skill:      [404, 2],         // 404
+  HitShift:   [406, 1],         // 406
+};
+
 const tableMap: Record<string, [number, Record<string, [number, number, boolean?]>]> = {
   monstats:  [TBL_MONSTATS, monStatsFields],
   monstats2: [TBL_MONSTATS, monStatsFields], // TODO: separate monstats2 if needed
   skills:    [TBL_SKILLS, skillsFields],
   Skills:    [TBL_SKILLS, skillsFields],
   levels:    [TBL_LEVELS, {}], // TODO: add level field offsets when needed
+  missiles:  [TBL_MISSILES, missilesFields],
 };
 
 export function getBaseStat(table: string, id: number, field: string): number {
@@ -360,4 +405,4 @@ export function getBaseStat(table: string, id: number, field: string): number {
   return unsigned ? txtReadFieldU(tableId, id, offset, size) : txtReadField(tableId, id, offset, size);
 }
 
-export { monStatsFields, skillsFields, monStatsFlagBits };
+export { monStatsFields, skillsFields, missilesFields, monStatsFlagBits };

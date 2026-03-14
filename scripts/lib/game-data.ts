@@ -13,6 +13,23 @@ export function skillName(skillId: number): string {
   return _skillNames[skillId] ?? `skill${skillId}`
 }
 
+/** Read a missile's effective reach in game units (sub-tiles).
+ *  Returns Vel * Range, or 0 if the missile doesn't exist. */
+export function getMissileReach(missileId: number): { range: number, vel: number, maxVel: number, reach: number } {
+  const range = getBaseStat("missiles", missileId, "Range")
+  const vel = getBaseStat("missiles", missileId, "Vel")
+  const maxVel = getBaseStat("missiles", missileId, "MaxVel")
+  // Reach = velocity * lifetime in frames. Vel is in sub-tiles/frame.
+  return { range, vel, maxVel, reach: vel * range }
+}
+
+/** Look up a skill's server missile and compute its reach. */
+export function getSkillMissileReach(skillId: number): { missileId: number, range: number, vel: number, maxVel: number, reach: number } | null {
+  const missileId = getBaseStat("skills", skillId, "srvmissile")
+  if (missileId <= 0) return null
+  return { missileId, ...getMissileReach(missileId) }
+}
+
 // Stat IDs
 const STAT_LEVEL = 12;
 const STAT_FCR = 105;
@@ -192,7 +209,7 @@ const skillRadius: Record<number, number> = {
   42: 10,  // Static Field — ~3.3 yards = ~10 units
   44: 12,  // Frost Nova — ~4 yards radius
   47: 4,   // Fireball — explosion radius
-  48: 15,  // Nova — ~5 yards radius, missile travels outward
+  48: 10,  // Nova — measured ~12 sub-tile max, use 10 for reliable hits
   55: 6,   // Blizzard
   56: 12,  // Meteor
   59: 4,   // Blizzard (Ice Blast)

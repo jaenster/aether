@@ -88,3 +88,16 @@ pub fn screenHeight() *c_int {
 pub fn divisor() *c_int {
     return @ptrFromInt(0x711254);
 }
+
+// sgtDataTable.pTxtMissiles — pointer to D2MissilesTxt array (struct size 420)
+pub fn pTxtMissiles() *?[*]u8 {
+    return @ptrFromInt(0x0096c794);
+}
+
+const MISSILES_TXT_SIZE: usize = 420;
+
+pub fn txtMissilesGetLine(id: i32) ?[*]u8 {
+    const base = pTxtMissiles().* orelse return null;
+    if (id < 0) return null;
+    return base + @as(usize, @intCast(id)) * MISSILES_TXT_SIZE;
+}

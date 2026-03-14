@@ -802,7 +802,7 @@ fn jsGetLocaleString(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c
 // ── Txt record field access ─────────────────────────────────────────
 
 /// txtReadField(table: i32, recordId: i32, offset: i32, size: i32) -> i32
-/// table: 0=monstats, 1=skills, 2=levels
+/// table: 0=monstats, 1=skills, 2=levels, 3=missiles
 /// Reads `size` bytes (1/2/4) at `offset` from the txt record, sign-extended.
 fn jsTxtReadField(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const table = argInt32(argc, vp, 0);
@@ -814,6 +814,7 @@ fn jsTxtReadField(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_
         0 => d2.TxtMonStatsGetLine.call(.{record_id}),
         1 => d2.TxtSkillsGetLine.call(.{record_id}),
         2 => d2.TxtLevelsGetLine.call(@bitCast(record_id)),
+        3 => globals.txtMissilesGetLine(record_id),
         else => null,
     };
 
@@ -846,6 +847,7 @@ fn jsTxtReadFieldU(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c
         0 => d2.TxtMonStatsGetLine.call(.{record_id}),
         1 => d2.TxtSkillsGetLine.call(.{record_id}),
         2 => d2.TxtLevelsGetLine.call(@bitCast(record_id)),
+        3 => globals.txtMissilesGetLine(record_id),
         else => null,
     };
 
