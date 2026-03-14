@@ -189,10 +189,10 @@ const nonDamage: Record<number, boolean> = {
 // Skill radius for AoE modifier (explosion/splash radius in game units)
 const skillRadius: Record<number, number> = {
   36: 2,   // Fire Bolt — no splash, but small AoE on impact
-  42: 10,  // Static Field — nova radius ~3.3 yards = ~10 units
-  44: 5,   // Frost Nova — ~5 yards effective radius
+  42: 10,  // Static Field — ~3.3 yards = ~10 units
+  44: 12,  // Frost Nova — ~4 yards radius
   47: 4,   // Fireball — explosion radius
-  48: 5,   // Nova — ~5 yards effective radius
+  48: 15,  // Nova — ~5 yards radius, missile travels outward
   55: 6,   // Blizzard
   56: 12,  // Meteor
   59: 4,   // Blizzard (Ice Blast)
@@ -900,7 +900,8 @@ export function evaluateBattlefield(
   } else {
     needsReposition = distXY(actualCasterPos.x, actualCasterPos.y, targetPos.x, targetPos.y) > range
   }
-  const teleFrames = needsReposition ? Math.max(1, Math.ceil(moveDist / 30)) : 0
+  // Teleport costs ~9 cast frames + 1 frame per 30 units of travel
+  const teleFrames = needsReposition ? 9 + Math.ceil(moveDist / 30) : 0
   const totalFrames = frames + teleFrames
 
   // Mana cost — score = totalUsefulDmg / (frameCost * sqrt(manaCost))
@@ -1005,7 +1006,7 @@ export function rankActions(
         const manaDenom = manaCost > 0 ? Math.sqrt(manaCost) : 1
         const moveDist = distXY(casterPos.x, casterPos.y, castPos.x, castPos.y)
         const needsRepo = moveDist > 5
-        const teleFrames = needsRepo ? Math.max(1, Math.ceil(moveDist / 30)) : 0
+        const teleFrames = needsRepo ? 9 + Math.ceil(moveDist / 30) : 0
         const totalFrames = frames + teleFrames
         let score = totalUseful / (totalFrames * manaDenom)
         const currentMp = getUnitMP()
