@@ -131,11 +131,11 @@ fn handleDaemonMessage(eng: *Engine, msg: []const u8) void {
     // Check if this is a hot-reload (loader already in .loaded state)
     const is_reload = loader.state == .loaded;
 
-    // If it's a reload, recreate context first
+    // Hot-reload: clear module entries but keep the context alive (globalThis survives)
     if (is_reload and @import("../net/json.zig").hasStringValue(msg, "type", "file:response")) {
-        recreateContext();
-        const new_ctx = eng.oog_context orelse return;
-        _ = loader.handleMessage(msg, eng, new_ctx);
+        log.print("scripting: hot-reload — clearing modules, keeping context");
+        eng.moduleClear(ctx);
+        _ = loader.handleMessage(msg, eng, ctx);
         return;
     }
 

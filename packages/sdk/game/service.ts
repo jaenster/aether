@@ -1,5 +1,22 @@
 import { Game, GameColor, colorText } from "./game.js"
 
+const __g = Function('return this')() as any
+
+// Registries survive module clear + recompile (same globalThis)
+if (!__g.__svcRegistry) __g.__svcRegistry = new Map<string, ServiceToken<any>>()
+if (!__g.__scriptRegistry) __g.__scriptRegistry = new Map<string, ScriptToken>()
+
+function getCallerFile(): string {
+  const stack = new Error().stack || ''
+  // SM60: "fn@specifier:line:col" — caller is 2+ frames up
+  const lines = stack.split('\n')
+  for (let i = 2; i < lines.length; i++) {
+    const m = lines[i]!.match(/@(.+?):\d+/)
+    if (m && m[1] !== 'diablo:game' && !m[1]!.includes('/game/')) return m[1]!
+  }
+  return 'unknown'
+}
+
 // ── Services ──
 
 type ServiceFactory<T> = (game: Game, services: ServiceContainer) => T
@@ -10,7 +27,19 @@ export interface ServiceToken<T> {
 }
 
 export function createService<T>(factory: ServiceFactory<T>): ServiceToken<T> {
-  return { __brand: 'service', factory }
+  const key = getCallerFile()
+  const registry = __g.__svcRegistry as Map<string, ServiceToken<any>>
+
+  const existing = registry.get(key)
+  if (existing) {
+    // Reload: update factory on the same token object
+    existing.factory = factory
+    return existing as ServiceToken<T>
+  }
+
+  const token: ServiceToken<T> = { __brand: 'service', factory }
+  registry.set(key, token)
+  return token
 }
 
 export class ServiceContainer {
@@ -22,6 +51,23 @@ export class ServiceContainer {
       this.instances.set(token, token.factory(this.game, this))
     }
     return this.instances.get(token)!
+  }
+
+  /** Patch all instantiated services with updated factory methods. */
+  patchAll() {
+    this.game._clearPacketHooks()
+    for (const [token, oldInstance] of this.instances) {
+      try {
+        const newInstance = token.factory(this.game, this)
+        for (const key of Object.keys(newInstance)) {
+          if (typeof newInstance[key] === 'function') {
+            oldInstance[key] = newInstance[key]
+          }
+        }
+      } catch (e: any) {
+        this.game.log('[hot-reload] service patch error: ' + (e.message || String(e)))
+      }
+    }
   }
 }
 
@@ -35,7 +81,18 @@ export interface ScriptToken {
 }
 
 export function createScript(factory: ScriptFactory): ScriptToken {
-  return { __brand: 'script', factory }
+  const key = getCallerFile()
+  const registry = __g.__scriptRegistry as Map<string, ScriptToken>
+
+  const existing = registry.get(key)
+  if (existing) {
+    existing.factory = factory
+    return existing
+  }
+
+  const token: ScriptToken = { __brand: 'script', factory }
+  registry.set(key, token)
+  return token
 }
 
 // ── Bot ──
@@ -48,17 +105,43 @@ export interface BotToken {
   factory: BotFactory
 }
 
+interface BotState {
+  game: Game
+  svc: ServiceContainer
+  mainGen: Generator<void> | null
+  activeGens: Generator<void>[]
+  wasInGame: boolean
+  frameCount: number
+  pendingFactory: BotFactory | null
+}
+
 export function createBot(name: string, factory: BotFactory): BotToken {
   const token: BotToken = { __brand: 'bot', name, factory }
 
-  // Install scheduler on globalThis.__onTick
+  // Check for existing bot state (hot-reload)
+  const existingState = __g.__botState as BotState | undefined
+  if (existingState) {
+    // Hot-reload: patch services, queue new factory for next game join
+    existingState.pendingFactory = factory
+    existingState.svc.patchAll()
+    existingState.game.log('[' + name + '] hot-reloaded — services patched, new bot factory queued')
+    return token
+  }
+
+  // First load: set up fresh state
   const game = new Game()
   const svc = new ServiceContainer(game)
 
-  let mainGen: Generator<void> | null = null
-  let activeGens: Generator<void>[] = []
-  let wasInGame = false
-  let frameCount = 0
+  const state: BotState = {
+    game,
+    svc,
+    mainGen: null,
+    activeGens: [],
+    wasInGame: false,
+    frameCount: 0,
+    pendingFactory: null,
+  }
+  __g.__botState = state
 
   function startScripts(scripts: ScriptToken[]): Generator<void>[] {
     const gens: Generator<void>[] = []
@@ -72,60 +155,68 @@ export function createBot(name: string, factory: BotFactory): BotToken {
     return gens
   }
 
-  const __g = Function('return this')()
-
   // Packet hook — called synchronously from native before S2C handler dispatch
   __g.__onPacket = function onPacket(opcode: number): boolean {
     return game._handlePacket(opcode)
   }
 
   __g.__onTick = function onTick() {
-    frameCount++
-    game._frame = frameCount
+    state.frameCount++
+    game._frame = state.frameCount
     const nowInGame = game.inGame
 
     // Detect game state transitions
-    if (!wasInGame && nowInGame) {
-      // Joined game — start inGame + always scripts
-      frameCount = 0
+    if (!state.wasInGame && nowInGame) {
+      // Joined game — consume pending factory if hot-reload happened
+      if (state.pendingFactory) {
+        game.load.clear()
+        game._clearPacketHooks()
+        // Re-create service container with updated token factories
+        const newSvc = new ServiceContainer(game)
+        state.svc = newSvc
+        state.mainGen = state.pendingFactory(game, newSvc)
+        state.pendingFactory = null
+      }
+
+      state.frameCount = 0
       game._frame = 0
       game.log('[' + name + '] joined game')
-      activeGens = [
+      state.activeGens = [
         ...startScripts(game.load.inGameScripts),
         ...startScripts(game.load.alwaysScripts),
       ]
-    } else if (wasInGame && !nowInGame) {
+    } else if (state.wasInGame && !nowInGame) {
       // Left game — kill inGame, start oog + always scripts
       game.clearPlayer()
       game.log('[' + name + '] left game')
-      activeGens = [
+      state.activeGens = [
         ...startScripts(game.load.oogScripts),
         ...startScripts(game.load.alwaysScripts),
       ]
     }
-    wasInGame = nowInGame
+    state.wasInGame = nowInGame
 
     // Create main generator on first tick
-    if (!mainGen) {
-      mainGen = factory(game, svc)
+    if (!state.mainGen) {
+      state.mainGen = factory(game, state.svc)
     }
 
     // Step main generator
     try {
-      const r = mainGen.next()
-      if (r.done) mainGen = null
+      const r = state.mainGen.next()
+      if (r.done) state.mainGen = null
     } catch (e: any) {
       const errMsg = '[' + name + '] FATAL: ' + (e.message || String(e))
       game.log(errMsg)
       game.print(colorText(errMsg, GameColor.Red))
-      mainGen = null
+      state.mainGen = null
       game.exitGame()
       return
     }
 
     // Step all active background generators, remove finished ones
     const alive: Generator<void>[] = []
-    for (const gen of activeGens) {
+    for (const gen of state.activeGens) {
       try {
         const r = gen.next()
         if (!r.done) alive.push(gen)
@@ -135,7 +226,7 @@ export function createBot(name: string, factory: BotFactory): BotToken {
         game.print(colorText(errMsg, GameColor.Red))
       }
     }
-    activeGens = alive
+    state.activeGens = alive
   }
 
   return token

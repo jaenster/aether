@@ -20,6 +20,7 @@ import {
   getPacketData,
   injectPacket as nativeInjectPacket,
   getCollision as nativeGetCollision,
+  hasLineOfSight as nativeHasLineOfSight,
 } from "diablo:native"
 import { UnitCollection } from "./unit.collection.js";
 import { ItemUnit, Missile, Monster, NPC, ObjectUnit, PlayerUnit, Tile } from "./unit.js";
@@ -34,6 +35,13 @@ export class ScriptLoader {
   inGame(script: ScriptToken) { this.inGameScripts.push(script) }
   oog(script: ScriptToken) { this.oogScripts.push(script) }
   always(script: ScriptToken) { this.alwaysScripts.push(script) }
+
+  /** Clear all script registrations (used during hot-reload). */
+  clear() {
+    this.inGameScripts.length = 0
+    this.oogScripts.length = 0
+    this.alwaysScripts.length = 0
+  }
 }
 
 
@@ -183,6 +191,11 @@ export class Game {
     handlers.push(handler)
   }
 
+  /** Remove all packet hooks (used during hot-reload to prevent duplicates). */
+  _clearPacketHooks() {
+    this._packetHandlers = new Map()
+  }
+
   /** Called from native __onPacket(opcode). Returns false to block. */
   _handlePacket(opcode: number): boolean {
     const handlers = this._packetHandlers.get(opcode)
@@ -201,6 +214,11 @@ export class Game {
 
   /** Check collision flags at (x,y). Returns 0 if walkable, >0 if blocked, -1 on error. */
   getCollision(x: number, y: number): number { return nativeGetCollision(x, y) }
+
+  /** Check if a straight line from (x1,y1) to (x2,y2) is clear of walls/objects/doors. */
+  hasLineOfSight(x1: number, y1: number, x2: number, y2: number): boolean {
+    return nativeHasLineOfSight(x1, y1, x2, y2) === 1
+  }
 
   // ── Logging ────────────────────────────────────────────────────────
 
