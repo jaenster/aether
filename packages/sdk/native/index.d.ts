@@ -43,6 +43,7 @@
   export function itemGetQuality(unitId: number): number;
   export function itemGetFlags(unitId: number): number;
   export function itemGetLocation(unitId: number): number;
+  export function itemGetLocationRaw(unitId: number): number;
   export function itemGetCode(unitId: number): string;
   export function itemGetRunewordIndex(unitId: number): number;
 
@@ -86,6 +87,10 @@
   export function closeNPCInteract(): void;
   export function npcMenuSelect(menuIndex: number): boolean;
 
+  // Merc
+  /** Returns merc state: -1 = no merc, 0 = dead, 1+ = HP percent */
+  export function getMercState(): number;
+
   // Game control
   export function exitGame(): void;
   export function exitClient(): void;
@@ -102,6 +107,7 @@
 
   // Collision
   export function getCollision(x: number, y: number): number;
+  export function hasLineOfSight(x1: number, y1: number, x2: number, y2: number): number;
 
   // Screen output
   export function printScreen(message: string, color: number): void;

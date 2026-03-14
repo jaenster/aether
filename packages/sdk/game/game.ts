@@ -21,6 +21,7 @@ import {
   injectPacket as nativeInjectPacket,
   getCollision as nativeGetCollision,
   hasLineOfSight as nativeHasLineOfSight,
+  getMercState as nativeGetMercState,
 } from "diablo:native"
 import { UnitCollection } from "./unit.collection.js";
 import { ItemUnit, Missile, Monster, NPC, ObjectUnit, PlayerUnit, Tile } from "./unit.js";
@@ -58,6 +59,11 @@ export class Game {
   _frame = 0
 
   get inGame() { return inGame() }
+
+  /** Merc state: -1 = no merc, 0 = dead, 1+ = HP percent */
+  get mercState(): number { return nativeGetMercState() }
+  get mercDead(): boolean { return nativeGetMercState() === 0 }
+  get hasMerc(): boolean { return nativeGetMercState() !== -1 }
   get area() { return getArea() }
   get act() { return getAct() }
   get difficulty() { return getDifficulty() }

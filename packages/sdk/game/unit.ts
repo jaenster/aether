@@ -169,6 +169,9 @@ export class NPC extends Monster {
     yield* delay(100)
   }
 
+  /** Select an option from the NPC dialog menu by index. */
+  menuSelect(index: number): boolean { return nativeNpcMenuSelect(index) }
+
   /** Heal at this NPC — the game auto-heals on NPC interaction (HealByPlayerByNPC). */
   *heal() {
     nativeInteract(this.type, this.unitId)

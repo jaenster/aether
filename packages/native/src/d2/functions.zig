@@ -764,6 +764,13 @@ pub const TxtQualityItemsGetLine = cdeclTxt(0x00636B20);
 /// D2NpcTxt
 pub const TxtNpcGetLine = cdeclTxt(0x00656900);
 
+// ============================================================================
+// Merc / Roster
+// ============================================================================
+
+/// D2CLIENT_GetMonsterOwner: __fastcall(nMonsterId) -> owner unit ID
+pub const GetMonsterOwner = fastcall(0x479150, fn (u32) u32);
+
 /// Helper: stdcall txt GetLine wrapper (single u32 param, returns ?[*]u8)
 /// D2Common functions in the monolithic 1.14d exe use __stdcall.
 fn cdeclTxt(comptime addr: usize) type {

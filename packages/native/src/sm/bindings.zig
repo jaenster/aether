@@ -173,6 +173,52 @@ fn jsGetTickCount(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_
     return 1;
 }
 
+// ── Merc bindings ───────────────────────────────────────────────────
+
+/// Returns merc state: -1 = no merc, 0 = dead, >0 = alive (mode)
+/// Walks Room1 chains looking for a merc monster owned by the player (d2bs approach)
+fn jsGetMercState(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const player = globals.playerUnit().* orelse {
+        retInt32(argc, vp, -1);
+        return 1;
+    };
+    const player_id = player.dwUnitId;
+    const act = player.pAct orelse {
+        retInt32(argc, vp, -1);
+        return 1;
+    };
+
+    // Merc classids: A1=271, A2=338, A3=359, A5=560
+    const merc_ids = [_]u32{ 271, 338, 359, 560 };
+
+    // Walk Room1 chains
+    var room1: ?*types.Room1 = act.pRoom1;
+    while (room1) |room| : (room1 = room.pRoomNext) {
+        var unit: ?*types.UnitAny = room.pUnitFirst;
+        while (unit) |u| : (unit = u.pListNext) {
+            if (u.dwType == 1) { // monster
+                for (merc_ids) |mid| {
+                    if (u.dwTxtFileNo == mid) {
+                        // Check owner via D2CLIENT_GetMonsterOwner
+                        const owner = d2.GetMonsterOwner.call(.{u.dwUnitId});
+                        if (owner == player_id) {
+                            // Found our merc — mode 12 = dead
+                            if (u.dwMode == 12) {
+                                retInt32(argc, vp, 0);
+                            } else {
+                                retInt32(argc, vp, 1);
+                            }
+                            return 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    retInt32(argc, vp, -1);
+    return 1;
+}
+
 // ── Unit iteration bindings ──────────────────────────────────────────
 
 fn jsUnitCount(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
@@ -567,14 +613,10 @@ fn jsSelectSkill(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_i
             while (skill) |s| {
                 if (s.pSkillInfo) |si| {
                     if (si.wSkillId == sid) {
-                        // Only set client pointer for skills with real level
-                        // CTA oskills (level=0) use packet-only path
-                        if (s.dwSkillLevel > 0) {
-                            if (left) {
-                                info.pLeftSkill = s;
-                            } else {
-                                info.pRightSkill = s;
-                            }
+                        if (left) {
+                            info.pLeftSkill = s;
+                        } else {
+                            info.pRightSkill = s;
                         }
                         owner_id = s.item_id;
                         break;
@@ -1139,6 +1181,7 @@ const bindings = [_]Binding{
     .{ .name = "inGame", .func = &jsInGame, .nargs = 0 },
     .{ .name = "getDifficulty", .func = &jsGetDifficulty, .nargs = 0 },
     .{ .name = "getTickCount", .func = &jsGetTickCount, .nargs = 0 },
+    .{ .name = "getMercState", .func = &jsGetMercState, .nargs = 0 },
     .{ .name = "log", .func = &jsLog, .nargs = 1 },
     .{ .name = "logVerbose", .func = &jsLogVerbose, .nargs = 1 },
     .{ .name = "printScreen", .func = &jsPrintScreen, .nargs = 2 },
