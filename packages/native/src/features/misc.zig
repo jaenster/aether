@@ -45,6 +45,10 @@ fn init() void {
     // MessagePump (OOG): change conditional JZ to unconditional JMP so Sleep(0) always yields
     _ = patch.writeBytes(0x4FA66F, &[_]u8{0xEB});
 
+    // Allow cow level after killing Cow King — CUBE_SpecialOutput_CowPortal
+    // TEST EAX,EAX → XOR EAX,EAX (always "not killed")
+    _ = patch.writeBytes(0x594179, &[_]u8{ 0x33, 0xC0 });
+
     // Fix LRUCACHE_Unlink null deref at 0x6091E5 (d2bs GameCrashFix)
     // Rewrite 18-byte unguarded unlink with null-checked version:
     //   mov ecx,[eax+10] / jecxz +0D / mov edx,[eax+0C] / test edx,edx / jz +06 / mov [ecx+0C],edx / mov [edx+10],ecx
@@ -72,6 +76,7 @@ fn deinit() void {
     patch.revertRange(0x46e46f, 0x46e486 - 0x46e46f);
     patch.revertRange(0x451C31, 2);
     patch.revertRange(0x4FA66F, 1);
+    patch.revertRange(0x594179, 2);
     patch.revertRange(0x6091D6, 18);
 }
 

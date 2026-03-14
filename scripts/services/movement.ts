@@ -28,10 +28,10 @@ export const Movement = createService((game: Game, services) => {
       const d = dist(game.player.x, game.player.y, targetX, targetY)
       const path = game.findTelePath(targetX, targetY)
       if (path.length === 0) {
-        game.log(`[move] no tele path to ${targetX},${targetY} dist=${d|0}`)
+        // game.log(`[move] no tele path to ${targetX},${targetY} dist=${d|0}`)
         return
       }
-      game.log(`[move] tele ${path.length} hops, dist=${d|0} from=${game.player.x},${game.player.y} to=${targetX},${targetY}`)
+      // game.log(`[move] tele ${path.length} hops, dist=${d|0} from=${game.player.x},${game.player.y} to=${targetX},${targetY}`)
 
       // Select teleport skill — just switch, do NOT cast
       game.selectSkill(cfg.teleport)
@@ -46,7 +46,7 @@ export const Movement = createService((game: Game, services) => {
         const hopDist = dist(game.player.x, game.player.y, wp.x, wp.y)
 
         if (hopDist < threshold) {
-          game.log(`[move] hop ${wi}/${path.length} SKIP close (d=${hopDist|0}) wp=${wp.x},${wp.y}`)
+          // game.log(`[move] hop ${wi}/${path.length} SKIP close (d=${hopDist|0}) wp=${wp.x},${wp.y}`)
           continue
         }
 
@@ -54,7 +54,7 @@ export const Movement = createService((game: Game, services) => {
         if (wi + 1 < path.length) {
           const next = path[wi + 1]!
           if (dist(game.player.x, game.player.y, next.x, next.y) < hopDist) {
-            game.log(`[move] hop ${wi}/${path.length} SKIP closer-to-next wp=${wp.x},${wp.y}`)
+            // game.log(`[move] hop ${wi}/${path.length} SKIP closer-to-next wp=${wp.x},${wp.y}`)
             continue
           }
         }
@@ -65,14 +65,14 @@ export const Movement = createService((game: Game, services) => {
           yield* game.delay(150)
         }
 
-        game.log(`[move] hop ${wi}/${path.length} d=${hopDist|0} me=${game.player.x},${game.player.y} → ${wp.x},${wp.y}`)
+        // game.log(`[move] hop ${wi}/${path.length} d=${hopDist|0} me=${game.player.x},${game.player.y} → ${wp.x},${wp.y}`)
         for (let retries = 0; retries < 3; retries++) {
           totalCasts++
-          game.log(`[move] CAST #${totalCasts} tele → ${wp.x},${wp.y} (hop ${wi} try ${retries}) me=${game.player.x},${game.player.y}`)
+          // game.log(`[move] CAST #${totalCasts} tele → ${wp.x},${wp.y} (hop ${wi} try ${retries}) me=${game.player.x},${game.player.y}`)
           game.castSkillPacket(wp.x, wp.y)
           const moved: unknown = yield* this.waitForMove()
           if (moved) break
-          if (retries === 2) game.log(`[move] hop ${wi} FAILED: stuck at ${game.player.x},${game.player.y}`)
+          // if (retries === 2) game.log(`[move] hop ${wi} FAILED: stuck at ${game.player.x},${game.player.y}`)
         }
       }
 
@@ -82,22 +82,22 @@ export const Movement = createService((game: Game, services) => {
         const fd = dist(game.player.x, game.player.y, targetX, targetY)
         if (fd < threshold) break
         if (fd >= prevFinalDist) {
-          game.log(`[move] final approach stuck at d=${fd|0}, aborting`)
+          // game.log(`[move] final approach stuck at d=${fd|0}, aborting`)
           break
         }
         prevFinalDist = fd
         totalCasts++
-        game.log(`[move] CAST #${totalCasts} final → ${targetX},${targetY} me=${game.player.x},${game.player.y} d=${fd|0}`)
+        // game.log(`[move] CAST #${totalCasts} final → ${targetX},${targetY} me=${game.player.x},${game.player.y} d=${fd|0}`)
         game.castSkillPacket(targetX, targetY)
         yield* this.waitForMove()
       }
-      game.log(`[move] tele done: ${totalCasts} casts for ${path.length} hops`)
+      // game.log(`[move] tele done: ${totalCasts} casts for ${path.length} hops`)
     },
 
     *walkTo(targetX: number, targetY: number) {
       const path = game.findPath(targetX, targetY)
       if (path.length === 0) {
-        game.log(`[move] walkTo: no path to ${targetX},${targetY} from ${game.player.x},${game.player.y}`)
+        // game.log(`[move] walkTo: no path to ${targetX},${targetY} from ${game.player.x},${game.player.y}`)
         return
       }
 
@@ -154,7 +154,7 @@ export const Movement = createService((game: Game, services) => {
       const exits = game.getExits()
       const exit = exits.find(e => e.area === areaId)
       if (!exit) {
-        game.log(`[move] no exit to area ${areaId}`)
+        // game.log(`[move] no exit to area ${areaId}`)
         return false
       }
 
@@ -181,12 +181,12 @@ export const Movement = createService((game: Game, services) => {
         if (tile) {
           game.interact(tile)
         } else {
-          game.log(`[move] no tile unit for area ${areaId}`)
+          // game.log(`[move] no tile unit for area ${areaId}`)
         }
 
         if (yield* game.waitForArea(areaId)) return true
       }
-      game.log(`[move] exit to area ${areaId} timed out`)
+      // game.log(`[move] exit to area ${areaId} timed out`)
       return false
     },
 
@@ -208,7 +208,7 @@ export const Movement = createService((game: Game, services) => {
     *useWaypoint(destArea: Area) {
       const preset = this.findWaypointPreset()
       if (!preset) {
-        game.log(`[move] no waypoint preset in area ${game.area}`)
+        // game.log(`[move] no waypoint preset in area ${game.area}`)
         return false
       }
 
@@ -217,7 +217,7 @@ export const Movement = createService((game: Game, services) => {
 
       const wpUnit = this.findWaypointUnit(preset.x, preset.y)
       if (!wpUnit) {
-        game.log(`[move] waypoint unit not found near ${preset.x},${preset.y}`)
+        // game.log(`[move] waypoint unit not found near ${preset.x},${preset.y}`)
         return false
       }
 
@@ -230,11 +230,11 @@ export const Movement = createService((game: Game, services) => {
       game.interact(wpUnit)
       yield* game.delay(500)
 
-      game.log(`[move] waypoint → area ${destArea} (wpUnit=${wpUnit.unitId})`)
+      // game.log(`[move] waypoint → area ${destArea} (wpUnit=${wpUnit.unitId})`)
       game.takeWaypoint(wpUnit.unitId, destArea)
 
       if (yield* game.waitForArea(destArea, 200)) {
-        game.log(`[move] waypoint travel succeeded, now in area ${game.area}`)
+        // game.log(`[move] waypoint travel succeeded, now in area ${game.area}`)
         return true
       }
       throw new Error(`[move] waypoint travel failed (still in area ${game.area}, target was ${destArea})`)
@@ -243,25 +243,20 @@ export const Movement = createService((game: Game, services) => {
     *journeyTo(targetArea: Area) {
       if (game.area === targetArea) return
 
-      game.log(`[move] journeyTo ${targetArea} from area ${game.area}`)
-
       const route = findBestWaypoint(targetArea)
       if (!route) {
-        game.log(`[move] no route to area ${targetArea}`)
-        return
+        throw new Error(`[move] no route to area ${targetArea} from ${game.area}`)
       }
 
       if (game.area !== route.wpArea) {
         const ok: unknown = yield* this.useWaypoint(route.wpArea)
-        if (!ok) return
+        if (!ok) throw new Error(`[move] waypoint to ${route.wpArea} failed`)
       }
 
       for (const nextArea of route.exitPath) {
         const ok: unknown = yield* this.takeExit(nextArea)
-        if (!ok) return
+        if (!ok) throw new Error(`[move] exit to area ${nextArea} failed (journey to ${targetArea})`)
       }
-
-      game.log(`[move] arrived at area ${targetArea}`)
     },
   }
 })

@@ -35,24 +35,101 @@ export function getTown(area: Area): Area {
   return Area.Harrogath
 }
 
-// Area adjacency for exit-based navigation (waypoint area → target area chains)
+// Area adjacency for exit-based navigation (from waypoint areas to non-waypoint areas)
+// Each entry: area → [areas reachable by walking through exits]
 export const exitGraph: Record<number, number[]> = {
-  // Catacombs (Andy)
-  [Area.CatacombsLvl2]: [Area.CatacombsLvl3],
-  [Area.CatacombsLvl3]: [Area.CatacombsLvl4],
-  // Durance (Meph)
-  [Area.DuranceofHateLvl2]: [Area.DuranceofHateLvl3],
-  // River → Chaos (Diablo)
-  [Area.RiverofFlame]: [Area.ChaosSanctuary],
-  // WSK (Baal)
-  [Area.WorldstoneLvl2]: [Area.WorldstoneLvl3],
-  [Area.WorldstoneLvl3]: [Area.ThroneofDestruction],
-  // Tower (Countess)
+  // ── Act 1 ──────────────────────────────────────────────────────────
+  [Area.RogueEncampment]: [Area.BloodMoor],
+  [Area.BloodMoor]: [Area.ColdPlains, Area.DenofEvil],
+  [Area.ColdPlains]: [Area.StonyField, Area.CaveLvl1, Area.BurialGrounds],
+  [Area.CaveLvl1]: [Area.CaveLvl2],
+  [Area.BurialGrounds]: [Area.Crypt, Area.Mausoleum],
+  [Area.StonyField]: [Area.DarkWood, Area.UndergroundPassageLvl1, Area.Tristram],
+  [Area.UndergroundPassageLvl1]: [Area.UndergroundPassageLvl2],
+  [Area.DarkWood]: [Area.BlackMarsh],
+  [Area.BlackMarsh]: [Area.TamoeHighland, Area.ForgottenTower, Area.HoleLvl1],
+  [Area.HoleLvl1]: [Area.HoleLvl2],
+  [Area.ForgottenTower]: [Area.TowerCellarLvl1],
   [Area.TowerCellarLvl1]: [Area.TowerCellarLvl2],
   [Area.TowerCellarLvl2]: [Area.TowerCellarLvl3],
   [Area.TowerCellarLvl3]: [Area.TowerCellarLvl4],
   [Area.TowerCellarLvl4]: [Area.TowerCellarLvl5],
-  // Nihlathak
+  [Area.TamoeHighland]: [Area.MonasteryGate, Area.PitLvl1],
+  [Area.PitLvl1]: [Area.PitLvl2],
+  [Area.MonasteryGate]: [Area.OuterCloister],
+  [Area.OuterCloister]: [Area.Barracks],
+  [Area.Barracks]: [Area.JailLvl1],
+  [Area.JailLvl1]: [Area.JailLvl2],
+  [Area.JailLvl2]: [Area.JailLvl3],
+  [Area.JailLvl3]: [Area.InnerCloister],
+  [Area.InnerCloister]: [Area.Cathedral],
+  [Area.Cathedral]: [Area.CatacombsLvl1],
+  [Area.CatacombsLvl1]: [Area.CatacombsLvl2],
+  [Area.CatacombsLvl2]: [Area.CatacombsLvl3],
+  [Area.CatacombsLvl3]: [Area.CatacombsLvl4],
+
+  // ── Act 2 ──────────────────────────────────────────────────────────
+  [Area.LutGholein]: [Area.RockyWaste, Area.A2SewersLvl1, Area.HaremLvl1],
+  [Area.A2SewersLvl1]: [Area.A2SewersLvl2],
+  [Area.A2SewersLvl2]: [Area.A2SewersLvl3],
+  [Area.HaremLvl1]: [Area.HaremLvl2],
+  [Area.HaremLvl2]: [Area.PalaceCellarLvl1],
+  [Area.PalaceCellarLvl1]: [Area.PalaceCellarLvl2],
+  [Area.PalaceCellarLvl2]: [Area.PalaceCellarLvl3],
+  [Area.PalaceCellarLvl3]: [Area.ArcaneSanctuary],
+  [Area.RockyWaste]: [Area.DryHills, Area.StonyTombLvl1],
+  [Area.StonyTombLvl1]: [Area.StonyTombLvl2],
+  [Area.DryHills]: [Area.FarOasis, Area.HallsoftheDeadLvl1],
+  [Area.HallsoftheDeadLvl1]: [Area.HallsoftheDeadLvl2],
+  [Area.HallsoftheDeadLvl2]: [Area.HallsoftheDeadLvl3],
+  [Area.FarOasis]: [Area.LostCity, Area.MaggotLairLvl1],
+  [Area.MaggotLairLvl1]: [Area.MaggotLairLvl2],
+  [Area.MaggotLairLvl2]: [Area.MaggotLairLvl3],
+  [Area.LostCity]: [Area.ValleyofSnakes, Area.AncientTunnels],
+  [Area.ValleyofSnakes]: [Area.ClawViperTempleLvl1],
+  [Area.ClawViperTempleLvl1]: [Area.ClawViperTempleLvl2],
+  [Area.ArcaneSanctuary]: [Area.CanyonofMagic],
+  [Area.CanyonofMagic]: [Area.TalRashasTomb1, Area.TalRashasTomb2, Area.TalRashasTomb3,
+    Area.TalRashasTomb4, Area.TalRashasTomb5, Area.TalRashasTomb6, Area.TalRashasTomb7],
+
+  // ── Act 3 ──────────────────────────────────────────────────────────
+  [Area.KurastDocks]: [Area.SpiderForest],
+  [Area.SpiderForest]: [Area.GreatMarsh, Area.SpiderCave, Area.SpiderCavern],
+  [Area.GreatMarsh]: [Area.FlayerJungle],
+  [Area.FlayerJungle]: [Area.LowerKurast, Area.SwampyPitLvl1, Area.FlayerDungeonLvl1],
+  [Area.SwampyPitLvl1]: [Area.SwampyPitLvl2],
+  [Area.SwampyPitLvl2]: [Area.SwampyPitLvl3],
+  [Area.FlayerDungeonLvl1]: [Area.FlayerDungeonLvl2],
+  [Area.FlayerDungeonLvl2]: [Area.FlayerDungeonLvl3],
+  [Area.LowerKurast]: [Area.KurastBazaar],
+  [Area.KurastBazaar]: [Area.UpperKurast, Area.A3SewersLvl1, Area.RuinedTemple, Area.DisusedFane],
+  [Area.A3SewersLvl1]: [Area.A3SewersLvl2],
+  [Area.UpperKurast]: [Area.KurastCauseway, Area.ForgottenTemple, Area.ForgottenReliquary],
+  [Area.KurastCauseway]: [Area.Travincal, Area.RuinedFane, Area.DisusedReliquary],
+  [Area.Travincal]: [Area.DuranceofHateLvl1],
+  [Area.DuranceofHateLvl1]: [Area.DuranceofHateLvl2],
+  [Area.DuranceofHateLvl2]: [Area.DuranceofHateLvl3],
+
+  // ── Act 4 ──────────────────────────────────────────────────────────
+  [Area.PandemoniumFortress]: [Area.OuterSteppes],
+  [Area.OuterSteppes]: [Area.PlainsofDespair],
+  [Area.PlainsofDespair]: [Area.CityoftheDamned],
+  [Area.CityoftheDamned]: [Area.RiverofFlame],
+  [Area.RiverofFlame]: [Area.ChaosSanctuary],
+
+  // ── Act 5 ──────────────────────────────────────────────────────────
+  [Area.Harrogath]: [Area.BloodyFoothills, Area.NihlathaksTemple],
+  [Area.BloodyFoothills]: [Area.FrigidHighlands],
+  [Area.FrigidHighlands]: [Area.ArreatPlateau, Area.Abaddon],
+  [Area.ArreatPlateau]: [Area.CrystalizedPassage, Area.PitofAcheron],
+  [Area.CrystalizedPassage]: [Area.GlacialTrail, Area.FrozenRiver],
+  [Area.GlacialTrail]: [Area.FrozenTundra, Area.DrifterCavern],
+  [Area.FrozenTundra]: [Area.AncientsWay, Area.InfernalPit],
+  [Area.AncientsWay]: [Area.ArreatSummit, Area.IcyCellar],
+  [Area.ArreatSummit]: [Area.WorldstoneLvl1],
+  [Area.WorldstoneLvl1]: [Area.WorldstoneLvl2],
+  [Area.WorldstoneLvl2]: [Area.WorldstoneLvl3],
+  [Area.WorldstoneLvl3]: [Area.ThroneofDestruction],
   [Area.NihlathaksTemple]: [Area.HallsofAnguish],
   [Area.HallsofAnguish]: [Area.HallsofPain],
   [Area.HallsofPain]: [Area.HallsofVaught],
@@ -80,15 +157,19 @@ export function findExitPath(fromArea: Area, toArea: Area): Area[] | null {
   return null
 }
 
-// Find the closest waypoint area that can reach the target via exits
+// Find the waypoint with the shortest exit path to the target
 export function findBestWaypoint(targetArea: Area): { wpArea: Area, exitPath: Area[] } | null {
   if (hasWaypoint(targetArea)) return { wpArea: targetArea, exitPath: [] }
 
   const targetTown = getTown(targetArea)
+  let best: { wpArea: Area, exitPath: Area[] } | null = null
+
   for (const area of wpAreas) {
     if (getTown(area) !== targetTown) continue
     const path = findExitPath(area, targetArea)
-    if (path) return { wpArea: area, exitPath: path }
+    if (path && (!best || path.length < best.exitPath.length)) {
+      best = { wpArea: area, exitPath: path }
+    }
   }
-  return null
+  return best
 }

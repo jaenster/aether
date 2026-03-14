@@ -97,6 +97,11 @@ export function useItem(itemId: number, x: number, y: number) {
   return new Packet(0x20, 12).dword(itemId).dword(x).dword(y).toUint8Array()
 }
 
+/** 0x44: Transmute items in the Horadric Cube */
+export function cubeTransmute() {
+  return new Packet(0x44, 4).dword(0).toUint8Array()
+}
+
 /** 0x4F: Click UI button. Used for gold stash/withdraw, trade accept, etc.
  *  Button IDs: 0x12=CloseStash, 0x13=WithdrawGold, 0x14=StashGold */
 export function clickButton(button: number, complement: number) {
