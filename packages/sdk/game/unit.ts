@@ -3,7 +3,7 @@ import {
   unitGetName, unitGetArea, unitGetOwnerId, unitGetOwnerType,
   unitValid, meGetUnitId,
   monGetSpecType, monGetEnchants, monGetMaxHP,
-  itemGetQuality, itemGetFlags, itemGetLocation, itemGetCode, itemGetRunewordIndex,
+  itemGetQuality, itemGetFlags, itemGetLocation, itemGetLocationRaw, itemGetCode, itemGetRunewordIndex,
   tileGetDestArea,
   sendPacket as nativeSendPacket,
   interact as nativeInteract,
@@ -227,6 +227,8 @@ export class ItemUnit extends Unit {
   get runewordIndex(): number { return itemGetRunewordIndex(this.unitId) }
 
   get location(): number { return itemGetLocation(this.unitId) }
+  /** Raw: (item_location << 8) | game_location — for debugging */
+  get locationRaw(): number { return itemGetLocationRaw(this.unitId) }
   get durability(): number { return this.getStat(72, 0) }
   get maxdurability(): number { return this.getStat(73, 0) }
   get quantity(): number { return this.getStat(70, 0) }

@@ -4,7 +4,10 @@ import type { TownAction, TownContext } from "../action.js"
 import { npcBuy } from "../../packets.js"
 
 function getKeyCount(ctx: TownContext): number {
+  // Check inventory, cube, and stash
   const keys = ctx.game.items.find(i => i.location === 0 && i.code === 'key')
+    ?? ctx.game.items.find(i => i.location === 3 && i.code === 'key')
+    ?? ctx.game.items.find(i => i.location === 4 && i.code === 'key')
   return keys ? keys.quantity : 0
 }
 
@@ -15,7 +18,6 @@ export const keysAction: TownAction = {
 
   check(ctx: TownContext): Urgency {
     const count = getKeyCount(ctx)
-    if (count === 0) return Urgency.Needed
     if (count < 6) return Urgency.Convenience
     return Urgency.Not
   },

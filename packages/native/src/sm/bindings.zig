@@ -430,7 +430,46 @@ fn jsItemGetLocation(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c)
     const unit_id: u32 = @bitCast(argInt32(argc, vp, 0));
     const unit = units.findUnit(4, unit_id) orelse { retInt32(argc, vp, -1); return 1; };
     const data: *types.ItemData = @ptrCast(@alignCast(unit.pUnitData orelse { retInt32(argc, vp, -1); return 1; }));
-    retInt32(argc, vp, @as(i32, data.game_location));
+    // Map to JS location: 0=inv, 1=equipped, 2=belt, 3=cube, 4=stash, 6=vendor
+    //
+    // item_location (0x45): the inventory page (0=player, 3=cube, 4=stash, 6-7=vendor, 255=none)
+    // game_location (0x68): sometimes duplicates page info for container items
+    // body_location (0x44): non-zero = equipped body slot
+    // node_page (0x69):     0=none, 1=inv grid, 2=belt, 3=bodyloc, 4=swapped
+    const page = data.item_location;
+    const grid = data.game_location;
+    const body = data.body_location;
+    const npage = data.node_page;
+
+    // First: check explicit container pages
+    const result: i32 = blk: {
+        // item_location or game_location == 3 → cube
+        if (page == 3 or grid == 3) break :blk 3;
+        // item_location or game_location == 4 → stash
+        if (page == 4 or grid == 4) break :blk 4;
+        // vendor pages
+        if (page == 6 or page == 7 or grid == 6 or grid == 7) break :blk 6;
+
+        // Player-owned: use body_location and node_page to disambiguate
+        if (body != 0) break :blk @as(i32, 1); // equipped (has body slot)
+        if (npage == 2) break :blk @as(i32, 2); // belt
+        if (npage == 3 or npage == 4) break :blk @as(i32, 1); // bodyloc/swapped = equipped
+        // page=0 means INVPAGE_INVENTORY, page=255 means INVPAGE_None
+        // Socketed gems/runes have page=255 + npage=1 (they're in parent's inv grid)
+        if (page == 0) break :blk @as(i32, 0); // genuinely in inventory grid
+        // page=255 with no body/belt = socketed inside another item
+        break :blk @as(i32, -1);
+    };
+    retInt32(argc, vp, result);
+    return 1;
+}
+
+/// Returns (page << 8) | grid — lets JS inspect both raw fields
+fn jsItemGetLocationRaw(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const unit_id: u32 = @bitCast(argInt32(argc, vp, 0));
+    const unit = units.findUnit(4, unit_id) orelse { retInt32(argc, vp, -1); return 1; };
+    const data: *types.ItemData = @ptrCast(@alignCast(unit.pUnitData orelse { retInt32(argc, vp, -1); return 1; }));
+    retInt32(argc, vp, (@as(i32, data.item_location) << 8) | @as(i32, data.game_location));
     return 1;
 }
 
@@ -518,41 +557,32 @@ fn jsSelectSkill(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_i
 
     // Walk the player's skill list to:
     // 1. Update client-side skill pointer so clickAtWorld uses the correct skill
-    // 2. Find the item owner GUID (for CTA-granted skills, must match or server rejects)
+    //    (only for skills with level > 0 — CTA oskills have level=0 and their
+    //    Skill struct becomes invalid after weapon swap back)
+    // 2. Find the item owner GUID for the 0x3C packet
     var owner_id: u32 = 0xFFFFFFFF;
-    var found = false;
-    var skill_count: u32 = 0;
     if (globals.playerUnit().*) |player| {
         if (player.pInfo) |info| {
             var skill = info.pFirstSkill;
             while (skill) |s| {
-                skill_count += 1;
                 if (s.pSkillInfo) |si| {
                     if (si.wSkillId == sid) {
-                        if (left) {
-                            info.pLeftSkill = s;
-                        } else {
-                            info.pRightSkill = s;
+                        // Only set client pointer for skills with real level
+                        // CTA oskills (level=0) use packet-only path
+                        if (s.dwSkillLevel > 0) {
+                            if (left) {
+                                info.pLeftSkill = s;
+                            } else {
+                                info.pRightSkill = s;
+                            }
                         }
                         owner_id = s.item_id;
-                        found = true;
-                        log.hex("selectSkill: found id=", sid);
-                        log.hex("  owner_id=", owner_id);
-                        log.hex("  level=", s.dwSkillLevel);
                         break;
                     }
                 }
                 skill = s.pNextSkill;
             }
-            if (!found) {
-                log.hex("selectSkill: NOT FOUND id=", sid);
-                log.hex("  skills in list=", skill_count);
-            }
-        } else {
-            log.print("selectSkill: no pInfo");
         }
-    } else {
-        log.print("selectSkill: no player");
     }
 
     // Send packet 0x3C with correct owner (item GUID for CTA, 0xFFFFFFFF for natural)
@@ -1136,6 +1166,7 @@ const bindings = [_]Binding{
     .{ .name = "itemGetQuality", .func = &jsItemGetQuality, .nargs = 1 },
     .{ .name = "itemGetFlags", .func = &jsItemGetFlags, .nargs = 1 },
     .{ .name = "itemGetLocation", .func = &jsItemGetLocation, .nargs = 1 },
+    .{ .name = "itemGetLocationRaw", .func = &jsItemGetLocationRaw, .nargs = 1 },
     .{ .name = "itemGetCode", .func = &jsItemGetCode, .nargs = 1 },
     .{ .name = "itemGetRunewordIndex", .func = &jsItemGetRunewordIndex, .nargs = 1 },
     // Tile properties
@@ -1181,6 +1212,7 @@ const bindings = [_]Binding{
     .{ .name = "injectPacket", .func = &jsInjectPacket, .nargs = 1 },
     // Collision
     .{ .name = "getCollision", .func = &jsGetCollision, .nargs = 2 },
+    .{ .name = "hasLineOfSight", .func = &jsHasLineOfSight, .nargs = 4 },
 };
 
 /// Comptime-generated ES module source for "diablo:native".

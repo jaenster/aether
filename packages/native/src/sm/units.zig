@@ -49,6 +49,9 @@ pub fn snapshotUnits(unit_type: u32) u32 {
     // Items: also check client-side hash table (shop items live there)
     if (unit_type == 4) {
         snapshotHashTable(globals.clientSideUnits().get(unit_type), unit_type);
+        // Also walk the player's inventory linked list (tomes, keys, scrolls
+        // may not appear in the hash table on the client side)
+        snapshotInventoryItems();
     }
 
     return snapshot_len;
@@ -77,6 +80,35 @@ fn snapshotRoomUnits(unit_type: u32) u32 {
     snapshotHashTable(globals.serverSideUnits().get(unit_type), unit_type);
     snapshotHashTable(globals.clientSideUnits().get(unit_type), unit_type);
     return snapshot_len;
+}
+
+/// Walk the player's inventory linked list (pFirstItem → pNextItem chain).
+/// Catches items like tomes, keys, scrolls that may not be in the hash tables.
+fn snapshotInventoryItems() void {
+    const player = globals.playerUnit().* orelse return;
+    const inv = player.pInventory orelse return;
+    var item: ?*UnitAny = inv.pFirstItem;
+    while (item) |u| {
+        // Skip duplicates already captured from hash tables
+        var dup = false;
+        for (snapshot_buf[0..snapshot_len]) |existing| {
+            if (existing.unit_id == u.dwUnitId) {
+                dup = true;
+                break;
+            }
+        }
+        if (!dup) {
+            if (snapshot_len >= snapshot_buf.len) return;
+            snapshot_buf[snapshot_len] = .{
+                .unit_type = 4,
+                .unit_id = u.dwUnitId,
+            };
+            snapshot_len += 1;
+        }
+        // Inventory items are linked via pItemData->pNextItem
+        const data: *types.ItemData = @ptrCast(@alignCast(u.pUnitData orelse return));
+        item = data.pNextItem;
+    }
 }
 
 fn snapshotHashTable(table: ?*types.UnitHashTable, unit_type: u32) void {
@@ -130,6 +162,8 @@ pub fn findUnit(unit_type: u32, unit_id: u32) ?*UnitAny {
     // Items: also check client-side table (shop items)
     if (unit_type == 4) {
         if (findInHashTable(globals.clientSideUnits().get(4), unit_id)) |u| return u;
+        // Fallback: walk player inventory linked list
+        if (findInInventory(unit_id)) |u| return u;
     }
     return null;
 }
@@ -150,6 +184,18 @@ fn findRoomUnit(unit_type: u32, unit_id: u32) ?*UnitAny {
     // Fallback: check both hash tables
     if (findInHashTable(globals.serverSideUnits().get(unit_type), unit_id)) |u| return u;
     if (findInHashTable(globals.clientSideUnits().get(unit_type), unit_id)) |u| return u;
+    return null;
+}
+
+fn findInInventory(unit_id: u32) ?*UnitAny {
+    const player = globals.playerUnit().* orelse return null;
+    const inv = player.pInventory orelse return null;
+    var item: ?*UnitAny = inv.pFirstItem;
+    while (item) |u| {
+        if (u.dwUnitId == unit_id) return u;
+        const data: *types.ItemData = @ptrCast(@alignCast(u.pUnitData orelse return null));
+        item = data.pNextItem;
+    }
     return null;
 }
 

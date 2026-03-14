@@ -7,9 +7,9 @@ import {
 } from "../../item-data.js"
 import { npcBuy } from "../../packets.js"
 
-/** Extra HP/MP pots to keep in inventory as buffer */
-const HP_BUFFER = 3
-const MP_BUFFER = 3
+/** Extra HP/MP pots to keep in inventory as buffer (0 = belt only) */
+const HP_BUFFER = 0
+const MP_BUFFER = 0
 
 function getBeltSize(ctx: TownContext): number {
   const belt = ctx.game.items.find(i => i.location === 1 && beltCodes.has(i.code))

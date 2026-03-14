@@ -3,13 +3,16 @@ import { NpcFlags } from "../npc-flags.js"
 import type { TownAction, TownContext } from "../action.js"
 import { npcBuy } from "../../packets.js"
 
-function getTpTome(ctx: TownContext) {
-  return ctx.game.items.find(i => i.location === 0 && i.code === 'tbk') ?? null
+/** Find a tome by code anywhere the player has access to (inv > cube > stash) */
+function findTome(ctx: TownContext, code: string) {
+  return ctx.game.items.find(i => i.location === 0 && i.code === code)
+    ?? ctx.game.items.find(i => i.location === 3 && i.code === code)
+    ?? ctx.game.items.find(i => i.location === 4 && i.code === code)
+    ?? null
 }
 
-function getIdTome(ctx: TownContext) {
-  return ctx.game.items.find(i => i.location === 0 && i.code === 'ibk') ?? null
-}
+function getTpTome(ctx: TownContext) { return findTome(ctx, 'tbk') }
+function getIdTome(ctx: TownContext) { return findTome(ctx, 'ibk') }
 
 export const scrollAction: TownAction = {
   type: 'scroll',
@@ -18,10 +21,10 @@ export const scrollAction: TownAction = {
 
   check(ctx: TownContext): Urgency {
     const tpTome = getTpTome(ctx)
+    const idTome = getIdTome(ctx)
     if (!tpTome) return Urgency.Needed
     if (tpTome.quantity < 5) return Urgency.Needed
 
-    const idTome = getIdTome(ctx)
     if (!idTome) return Urgency.Needed
     if (idTome.quantity < 5) return Urgency.Needed
 

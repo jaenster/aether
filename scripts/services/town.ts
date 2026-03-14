@@ -19,6 +19,28 @@ export const Town = createService((game: Game, services) => {
     return { game, move, grading }
   }
 
+  const urgencyNames = ['Not', 'Convenience', 'Needed', 'TownVisitWorthy']
+
+  /** Pre-calculate the town plan and return it (without going to town). */
+  function assessPlan(): TownPlan {
+    const ctx = makeContext()
+
+    // Log each action's urgency
+    const details: string[] = []
+    for (const action of townActions) {
+      const u = action.check(ctx)
+      if (u > Urgency.Not) details.push(`${action.type}=${urgencyNames[u]}`)
+    }
+    if (details.length > 0) {
+      game.log(`[town:assess] ${details.join(', ')}`)
+    } else {
+      game.log(`[town:assess] all checks passed — nothing needed`)
+    }
+    const plan = new TownPlan(townActions, ctx)
+    plan.calculate()
+    return plan
+  }
+
   return {
     *goToTown(act?: number) {
       const town = getTown(game.area)
@@ -66,10 +88,17 @@ export const Town = createService((game: Game, services) => {
       return townAreas.has(game.area)
     },
 
-    /** Full town visit: TP to town, do chores, TP back. */
+    /** Full town visit: TP to town, do chores, TP back. Skips if nothing needed. */
     *visitTown() {
       if (townAreas.has(game.area)) {
         yield* this.planAndExecute()
+        return
+      }
+
+      // Check before TPing — skip the whole trip if nothing to do
+      const plan = assessPlan()
+      if (plan.urgency === Urgency.Not) {
+        game.log(`[town] skipping — nothing needed`)
         return
       }
 
@@ -78,7 +107,7 @@ export const Town = createService((game: Game, services) => {
       // Go to town
       yield* this.goToTown()
 
-      // Do chores
+      // Execute the pre-calculated plan (re-calculate in town for accurate NPC distances)
       yield* this.planAndExecute()
 
       // Return via portal
@@ -95,23 +124,30 @@ export const Town = createService((game: Game, services) => {
 
     /** Plan and execute all needed town tasks using the route optimizer. */
     *planAndExecute() {
-      if (!townAreas.has(game.area)) {
-        yield* this.goToTown()
-      }
-
       this.clearBelt()
 
-      const ctx = makeContext()
-      const plan = new TownPlan(townActions, ctx)
-      plan.calculate()
-
+      const plan = assessPlan()
       if (plan.urgency === Urgency.Not) {
         game.log(`[town] nothing needed`)
         return
       }
 
-      game.log(`[town] plan: ${plan.summary()}`)
-      yield* plan.execute(ctx)
+      if (!townAreas.has(game.area)) {
+        yield* this.goToTown()
+      }
+
+      // Re-calculate in town for accurate NPC distances
+      const ctx = makeContext()
+      const townPlan = new TownPlan(townActions, ctx)
+      townPlan.calculate()
+
+      if (townPlan.urgency === Urgency.Not) {
+        game.log(`[town] nothing needed`)
+        return
+      }
+
+      game.log(`[town] plan: ${townPlan.summary()}`)
+      yield* townPlan.execute(ctx)
       game.log(`[town] plan complete`)
     },
 
