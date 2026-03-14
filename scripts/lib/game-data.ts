@@ -363,7 +363,7 @@ function monsterLevel(monId: number, areaId: number): number {
   return getBaseStat("monstats", monId, "Level");
 }
 
-function monsterMaxHP(monId: number, areaId: number, adjustLevel = 0): number {
+export function monsterMaxHP(monId: number, areaId: number, adjustLevel = 0): number {
   const diff = getDifficulty();
   const mlvl = Math.min(HPLookup.length - 1, monsterLevel(monId, areaId) + adjustLevel);
   const hpField = ["maxHP", "maxHP(N)", "maxHP(H)"][diff]!;

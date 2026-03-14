@@ -90,3 +90,20 @@ export function itemToBuffer(itemId: number) {
 export function bufferToStorage(itemId: number, x: number, y: number, storageId: number) {
   return new Packet(0x19, 16).dword(itemId).dword(x).dword(y).dword(storageId).toUint8Array()
 }
+
+/** 0x20: Use item at current location (right-click tome/scroll in inventory).
+ *  Sends itemId + player world coords. */
+export function useItem(itemId: number, x: number, y: number) {
+  return new Packet(0x20, 12).dword(itemId).dword(x).dword(y).toUint8Array()
+}
+
+/** 0x4F: Click UI button. Used for gold stash/withdraw, trade accept, etc.
+ *  Button IDs: 0x12=CloseStash, 0x13=WithdrawGold, 0x14=StashGold */
+export function clickButton(button: number, complement: number) {
+  return new Packet(0x4F, 6).word(button).dword(complement).toUint8Array()
+}
+
+/** 0x50: Drop gold on the ground */
+export function dropGold(playerId: number, amount: number) {
+  return new Packet(0x50, 8).dword(playerId).dword(amount).toUint8Array()
+}

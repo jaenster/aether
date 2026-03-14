@@ -1,10 +1,30 @@
 import { txtReadField, txtReadFieldU } from "diablo:native";
 
-// Table IDs matching native binding
+// Table IDs matching native binding (must match Zig txtLookup switch)
 const TBL_MONSTATS = 0;
 const TBL_SKILLS = 1;
 const TBL_LEVELS = 2;
 const TBL_MISSILES = 3;
+const TBL_ITEMS = 4;
+const TBL_MONSTATS2 = 5;
+const TBL_STATES = 6;
+const TBL_ITEMSTATCOST = 7;
+const TBL_CHARSTATS = 8;
+const TBL_OBJECTS = 9;
+const TBL_SUPERUNIQUES = 10;
+const TBL_EXPERIENCE = 11;
+const TBL_DIFFICULTYLEVELS = 12;
+const TBL_UNIQUEITEMS = 13;
+const TBL_SETITEMS = 14;
+const TBL_ITEMTYPES = 15;
+const TBL_PROPERTIES = 16;
+const TBL_OVERLAY = 17;
+const TBL_SHRINES = 18;
+const TBL_QUALITYITEMS = 19;
+const TBL_MAGICAFFIXES = 20;
+const TBL_NPC = 21;
+const TBL_LEVELDEFS = 22;
+const TBL_LVLPREST = 23;
 
 // D2MonStatsTxt field offsets (struct size: 0x1A8 = 424 bytes)
 // Verified against Ghidra D2MonStatsTxt struct definition.
@@ -377,13 +397,245 @@ const missilesFields: Record<string, [number, number, boolean?]> = {
   HitShift:   [406, 1],         // 406
 };
 
+// D2ItemsTxt field offsets (struct size: 424 = 0x1A8)
+const itemsFields: Record<string, [number, number, boolean?]> = {
+  szCode:     [128, 4],         // 128 — 4-char code as int
+  dwNormCode: [132, 4],         // 132
+  dwUberCode: [136, 4],         // 136
+  dwUltraCode:[140, 4],         // 140
+  wState:     [152, 2],         // 152
+  wCState1:   [154, 2],         // 154
+  wCState2:   [156, 2],         // 156
+  dwMinAc:    [204, 4],         // 204
+  dwMaxAc:    [208, 4],         // 208
+  dwMinDam:   [212, 4],         // 212
+  dwMaxDam:   [216, 4],         // 216
+  dwCost:     [224, 4],         // 224
+  wNameStr:   [244, 2, true],   // 244
+  nRarity:    [252, 1, true],   // 252
+  nLevel:     [253, 1, true],   // 253
+  nLevelReq:  [254, 1, true],   // 254
+  nStrBonus:  [260, 1],         // 260
+  nDexBonus:  [261, 1],         // 261
+  wType:      [286, 2, true],   // 286
+  wType2:     [288, 2, true],   // 288
+  nDurability:[292, 1, true],   // 292
+  nSockets:   [294, 1, true],   // 294
+  nSpeed:     [296, 1],         // 296
+  nStackable: [300, 1],         // 300
+  nMinStack:  [302, 2, true],   // 302
+  nMaxStack:  [304, 2, true],   // 304
+  wGemOffset: [306, 2],         // 306
+  dwNightmareUpgrade:[412, 4],  // 412
+  dwHellUpgrade:     [416, 4],  // 416
+};
+
+// D2MonStats2Txt field offsets (struct size: 308)
+const monStats2Fields: Record<string, [number, number, boolean?]> = {
+  Id:         [0, 2, true],     // 0
+  SizeX:      [8, 1, true],     // 8
+  SizeY:      [9, 1, true],     // 9
+  MeleeRng:   [14, 1, true],    // 14
+  BaseW:      [16, 4],          // 16
+  TotalPieces:[236, 1, true],   // 236
+};
+
+// D2StatesTxt field offsets (struct size: 60)
+const statesFields: Record<string, [number, number, boolean?]> = {
+  state:      [0, 2, true],     // 0
+  overlay1:   [2, 2],           // 2
+  overlay2:   [4, 2],           // 4
+  overlay3:   [6, 2],           // 6
+  overlay4:   [8, 2],           // 8
+  castoverlay:[10, 2],          // 10
+  removerlay: [12, 2],          // 12
+  stat:       [24, 2],          // 24
+  setfunc:    [26, 2],          // 26
+  remfunc:    [28, 2],          // 28
+  group:      [30, 2],          // 30
+  onsound:    [38, 2],          // 38
+  skill:      [56, 2],          // 56
+  missile:    [58, 2],          // 58
+};
+
+// D2ItemStatCostTxt field offsets (struct size: 324)
+const itemStatCostFields: Record<string, [number, number, boolean?]> = {
+  stat:       [0, 2, true],     // 0
+  dwItemStatFlags:[4, 4, true], // 4
+  sendBits:   [8, 1, true],     // 8
+  sendParamBits:[9, 1, true],   // 9
+  csvbits:    [10, 1, true],    // 10
+  valshift:   [24, 1, true],    // 24
+  saveBits:   [25, 1, true],    // 25
+  saveAdd:    [28, 4],          // 28
+  saveParamBits:[36, 4],        // 36
+  encode:     [48, 1, true],    // 48
+  descfunc:   [54, 1, true],    // 54
+  op:         [84, 1, true],    // 84
+};
+
+// D2CharStatsTxt field offsets (struct size: 196)
+const charStatsFields: Record<string, [number, number, boolean?]> = {
+  str:        [48, 1, true],    // 48
+  dex:        [49, 1, true],    // 49
+  int:        [50, 1, true],    // 50
+  vit:        [51, 1, true],    // 51
+  stamina:    [52, 1, true],    // 52
+  ToHitFactor:[60, 4],          // 60
+  WalkVelocity:[64, 1, true],   // 64
+  RunVelocity:[65, 1, true],    // 65
+  StrAllSkills:[82, 2, true],   // 82
+};
+
+// D2ObjectsTxt field offsets (struct size: 448)
+const objectsFields: Record<string, [number, number, boolean?]> = {
+  Token:      [192, 2, true],   // 192
+  SpawnMax:   [195, 1, true],   // 195
+  SizeX:      [208, 4],         // 208
+  SizeY:      [212, 4],         // 212
+  IsAttackable:[296, 1, true],  // 296
+  NameOffset: [360, 4],         // 360
+  AutoMap:    [444, 4],         // 444
+};
+
+// D2SuperUniquesTxt field offsets (struct size: 52)
+const superUniquesFields: Record<string, [number, number, boolean?]> = {
+  Superunique:[0, 2, true],     // 0
+  Name:       [2, 2, true],     // 2
+  Class:      [4, 4],           // 4 — monster class ID
+  hcIdx:      [8, 4],           // 8
+  Mod1:       [12, 4],          // 12
+  Mod2:       [16, 4],          // 16
+  Mod3:       [20, 4],          // 20
+  MonSound:   [24, 4],          // 24
+  MinGrp:     [28, 4],          // 28
+  MaxGrp:     [32, 4],          // 32
+  AutoPos:    [36, 1, true],    // 36
+  TC:         [44, 2, true],    // 44
+  "TC(N)":    [46, 2, true],    // 46
+  "TC(H)":    [48, 2, true],    // 48
+};
+
+// D2LevelsTxt field offsets (struct size: 544)
+const levelsFields: Record<string, [number, number, boolean?]> = {
+  Id:         [0, 1, true],     // 0
+  Pal:        [2, 1, true],     // 2
+  Act:        [3, 1, true],     // 3
+  Teleport:   [4, 1, true],     // 4
+  MonLvl:     [16, 2, true],    // 16 — normal
+  "MonLvl(N)":[18, 2, true],    // 18
+  "MonLvl(H)":[20, 2, true],    // 20
+  MonLvlEx:   [22, 2, true],    // 22
+  "MonLvlEx(N)":[24, 2, true],  // 24
+  "MonLvlEx(H)":[26, 2, true],  // 26
+  MonDen:     [28, 4],          // 28
+  "MonDen(N)":[32, 4],          // 32
+  "MonDen(H)":[36, 4],          // 36
+  SoundEnv:   [540, 1, true],   // 540
+};
+
+// D2ExperienceTxt field offsets (struct size: 32)
+// Each row = one level. 7 class columns + ExpRatio.
+const experienceFields: Record<string, [number, number, boolean?]> = {
+  Amazon:     [0, 4, true],     // 0
+  Sorceress:  [4, 4, true],     // 4
+  Necromancer:[8, 4, true],     // 8
+  Paladin:    [12, 4, true],    // 12
+  Barbarian:  [16, 4, true],    // 16
+  Druid:      [20, 4, true],    // 20
+  Assassin:   [24, 4, true],    // 24
+  ExpRatio:   [28, 4, true],    // 28
+};
+
+// D2DifficultyLevelsTxt field offsets (struct size: 88)
+const difficultyLevelsFields: Record<string, [number, number, boolean?]> = {
+  ResistPenalty:     [0, 4],    // 0
+  DeathExpPenalty:   [4, 4],    // 4
+  MonsterSkillBonus: [16, 4],   // 16
+  MonsterFreezeDivisor:[20, 4], // 20
+  LifeStealDivisor:  [40, 4],  // 40
+  StaticFieldMin:    [64, 4],   // 64
+  GambleRare:        [68, 4],   // 68
+  GambleUnique:      [76, 4],   // 76
+};
+
+// D2UniqueItemsTxt field offsets (struct size: 332)
+const uniqueItemsFields: Record<string, [number, number, boolean?]> = {
+  version:    [36, 2, true],    // 36
+  code:       [40, 4],          // 40 — 4-char item code
+  rarity:     [48, 2, true],    // 48
+  lvl:        [52, 2, true],    // 52
+  lvlReq:     [54, 2, true],    // 54
+  costMult:   [124, 4],         // 124
+  costAdd:    [128, 4],         // 128
+};
+
+// D2SetItemsTxt field offsets (struct size: 440)
+const setItemsFields: Record<string, [number, number, boolean?]> = {
+  nId:        [0, 2, true],     // 0
+  version:    [34, 2, true],    // 34
+  item:       [40, 4],          // 40 — 4-char item code
+  set:        [44, 2, true],    // 44
+  setIndex:   [46, 2, true],    // 46
+  lvl:        [48, 2, true],    // 48
+  lvlReq:     [50, 2, true],    // 50
+  rarity:     [52, 4],          // 52
+};
+
+// D2ItemTypesTxt field offsets (struct size: 228)
+const itemTypesFields: Record<string, [number, number, boolean?]> = {
+  code:       [0, 4],           // 0 — 4-char type code
+  equiv1:     [4, 2],           // 4
+  equiv2:     [6, 2],           // 6
+  repair:     [8, 1, true],     // 8
+  body:       [9, 1, true],     // 9
+  shoots:     [12, 2],          // 12
+  quiver:     [14, 2],          // 14
+  throwable:  [16, 1, true],    // 16
+  charm:      [23, 1, true],    // 23
+  gem:        [24, 1, true],    // 24
+  beltable:   [25, 1, true],    // 25
+  maxsock1:   [26, 1, true],    // 26 — max sockets lvl 1-25
+  maxsock25:  [27, 1, true],    // 27 — max sockets lvl 25-40
+  maxsock40:  [28, 1, true],    // 28 — max sockets lvl 40+
+  staffmods:  [31, 1, true],    // 31
+};
+
+// D2PropertiesTxt field offsets (struct size: 46)
+const propertiesFields: Record<string, [number, number, boolean?]> = {
+  code:       [0, 2, true],     // 0
+  set1:       [2, 1, true],     // 2
+  val1:       [10, 2],          // 10
+  func1:      [24, 1, true],    // 24
+  stat1:      [32, 2],          // 32
+};
+
 const tableMap: Record<string, [number, Record<string, [number, number, boolean?]>]> = {
-  monstats:  [TBL_MONSTATS, monStatsFields],
-  monstats2: [TBL_MONSTATS, monStatsFields], // TODO: separate monstats2 if needed
-  skills:    [TBL_SKILLS, skillsFields],
-  Skills:    [TBL_SKILLS, skillsFields],
-  levels:    [TBL_LEVELS, {}], // TODO: add level field offsets when needed
-  missiles:  [TBL_MISSILES, missilesFields],
+  monstats:        [TBL_MONSTATS, monStatsFields],
+  skills:          [TBL_SKILLS, skillsFields],
+  Skills:          [TBL_SKILLS, skillsFields],
+  levels:          [TBL_LEVELS, levelsFields],
+  missiles:        [TBL_MISSILES, missilesFields],
+  items:           [TBL_ITEMS, itemsFields],
+  monstats2:       [TBL_MONSTATS2, monStats2Fields],
+  states:          [TBL_STATES, statesFields],
+  itemstatcost:    [TBL_ITEMSTATCOST, itemStatCostFields],
+  charstats:       [TBL_CHARSTATS, charStatsFields],
+  objects:         [TBL_OBJECTS, objectsFields],
+  superuniques:    [TBL_SUPERUNIQUES, superUniquesFields],
+  experience:      [TBL_EXPERIENCE, experienceFields],
+  difficultylevels:[TBL_DIFFICULTYLEVELS, difficultyLevelsFields],
+  uniqueitems:     [TBL_UNIQUEITEMS, uniqueItemsFields],
+  setitems:        [TBL_SETITEMS, setItemsFields],
+  itemtypes:       [TBL_ITEMTYPES, itemTypesFields],
+  properties:      [TBL_PROPERTIES, propertiesFields],
+  overlay:         [TBL_OVERLAY, {}],
+  shrines:         [TBL_SHRINES, {}],
+  qualityitems:    [TBL_QUALITYITEMS, {}],
+  magicaffixes:    [TBL_MAGICAFFIXES, {}],
+  npc:             [TBL_NPC, {}],
+  leveldefs:       [TBL_LEVELDEFS, {}],
+  lvlprest:        [TBL_LVLPREST, {}],
 };
 
 export function getBaseStat(table: string, id: number, field: string): number {
@@ -405,4 +657,10 @@ export function getBaseStat(table: string, id: number, field: string): number {
   return unsigned ? txtReadFieldU(tableId, id, offset, size) : txtReadField(tableId, id, offset, size);
 }
 
-export { monStatsFields, skillsFields, missilesFields, monStatsFlagBits };
+export {
+  monStatsFields, skillsFields, missilesFields, itemsFields, monStats2Fields,
+  statesFields, itemStatCostFields, charStatsFields, objectsFields,
+  superUniquesFields, levelsFields, experienceFields, difficultyLevelsFields,
+  uniqueItemsFields, setItemsFields, itemTypesFields, propertiesFields,
+  monStatsFlagBits,
+};

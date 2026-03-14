@@ -2,7 +2,7 @@ import type { Monster } from "diablo:game"
 import { getUnitStat, getDifficulty, getUnitHP, getUnitMaxHP, getUnitMP, getUnitMaxMP } from "diablo:native"
 import { Stat } from "diablo:constants"
 import { getBaseStat } from "./txt.js"
-import { monsterEffort } from "./game-data.js"
+import { monsterEffort, monsterMaxHP } from "./game-data.js"
 import { isReviver } from "./monster-data.js"
 
 // ── Element mapping ──────────────────────────────────────────────────
@@ -38,12 +38,45 @@ const ENCH = {
 } as const
 
 // ── Known dangerous classids ─────────────────────────────────────────
-const deathExplosion = new Set([306, 307, 308, 309, 310, 311, 312, 313, 314, 315])
-const gloamClassids = new Set([258, 259, 260, 261, 262])
-const oblKnightClassids = new Set([365, 366, 367, 368, 369])
-const viperClassids = new Set([247, 248, 249, 250, 251])
+// Stygian Dolls — explode on death for massive damage
+const deathExplosion = new Set([145, 216, 400, 657, 660, 690])
+// Gloams — instant lightning (118=Gloam, 120=BurningSoul, 121=BlackSoul + hell variants)
+const gloamClassids = new Set([118, 120, 121, 639, 640, 641])
+// Oblivion Knights — IM / Lower Resist / Bone Spirit (312=base, 701-702=Chaos variants)
+// NOTE: 310=DoomKnight, 311=AbyssKnight are melee, NOT Oblivion Knights
+const oblKnightClassids = new Set([312, 701, 702])
+// Vipers — bugged poison cloud (73=Tomb, 74=Claw, 76=Pit + variants)
+const viperClassids = new Set([73, 74, 76, 594, 595, 597])
 // Souls / Burning Souls (gloam subtype, hit harder)
-const soulClassids = new Set([260, 261, 262])
+const soulClassids = new Set([120, 121, 640, 641])
+
+// Known extra elemental damage for monsters whose skill damage can't be read from txt
+// Per-difficulty estimates: [Normal, Nightmare, Hell]
+const knownExtraDamage: Record<number, { element: string, avgDmg: [number, number, number] }[]> = {
+  // Diablo (cls=243) — fire nova, lightning hose, cold touch
+  243: [
+    { element: "Fire", avgDmg: [30, 100, 200] },
+    { element: "Lightning", avgDmg: [40, 150, 300] },
+    { element: "Cold", avgDmg: [20, 75, 150] },
+  ],
+  // Baal (cls=544)
+  544: [
+    { element: "Cold", avgDmg: [35, 120, 250] },
+    { element: "Fire", avgDmg: [30, 100, 200] },
+    { element: "Lightning", avgDmg: [30, 100, 200] },
+  ],
+  // Oblivion Knights (312=base, 701-702=Chaos) — Bone Spirit
+  312: [{ element: "Magic", avgDmg: [0, 80, 200] }],
+  701: [{ element: "Magic", avgDmg: [0, 80, 200] }],
+  702: [{ element: "Magic", avgDmg: [0, 80, 200] }],
+  // Gloams/Souls — instant lightning
+  118: [{ element: "Lightning", avgDmg: [30, 120, 250] }],
+  120: [{ element: "Lightning", avgDmg: [40, 160, 350] }],
+  121: [{ element: "Lightning", avgDmg: [45, 175, 375] }],
+  639: [{ element: "Lightning", avgDmg: [30, 120, 250] }],
+  640: [{ element: "Lightning", avgDmg: [45, 175, 375] }],
+  641: [{ element: "Lightning", avgDmg: [50, 190, 400] }],
+}
 
 // ── State IDs ────────────────────────────────────────────────────────
 const STATE_FROZEN = 1
@@ -142,6 +175,41 @@ function getProfile(classid: number): MonsterProfile {
     addOrMergeDamage(baseDamage, elTypeNames[elType]!, (elMin + elMax) / 2)
   }
 
+  // Monster skills (Skill1-8) — look up missile for elemental damage
+  for (let si = 1; si <= 8; si++) {
+    const skillId = getBaseStat("monstats", classid, `Skill${si}`)
+    if (skillId <= 0) continue
+
+    // Find the missile this skill fires (srvmissilea is used by most monster skills)
+    let misId = getBaseStat("skills", skillId, "srvmissile")
+    if (misId <= 0) misId = getBaseStat("skills", skillId, "srvmissilea")
+    if (misId <= 0 || misId > 567) continue
+
+    const eType = getBaseStat("missiles", misId, "EType")
+    if (eType <= 0 || eType >= elTypeNames.length) continue
+
+    const eMin = getBaseStat("missiles", misId, "EMin")
+    const eMax = getBaseStat("missiles", misId, "EMax")
+    if (eMin <= 0 && eMax <= 0) continue
+
+    // Missile EMin/EMax are the actual base damage values from missiles.txt
+    // Use as-is — no arbitrary scaling
+    const missileDmg = (eMin + eMax) / 2
+
+    // Monsters alternate between melee and skills; weight skill damage
+    const skillWeight = baseDamage.length > 0 ? 0.5 : 1.0
+    addOrMergeDamage(baseDamage, elTypeNames[eType]!, missileDmg * skillWeight)
+  }
+
+  // Known extra damage overrides for monsters with complex skill-based attacks
+  const extras = knownExtraDamage[classid]
+  if (extras) {
+    for (const { element, avgDmg } of extras) {
+      const dmg = avgDmg[diff] ?? avgDmg[0]!
+      if (dmg > 0) addOrMergeDamage(baseDamage, element, dmg)
+    }
+  }
+
   // Ranged detection
   const missA1 = getBaseStat("monstats", classid, "MissA1")
   const missA2 = getBaseStat("monstats", classid, "MissA2")
@@ -158,11 +226,15 @@ function getProfile(classid: number): MonsterProfile {
   if (oblKnightClassids.has(classid)) innateFlags.push("oblivion_knight")
   if (viperClassids.has(classid)) innateFlags.push("viper")
 
-  // Attack speed tier from txt
-  let baseAps = 1.5
+  // Attack speed from aidel (AI delay between actions, in frames)
+  // Lower aidel = faster attacks. Convert to APS: 25 fps / aidel
+  const aidel = diffField3("aidel", classid, diff)
+  let baseAps: number
   if (gloamClassids.has(classid)) baseAps = 2.5
   else if (soulClassids.has(classid)) baseAps = 3.0
+  else if (aidel > 0) baseAps = Math.min(4.0, 25 / aidel)
   else if (isRanged) baseAps = 1.8
+  else baseAps = 1.5
 
   // Pack size
   const minGrp = getBaseStat("monstats", classid, "MinGrp")
@@ -454,8 +526,15 @@ export function assessThreat(mon: Monster): ThreatAssessment {
   }
 
   // ── Effort to kill ─────────────────────────────────────────────────
-  const effort = monsterEffort(mon.classid, 0)
-  const castsToKill = Math.max(1, effort.effort)
+  // monsterEffort uses txt HP; scale by live HP / txt HP ratio for accuracy
+  const area = mon.area
+  const effort = monsterEffort(mon.classid, area)
+  const txtHp = monsterMaxHP(mon.classid, area)
+  const liveHp = mon.hpmax
+  let castsToKill = Math.max(1, effort.effort)
+  if (txtHp > 0 && liveHp > 0 && effort.effort > 0) {
+    castsToKill = Math.max(1, Math.ceil(effort.effort * liveHp / txtHp))
+  }
   const bestSkill = effort.skill
 
   // ── Kill priority: DPS removed per cast invested ───────────────────
@@ -750,18 +829,19 @@ export function assessBattlefield(monsters: Monster[]): BattlefieldAssessment {
   }
 
   // ── 8. Situation danger ────────────────────────────────────────────
-  // Scale by player HP: being at 30% HP with the same DPS is much more dangerous
+  // Use totalFightDamage (how much damage we take while clearing the whole pack)
+  // compared to our HP — this accounts for both monster DPS AND our kill speed
   const hpFactor = Math.max(0.3, playerHpPct)
-  const adjustedDps = totalIncomingDps / hpFactor
+  const adjustedFightDmg = totalFightDamage / hpFactor
 
   let situationDanger: ThreatLevel
-  if (adjustedDps < playerMaxHp * 0.05 || activeThreats === 0) {
+  if (adjustedFightDmg < playerMaxHp * 0.1 || activeThreats === 0) {
     situationDanger = "trivial"
-  } else if (adjustedDps < playerMaxHp * 0.15) {
+  } else if (adjustedFightDmg < playerMaxHp * 0.5) {
     situationDanger = "low"
-  } else if (adjustedDps < playerMaxHp * 0.4) {
+  } else if (adjustedFightDmg < playerMaxHp * 1.5) {
     situationDanger = "medium"
-  } else if (adjustedDps < playerMaxHp * 0.8) {
+  } else if (adjustedFightDmg < playerMaxHp * 3.0) {
     situationDanger = "high"
   } else {
     situationDanger = "extreme"
@@ -786,10 +866,10 @@ export function assessBattlefield(monsters: Monster[]): BattlefieldAssessment {
   let action: TacticalAction = "engage"
   let actionReason = "standard engagement"
 
-  // RETREAT: we're going to die before we can clear
-  if (timeToDeathSec < 2.0 && situationDanger === "extreme") {
+  // RETREAT: total fight damage would kill us
+  if (totalFightDamage > playerHp * 0.9 && situationDanger === "extreme") {
     action = "retreat"
-    actionReason = `TTD=${timeToDeathSec.toFixed(1)}s — we die before clearing`
+    actionReason = `fightDmg=${totalFightDamage | 0} > HP=${playerHp | 0} — we die before clearing`
   }
   // RETREAT: HP critical and surrounded
   else if (playerHpPct < 0.25 && meleePackCount >= 4) {
@@ -843,10 +923,11 @@ export function assessBattlefield(monsters: Monster[]): BattlefieldAssessment {
 
 export function formatThreat(mon: Monster, t: ThreatAssessment): string {
   const parts = [
-    `[${t.threat.toUpperCase()}] ${mon.name ?? `cls=${mon.classid}`}`,
-    `${t.effectiveDps | 0} dps (${t.castsToKill} casts, ${t.dpsPerCast | 0} dps/cast)`,
+    `[${t.threat.toUpperCase()}] ${mon.name ?? `cls=${mon.classid}`} (${mon.classid})`,
+    `${t.effectiveDps | 0} dps d=${mon.distance | 0}`,
+    `${t.castsToKill} casts hp=${mon.hp | 0}/${mon.hpmax | 0}`,
   ]
-  const elems = t.elements.filter(e => e.effectiveDmg > 0).map(e => `${e.element}:${e.effectiveDmg | 0}`).join(" ")
+  const elems = t.elements.filter(e => e.effectiveDmg > 0).map(e => `${e.element}:${e.effectiveDmg | 0}(raw ${e.rawDmg | 0})`).join(" ")
   if (elems) parts.push(elems)
   if (t.dangers.length) parts.push(`! ${t.dangers.join(", ")}`)
   if (t.currentlyCCed) parts.push(t.isFrozen ? "(FROZEN)" : "(CCed)")
