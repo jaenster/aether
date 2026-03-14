@@ -1,12 +1,30 @@
 import { createService, type Game, type Monster } from "diablo:game"
 import { Config } from "../config.js"
 import { Movement } from "./movement.js"
-import { findBestAction, rankActions, skillRange, splashRadius, unitResist, staticFieldEffective, preAttackAdvice, isNova, skillName } from "../lib/game-data.js"
+import { findBestAction, rankActions, skillRange, splashRadius, unitResist, staticFieldEffective, preAttackAdvice, isNova, skillName, skillProjectileType } from "../lib/game-data.js"
 import type { AttackOptions, Pos, CombatSnapshot, MonsterSnapshot, SpawnEvent } from "../lib/attack-types.js"
 import { getUnitHP, getUnitMaxHP, getUnitMP, getDifficulty } from "diablo:native"
 
+// Merc classids: Act1 Rogue=271, Act2 Guard=338, Act3 Iron Wolf=359, Act5 Barb=560
+const mercClassIds = new Set([271, 338, 359, 560])
+// Common summon classids
+const summonClassIds = new Set([
+  363, // Valkyrie
+  417, 418, 419, 420, 421, // Necro skeletons
+  428, // Necro mage
+  357, // Shadow Warrior
+  358, // Shadow Master
+  289, 290, 291, 292, 293, // Druid summons (wolf/bear/spirit)
+])
+
 function alive(m: Monster): boolean {
-  return m.valid && m.hp > 0 && m.mode !== 0 && m.mode !== 12
+  if (!m.valid || m.hp <= 0 || m.mode === 0 || m.mode === 12) return false
+  // Filter out mercs and player summons
+  if (mercClassIds.has(m.classid) || summonClassIds.has(m.classid)) {
+    const p = m.parent
+    if (p && p.type === 0) return false
+  }
+  return true
 }
 
 let combatTick = 0
@@ -206,6 +224,19 @@ export const Attack = createService((game: Game, services) => {
               opts = { ...opts, skillFilter: noStatic }
               continue
             }
+            // Try excluding the current skill — maybe another element works
+            if (action) {
+              const blockedSkill = action.skillId
+              const origFilter = opts?.skillFilter
+              const noBlocked = (sk: number) => sk !== blockedSkill && (!origFilter || origFilter(sk))
+              const retry = findBestAction(casterPos(), filter, allMonsters, game.player.charclass, target, noBlocked, opts?.groupModifier)
+              if (retry && retry.dpsPerFrame > 0) {
+                game.log(`[atk] switching from ${skillName(blockedSkill)} to ${skillName(retry.skillId)} (immune)`)
+                opts = { ...opts, skillFilter: noBlocked }
+                staleCount = 0
+                continue
+              }
+            }
             game.log(`[atk] hp stuck at ${target.hp} — immune, giving up`)
             return
           }
@@ -231,6 +262,14 @@ export const Attack = createService((game: Game, services) => {
           game.log(`[atk] closing to range ${skillRange(action.skillId)} (dist=${target.distance|0}) → ${target.x},${target.y}`)
           yield* move.moveNear(target.x, target.y, skillRange(action.skillId))
           currentSkill = -1 // moveNear may teleport
+        }
+
+        const projType = skillProjectileType(action.skillId)
+        if (projType !== 'ground_aoe' && !game.hasLineOfSight(game.player.x, game.player.y, action.targetPos.x, action.targetPos.y)) {
+          // No LoS after positioning — teleport closer to target and retry
+          yield* move.moveNear(target.x, target.y, 3)
+          currentSkill = -1
+          continue
         }
 
         if (action.skillId !== currentSkill) {
@@ -286,6 +325,11 @@ export const Attack = createService((game: Game, services) => {
         if (!action) {
           if (casts > 0) game.log(`[atk] area clear after ${casts} casts`)
           return
+        }
+
+        if (casts === 0 && primary) {
+          const fr = unitResist(primary, "Fire"), lr = unitResist(primary, "Lightning"), cr = unitResist(primary, "Cold"), pr = unitResist(primary, "Physical")
+          game.log(`[atk] target classid=${primary.classid} res F=${fr} L=${lr} C=${cr} P=${pr} → ${skillName(action.skillId)} dps=${action.dpsPerFrame|0}`)
         }
 
         if (opts?.debugCombat) {
