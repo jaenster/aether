@@ -79,3 +79,14 @@ export function npcRepair(npcId: number, itemId: number, animMode: number, cost:
 export function npcHeal(npcId: number) {
   return new Packet(0x2F, 8).dword(1).dword(npcId).toUint8Array()
 }
+
+/** 0x18: Pick up item to cursor buffer */
+export function itemToBuffer(itemId: number) {
+  return new Packet(0x18, 4).dword(itemId).toUint8Array()
+}
+
+/** 0x19: Place cursor item into storage container.
+ *  storageId: 1=inventory, 3=cube, 4=stash */
+export function bufferToStorage(itemId: number, x: number, y: number, storageId: number) {
+  return new Packet(0x19, 16).dword(itemId).dword(x).dword(y).dword(storageId).toUint8Array()
+}

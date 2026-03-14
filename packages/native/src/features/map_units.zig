@@ -63,14 +63,14 @@ fn drawItems() void {
             const pos = d2.automap.unitPos(unit);
 
             // Ethereal items
-            if (idata.dwFlags & 0x4000000 != 0) {
+            if (idata.dwItemFlags & 0x4000000 != 0) {
                 d2.automap.drawAutomapX(pos.x, pos.y, item_rarity_color[7], 3.0);
                 continue;
             }
 
             // Quality items (magic+) or socketed superior+
             if (idata.dwQuality > 3 or
-                (idata.dwFlags & 0x400800 != 0 and idata.dwQuality > 2 and
+                (idata.dwItemFlags & 0x400800 != 0 and idata.dwQuality > 2 and
                     d2.functions.GetUnitStat.call(unit, 194, 0) >= 2))
             {
                 const qi = if (idata.dwQuality < item_rarity_color.len) idata.dwQuality else 0;

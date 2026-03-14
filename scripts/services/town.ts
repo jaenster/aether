@@ -1,12 +1,22 @@
 import { createService, type Game, type NPC, UiFlags } from "diablo:game"
 import { Config, townAreas } from "../config.js"
 import { Movement } from "./movement.js"
+import { ItemGrading } from "../lib/item/evaluator.js"
 import { getTown } from "../lib/waypoints.js"
 import { npcClose } from "../lib/packets.js"
+import { TownPlan } from "../lib/town/planner.js"
+import { townActions } from "../lib/town/registry.js"
+import { Urgency } from "../lib/town/enums.js"
+import type { TownContext } from "../lib/town/action.js"
 
 export const Town = createService((game: Game, services) => {
   const cfg = services.get(Config)
   const move = services.get(Movement)
+  const grading = services.get(ItemGrading)
+
+  function makeContext(): TownContext {
+    return { game, move, grading }
+  }
 
   return {
     *goToTown() {
@@ -17,6 +27,31 @@ export const Town = createService((game: Game, services) => {
 
     get inTown(): boolean {
       return townAreas.has(game.area)
+    },
+
+    /** Plan and execute all needed town tasks using the route optimizer. */
+    *planAndExecute() {
+      if (!townAreas.has(game.area)) {
+        yield* this.goToTown()
+      }
+
+      const ctx = makeContext()
+      const plan = new TownPlan(townActions, ctx)
+      plan.calculate()
+
+      if (plan.urgency === Urgency.Not) {
+        game.log(`[town] nothing needed`)
+        return
+      }
+
+      game.log(`[town] plan: ${plan.summary()}`)
+      yield* plan.execute(ctx)
+      game.log(`[town] plan complete`)
+    },
+
+    /** Full town routine — delegates to the planner. */
+    *doTownChores() {
+      yield* this.planAndExecute()
     },
 
     /** Heal at the nearest heal NPC if health/mana is low. */
@@ -47,7 +82,6 @@ export const Town = createService((game: Game, services) => {
       game.log(`[town] repairing at ${npc.name}`)
       yield* move.walkTo(npc.x, npc.y)
 
-      // If this NPC also heals (e.g. Fara), heal first
       if (npc.canHeal && (game.player.hp < game.player.hpmax || game.player.mp < game.player.mpmax)) {
         yield* npc.heal()
       }
@@ -75,23 +109,10 @@ export const Town = createService((game: Game, services) => {
     },
 
     *closeTrade(npcUnitId: number) {
-      // Use a temporary NPC wrapper to close
       const npc = game.npcs.find(n => n.unitId === npcUnitId)
       if (npc) {
         yield* npc.close()
       }
-    },
-
-    /** Full town routine: heal, repair, then return. */
-    *doTownChores() {
-      if (!townAreas.has(game.area)) {
-        yield* this.goToTown()
-      }
-
-      game.log(`[town] doing chores in area ${game.area}`)
-      yield* this.heal()
-      yield* this.repair()
-      game.log(`[town] chores complete`)
     },
 
     /** Identify all items at Cain. */
@@ -105,7 +126,6 @@ export const Town = createService((game: Game, services) => {
       game.log(`[town] identifying at ${npc.name}`)
       yield* move.walkTo(npc.x, npc.y)
       yield* npc.interact()
-      // Cain identifies automatically on interaction
       yield* game.delay(1000)
       yield* npc.close()
     },

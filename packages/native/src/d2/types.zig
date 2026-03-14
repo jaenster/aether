@@ -274,12 +274,12 @@ pub const PlayerData = extern struct {
 };
 
 pub const ItemData = extern struct {
-    dwQuality: DWORD, // 0x00
-    dwSeed: [2]DWORD, // 0x04
-    dwItemFlags: DWORD, // 0x0C
-    dwFingerPrint: DWORD, // 0x10
-    _14: DWORD, // 0x14
-    dwFlags: DWORD, // 0x18
+    dwQuality: DWORD, // 0x00 — eD2ItemQuality
+    dwSeed: [2]DWORD, // 0x04 — D2SeedStrc
+    nPlayerGUID: DWORD, // 0x0C
+    nModSeed: DWORD, // 0x10
+    eItemCmd: DWORD, // 0x14 — eD2ItemCmd
+    dwItemFlags: DWORD, // 0x18 — eD2ItemFlag (runeword=0x4000000, identified=0x10, etc.)
     _1C: [2]DWORD, // 0x1C
     dwActionStamp: DWORD, // 0x24
     dwFileIndex: DWORD, // 0x28
@@ -290,21 +290,21 @@ pub const ItemData = extern struct {
     wAutoPrefix: WORD, // 0x36
     wMagicPrefix: [3]WORD, // 0x38
     wMagicSuffix: [3]WORD, // 0x3E
-    body_location: BYTE, // 0x44
-    item_location: BYTE, // 0x45
+    body_location: BYTE, // 0x44 — eD2BodyLoc
+    item_location: BYTE, // 0x45 — eInventoryPage
     _46: WORD, // 0x46
     bEarLevel: BYTE, // 0x48
-    bInvGfxIdx: BYTE, // 0x49
+    bVariant: BYTE, // 0x49
     szPlayerName: [16]u8, // 0x4A
-    _5A: [2]BYTE, // 0x5A padding
+    wRuneWordIndex: WORD, // 0x5A — runeword ID (0=none)
     pOwnerInventory: ?*Inventory, // 0x5C
-    _60: DWORD, // 0x60
-    pNextInvItem: ?*UnitAny, // 0x64
-    game_location: BYTE, // 0x68
-    node_page: BYTE, // 0x69
+    pPrevItem: ?*UnitAny, // 0x60
+    pNextItem: ?*UnitAny, // 0x64
+    game_location: BYTE, // 0x68 — eD2InventoryGrid
+    node_page: BYTE, // 0x69 — eD2InventoryGridType
     _6A: WORD, // 0x6A
-    _6C: [12]WORD, // 0x6C
-    pOwner: ?*UnitAny, // 0x84
+    pPrevItemInPage: ?*UnitAny, // 0x6C
+    pNextItemInPage: ?*UnitAny, // 0x70
 };
 
 pub const MonsterData = extern struct {

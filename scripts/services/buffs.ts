@@ -1,5 +1,6 @@
 import { createService, type Game, type Monster } from "diablo:game"
 import { getSkillLevel as _getSkillLevel, getTickCount, meGetUnitId } from "diablo:native"
+import { townAreas } from "../config.js"
 
 // ── S2C packet-based state tracking ─────────────────────────────────
 // 0xA7: state applied (no stats)  — [op:u8, unitType:u8, unitGuid:u32le, stateId:u8] = 7 bytes
@@ -144,6 +145,7 @@ interface TrackedBuff {
 
 // CTA warcry skills — BC first (adds +1 to all skills, making BO/Shout stronger)
 const CTA_SKILLS = [155, 149, 138] as const
+const CTA_SKILL_SET = new Set<number>(CTA_SKILLS)
 
 function skillLevel(skillId: number): number {
   return _getSkillLevel(skillId, 1)
@@ -152,6 +154,7 @@ function skillLevel(skillId: number): number {
 export const Buffs = createService((game: Game) => {
   const tracked: TrackedBuff[] = []
   let initialized = false
+  let ctaProbed = false  // true after first swap attempt — avoids re-swapping if no CTA
 
   // ── Packet-based state tracking ──────────────────────────────────
   // Authoritative source for whether a buff is active: if we received 0xA7/0xA8
@@ -331,12 +334,13 @@ export const Buffs = createService((game: Game) => {
       })
     }
 
-    // CTA buffs for non-barbs (barb already has native warcries registered above)
+    // CTA buffs for non-barbs: always register as swap buffs.
+    // We can't check skill levels here (CTA is on swap weapon, not active),
+    // so we register them unconditionally. refreshAll/refreshOne will swap
+    // weapons and skip if skill level is 0 (no CTA equipped).
     if (charClass !== 4 /* barb */) {
       for (const skillId of CTA_SKILLS) {
         if (tracked.some(t => t.def.skillId === skillId)) continue
-        const lvl = skillLevel(skillId)
-        if (lvl < 1) continue
         const def = BUFF_DEF_MAP.get(skillId)
         if (!def) continue
         tracked.push({
@@ -407,8 +411,15 @@ export const Buffs = createService((game: Game) => {
   }
 
   function* swapWeapon() {
+    // Server rejects swap while running/casting — stop movement and wait for idle
+    game.move(game.player.x, game.player.y)
+    for (let i = 0; i < 50; i++) {
+      if (game.player.idle) break
+      yield
+    }
     game.sendPacket(new Uint8Array([0x60]))
-    for (let i = 0; i < 4; i++) yield
+    // Wait longer — client needs time to process 0x97 response and update skill list
+    for (let i = 0; i < 25; i++) yield
   }
 
   function* castSelfBuff(skillId: number) {
@@ -521,17 +532,32 @@ export const Buffs = createService((game: Game) => {
         }
       }
 
-      // Phase 2: CTA weapon swap buffs
+      // Phase 2: CTA weapon swap buffs — skip in town (pointless, buff expires before leaving)
       const swapBuffs = missing.filter(t => t.requiresSwap)
-      if (swapBuffs.length > 0) {
+      if (swapBuffs.length > 0 && !townAreas.has(game.area)) {
+        // First time: detect CTA by checking for runeword on swap weapon slots
+        if (!ctaProbed) {
+          ctaProbed = true
+          let hasCTA = false
+          for (const item of game.items) {
+            if (item.location === 1 && (item.x === 11 || item.x === 12) && item.runeword) {
+              hasCTA = true
+            }
+          }
+          if (!hasCTA) {
+            game.log(`[buffs] no runeword on swap slots — removing warcry buffs`)
+            for (let i = tracked.length - 1; i >= 0; i--) {
+              if (tracked[i]!.requiresSwap) tracked.splice(i, 1)
+            }
+            return
+          }
+          game.log(`[buffs] CTA detected on swap weapon (runeword flag)`)
+        }
+
         game.log(`[buffs] swapping to CTA for ${swapBuffs.length} warcries`)
         yield* swapWeapon()
 
         for (const t of swapBuffs) {
-          if (skillLevel(t.def.skillId) < 1) {
-            game.log(`[buffs] skill=${t.def.skillId} not on swap weapon`)
-            continue
-          }
           game.log(`[buffs] casting CTA skill=${t.def.skillId}`)
           yield* castTracked(t)
           yield
@@ -567,7 +593,6 @@ export const Buffs = createService((game: Game) => {
         game.log(`[buffs] CTA refresh: ${swapMissing.length} warcries`)
         yield* swapWeapon()
         for (const t of swapMissing) {
-          if (skillLevel(t.def.skillId) < 1) continue
           yield* castTracked(t)
           yield
         }

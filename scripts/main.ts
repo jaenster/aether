@@ -1,11 +1,13 @@
 import { createBot } from "diablo:game"
 import { Chicken } from "./threads/chicken.js"
+import { ThreatMonitor } from "./threads/threat-monitor.js"
 import { Chaos } from "./sequences/chaos.js"
 import { Town } from "./services/town.js"
 import { Buffs } from "./services/buffs.js"
 
 export default createBot('sorc-farmer', function*(game, svc) {
   game.load.inGame(Chicken)
+  game.load.inGame(ThreatMonitor)
   const town = svc.get(Town)
   const buffs = svc.get(Buffs)
 

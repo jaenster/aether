@@ -40,6 +40,7 @@ export const Movement = createService((game: Game, services) => {
         if (game.player.canCast) break
         yield
       }
+      let totalCasts = 0
       for (let wi = 0; wi < path.length; wi++) {
         const wp = path[wi]!
         const hopDist = dist(game.player.x, game.player.y, wp.x, wp.y)
@@ -66,6 +67,8 @@ export const Movement = createService((game: Game, services) => {
 
         game.log(`[move] hop ${wi}/${path.length} d=${hopDist|0} me=${game.player.x},${game.player.y} → ${wp.x},${wp.y}`)
         for (let retries = 0; retries < 3; retries++) {
+          totalCasts++
+          game.log(`[move] CAST #${totalCasts} tele → ${wp.x},${wp.y} (hop ${wi} try ${retries}) me=${game.player.x},${game.player.y}`)
           game.castSkillPacket(wp.x, wp.y)
           const moved: unknown = yield* this.waitForMove()
           if (moved) break
@@ -73,13 +76,22 @@ export const Movement = createService((game: Game, services) => {
         }
       }
 
-      // Final approach — cast directly to destination
+      // Final approach — cast directly to destination, abort if stuck
+      let prevFinalDist = Infinity
       for (let i = 0; i < 3; i++) {
-        if (dist(game.player.x, game.player.y, targetX, targetY) < threshold) break
-        game.log(`[move] final approach d=${dist(game.player.x, game.player.y, targetX, targetY)|0} me=${game.player.x},${game.player.y} → ${targetX},${targetY}`)
+        const fd = dist(game.player.x, game.player.y, targetX, targetY)
+        if (fd < threshold) break
+        if (fd >= prevFinalDist) {
+          game.log(`[move] final approach stuck at d=${fd|0}, aborting`)
+          break
+        }
+        prevFinalDist = fd
+        totalCasts++
+        game.log(`[move] CAST #${totalCasts} final → ${targetX},${targetY} me=${game.player.x},${game.player.y} d=${fd|0}`)
         game.castSkillPacket(targetX, targetY)
         yield* this.waitForMove()
       }
+      game.log(`[move] tele done: ${totalCasts} casts for ${path.length} hops`)
     },
 
     *walkTo(targetX: number, targetY: number) {
