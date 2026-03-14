@@ -128,6 +128,16 @@ fn jsLog(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     return 1;
 }
 
+fn jsLogVerbose(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    var buf: [1024]u8 = undefined;
+    const len = c.sm_arg_string(cx, argc, vp, 0, &buf, buf.len);
+    if (len > 0) {
+        log.printStrVerbose("js: ", buf[0..@intCast(len)]);
+    }
+    retUndefined(argc, vp);
+    return 1;
+}
+
 fn jsPrintScreen(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const headless = @import("../features/headless.zig");
     if (headless.isHeadless()) {
@@ -503,7 +513,64 @@ fn jsMove(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
 fn jsSelectSkill(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const hand = argInt32(argc, vp, 0);
     const skill_id: u32 = @bitCast(argInt32(argc, vp, 1));
-    d2.sendSelectSkill(@intCast(skill_id & 0xFFFF), hand != 0);
+    const sid: u16 = @intCast(skill_id & 0xFFFF);
+    const left = hand != 0;
+
+    // Walk the player's skill list to:
+    // 1. Update client-side skill pointer so clickAtWorld uses the correct skill
+    // 2. Find the item owner GUID (for CTA-granted skills, must match or server rejects)
+    var owner_id: u32 = 0xFFFFFFFF;
+    var found = false;
+    var skill_count: u32 = 0;
+    if (globals.playerUnit().*) |player| {
+        if (player.pInfo) |info| {
+            var skill = info.pFirstSkill;
+            while (skill) |s| {
+                skill_count += 1;
+                if (s.pSkillInfo) |si| {
+                    if (si.wSkillId == sid) {
+                        if (left) {
+                            info.pLeftSkill = s;
+                        } else {
+                            info.pRightSkill = s;
+                        }
+                        owner_id = s.item_id;
+                        found = true;
+                        log.hex("selectSkill: found id=", sid);
+                        log.hex("  owner_id=", owner_id);
+                        log.hex("  level=", s.dwSkillLevel);
+                        break;
+                    }
+                }
+                skill = s.pNextSkill;
+            }
+            if (!found) {
+                log.hex("selectSkill: NOT FOUND id=", sid);
+                log.hex("  skills in list=", skill_count);
+            }
+        } else {
+            log.print("selectSkill: no pInfo");
+        }
+    } else {
+        log.print("selectSkill: no player");
+    }
+
+    // Send packet 0x3C with correct owner (item GUID for CTA, 0xFFFFFFFF for natural)
+    var skill_val: u32 = sid;
+    if (left) skill_val |= 0x80000000;
+    var buf: [9]u8 = .{ 0x3C, 0, 0, 0, 0, 0, 0, 0, 0 };
+    const skill_bytes = @as([4]u8, @bitCast(skill_val));
+    buf[1] = skill_bytes[0];
+    buf[2] = skill_bytes[1];
+    buf[3] = skill_bytes[2];
+    buf[4] = skill_bytes[3];
+    const owner_bytes = @as([4]u8, @bitCast(owner_id));
+    buf[5] = owner_bytes[0];
+    buf[6] = owner_bytes[1];
+    buf[7] = owner_bytes[2];
+    buf[8] = owner_bytes[3];
+    d2.sendPacket(&buf);
+
     retUndefined(argc, vp);
     return 1;
 }
@@ -804,20 +871,49 @@ fn jsGetLocaleString(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c
 /// txtReadField(table: i32, recordId: i32, offset: i32, size: i32) -> i32
 /// table: 0=monstats, 1=skills, 2=levels, 3=missiles
 /// Reads `size` bytes (1/2/4) at `offset` from the txt record, sign-extended.
+/// Shared table lookup: resolves table ID + record ID to a raw byte pointer.
+/// Table IDs: 0=monstats, 1=skills, 2=levels, 3=missiles, 4=items, 5=monstats2,
+/// 6=states, 7=itemstatcost, 8=charstats, 9=objects, 10=superuniques,
+/// 11=experience, 12=difficultylevels, 13=uniqueitems, 14=setitems,
+/// 15=itemtypes, 16=properties, 17=overlay, 18=shrines, 19=qualityitems,
+/// 20=magicaffixes, 21=npc, 22=levelDefs, 23=lvlPrest
+fn txtLookup(table: i32, record_id: i32) ?[*]u8 {
+    return switch (table) {
+        0 => d2.TxtMonStatsGetLine.call(.{record_id}),
+        1 => d2.TxtSkillsGetLine.call(.{record_id}),
+        2 => d2.TxtLevelsGetLine.call(@as(u32, @bitCast(record_id))),
+        3 => globals.txtMissilesGetLine(record_id),
+        4 => d2.TxtItemsGetLine.call(@as(u32, @bitCast(record_id))),
+        5 => d2.TxtMonStats2GetLine.call(.{record_id}),
+        6 => d2.TxtStatesGetLine.call(.{record_id}),
+        7 => d2.TxtItemStatCostGetLine.call(.{record_id}),
+        8 => d2.TxtCharStatsGetLine.call(.{record_id}),
+        9 => d2.TxtObjectsGetLine.call(@as(u32, @bitCast(record_id))),
+        10 => d2.TxtSuperUniquesGetLine.call(@as(u32, @bitCast(record_id))),
+        11 => globals.txtExperienceGetLine(record_id),
+        12 => d2.TxtDifficultyLevelsGetLine.call(@as(u32, @bitCast(record_id))),
+        13 => globals.txtUniqueItemsGetLine(record_id),
+        14 => globals.txtSetItemsGetLine(record_id),
+        15 => globals.txtItemTypesGetLine(record_id),
+        16 => globals.txtPropertiesGetLine(record_id),
+        17 => globals.txtOverlayGetLine(record_id),
+        18 => d2.TxtShrinesGetLine.call(@as(u32, @bitCast(record_id))),
+        19 => d2.TxtQualityItemsGetLine.call(@as(u32, @bitCast(record_id))),
+        20 => d2.TxtMagicAffixesGetLine.call(@as(u32, @bitCast(record_id))),
+        21 => d2.TxtNpcGetLine.call(@as(u32, @bitCast(record_id))),
+        22 => d2.TxtLevelDefsGetLine.call(@as(u32, @bitCast(record_id))),
+        23 => d2.TxtLvlPrestGetLine.call(@as(u32, @bitCast(record_id))),
+        else => null,
+    };
+}
+
 fn jsTxtReadField(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const table = argInt32(argc, vp, 0);
     const record_id = argInt32(argc, vp, 1);
     const offset: u32 = @bitCast(argInt32(argc, vp, 2));
     const size = argInt32(argc, vp, 3);
 
-    const record_ptr: ?[*]u8 = switch (table) {
-        0 => d2.TxtMonStatsGetLine.call(.{record_id}),
-        1 => d2.TxtSkillsGetLine.call(.{record_id}),
-        2 => d2.TxtLevelsGetLine.call(@bitCast(record_id)),
-        3 => globals.txtMissilesGetLine(record_id),
-        else => null,
-    };
-
+    const record_ptr = txtLookup(table, record_id);
     if (record_ptr == null) {
         retInt32(argc, vp, 0);
         return 1;
@@ -843,14 +939,7 @@ fn jsTxtReadFieldU(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c
     const offset: u32 = @bitCast(argInt32(argc, vp, 2));
     const size = argInt32(argc, vp, 3);
 
-    const record_ptr: ?[*]u8 = switch (table) {
-        0 => d2.TxtMonStatsGetLine.call(.{record_id}),
-        1 => d2.TxtSkillsGetLine.call(.{record_id}),
-        2 => d2.TxtLevelsGetLine.call(@bitCast(record_id)),
-        3 => globals.txtMissilesGetLine(record_id),
-        else => null,
-    };
-
+    const record_ptr = txtLookup(table, record_id);
     if (record_ptr == null) {
         retInt32(argc, vp, 0);
         return 1;
@@ -1001,6 +1090,7 @@ const bindings = [_]Binding{
     .{ .name = "getDifficulty", .func = &jsGetDifficulty, .nargs = 0 },
     .{ .name = "getTickCount", .func = &jsGetTickCount, .nargs = 0 },
     .{ .name = "log", .func = &jsLog, .nargs = 1 },
+    .{ .name = "logVerbose", .func = &jsLogVerbose, .nargs = 1 },
     .{ .name = "printScreen", .func = &jsPrintScreen, .nargs = 2 },
     // Unit iteration
     .{ .name = "unitCount", .func = &jsUnitCount, .nargs = 1 },

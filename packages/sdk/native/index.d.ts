@@ -13,6 +13,7 @@
   export function getDifficulty(): number;
   export function getTickCount(): number;
   export function log(message: string): void;
+  export function logVerbose(message: string): void;
 
   // Unit iteration
   export function unitCount(type: number): number;

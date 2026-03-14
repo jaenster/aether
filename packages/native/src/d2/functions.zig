@@ -402,6 +402,17 @@ pub const TestCollisionByCoordinates = struct {
     }
 };
 
+/// SKILLS_HasLineOfSight @ 0x00645910 — __stdcall
+/// Bresenham raycast through collision grid. Returns 1 if clear, 0 if blocked.
+/// Mask 0xC01 = walls + objects + doors (what monster AI uses for spell LoS).
+pub const HasLineOfSight = struct {
+    const Fn = *const fn (c_int, c_int, c_int, c_int, ?*Room1, DWORD) callconv(.winapi) DWORD;
+    const ptr: Fn = funcPtr(0x645910, Fn);
+    pub inline fn call(x1: c_int, y1: c_int, x2: c_int, y2: c_int, pRoom: ?*Room1, mask: DWORD) bool {
+        return ptr(x1, y1, x2, y2, pRoom, mask) != 0;
+    }
+};
+
 // ============================================================================
 // Net — outgoing packets
 // ============================================================================
@@ -695,12 +706,72 @@ pub const TxtSkillsGetLine = fastcall(0x0045C4B0, fn (i32) ?[*]u8);
 /// ECX=wMessage (wchar_t*), EDX=nColor
 pub const PrintGameString = fastcall(0x0049E3A0, fn ([*:0]const u16, i32) void);
 
-/// TXT_Levels_GetRecord: returns pointer to D2LevelsTxt record or null.
-/// stdcall, same as GetLevelText but raw bytes.
+/// TXT_Levels_GetRecord: returns pointer to D2LevelsTxt record (544 bytes) or null. (__stdcall)
 pub const TxtLevelsGetLine = struct {
     const Fn = *const fn (DWORD) callconv(.winapi) ?[*]u8;
     const ptr: Fn = funcPtr(0x61DB70, Fn);
-    pub inline fn call(level_no: DWORD) ?[*]u8 {
-        return ptr(level_no);
+    pub inline fn call(level_no: anytype) ?[*]u8 {
+        return ptr(@bitCast(@as(i32, if (@TypeOf(level_no) == DWORD) @bitCast(level_no) else level_no)));
     }
 };
+
+// -- Fastcall txt accessors (ECX = record ID) --
+
+/// D2MonStats2Txt (308 bytes)
+pub const TxtMonStats2GetLine = fastcall(0x00451FE0, fn (i32) ?[*]u8);
+
+/// D2StatesTxt (60 bytes)
+pub const TxtStatesGetLine = fastcall(0x00452040, fn (i32) ?[*]u8);
+
+/// D2ItemStatCostTxt (324 bytes)
+pub const TxtItemStatCostGetLine = fastcall(0x0045C4F0, fn (i32) ?[*]u8);
+
+/// D2CharStatsTxt (196 bytes)
+pub const TxtCharStatsGetLine = fastcall(0x004833E0, fn (i32) ?[*]u8);
+
+// -- Cdecl txt accessors (stack param) --
+
+/// D2ItemsTxt (424 bytes)
+pub const TxtItemsGetLine = cdeclTxt(0x006335F0);
+
+/// D2ObjectsTxt (448 bytes)
+pub const TxtObjectsGetLine = cdeclTxt(0x00640E90);
+
+/// D2SuperUniquesTxt (52 bytes)
+pub const TxtSuperUniquesGetLine = cdeclTxt(0x006556E0);
+
+/// D2ExperienceTxt (32 bytes) — param is player class ID
+pub const TxtExperienceGetLine = cdeclTxt(0x00611830);
+
+/// D2DifficultyLevelsTxt (88 bytes)
+pub const TxtDifficultyLevelsGetLine = cdeclTxt(0x00611D30);
+
+/// D2ShrinesTxt
+pub const TxtShrinesGetLine = cdeclTxt(0x006414B0);
+
+/// D2LevelDefsTxt
+pub const TxtLevelDefsGetLine = cdeclTxt(0x0061E470);
+
+/// D2LvlPrestTxt
+pub const TxtLvlPrestGetLine = cdeclTxt(0x0061F0B0);
+
+/// D2MagicAffixTxt
+pub const TxtMagicAffixesGetLine = cdeclTxt(0x00633EE0);
+
+/// D2QualityItemsTxt
+pub const TxtQualityItemsGetLine = cdeclTxt(0x00636B20);
+
+/// D2NpcTxt
+pub const TxtNpcGetLine = cdeclTxt(0x00656900);
+
+/// Helper: stdcall txt GetLine wrapper (single u32 param, returns ?[*]u8)
+/// D2Common functions in the monolithic 1.14d exe use __stdcall.
+fn cdeclTxt(comptime addr: usize) type {
+    return struct {
+        const Fn = *const fn (DWORD) callconv(.winapi) ?[*]u8;
+        const ptr: Fn = funcPtr(addr, Fn);
+        pub inline fn call(id: anytype) ?[*]u8 {
+            return ptr(@bitCast(@as(i32, if (@TypeOf(id) == DWORD) @bitCast(id) else id)));
+        }
+    };
+}

@@ -60,8 +60,12 @@ pub fn closeHandle(h: HANDLE) void {
 }
 
 fn openLog() ?HANDLE {
+    return openNamedLog("aether_log.txt");
+}
+
+fn openNamedLog(name: [*:0]const u8) ?HANDLE {
     const h = CreateFileA(
-        "aether_log.txt",
+        name,
         GENERIC_WRITE,
         FILE_SHARE_READ,
         null,
@@ -72,6 +76,10 @@ fn openLog() ?HANDLE {
     if (h == INVALID_HANDLE) return null;
     _ = SetFilePointer(h, 0, null, 2); // FILE_END
     return h;
+}
+
+fn openVerboseLog() ?HANDLE {
+    return openNamedLog("aether_verbose.txt");
 }
 
 fn writeRaw(h: HANDLE, buf: []const u8) void {
@@ -117,6 +125,18 @@ pub fn hex(comptime prefix: []const u8, value: usize) void {
 /// Print comptime prefix + runtime string slice + newline
 pub fn printStr(comptime prefix: []const u8, s: []const u8) void {
     const h = openLog() orelse return;
+    defer _ = CloseHandle(h);
+    writeRaw(h, prefix);
+    writeRaw(h, s);
+    writeRaw(h, "\r\n");
+    writeConsole(prefix);
+    writeConsole(s);
+    writeConsole("\r\n");
+}
+
+/// Print to verbose log file + console, but NOT the main log
+pub fn printStrVerbose(comptime prefix: []const u8, s: []const u8) void {
+    const h = openVerboseLog() orelse return;
     defer _ = CloseHandle(h);
     writeRaw(h, prefix);
     writeRaw(h, s);
