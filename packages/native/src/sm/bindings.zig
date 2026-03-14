@@ -1067,6 +1067,26 @@ fn jsGetCollision(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_
     return 1;
 }
 
+/// hasLineOfSight(x1, y1, x2, y2) → true if no wall/object blocks the path
+fn jsHasLineOfSight(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const x1 = argInt32(argc, vp, 0);
+    const y1 = argInt32(argc, vp, 1);
+    const x2 = argInt32(argc, vp, 2);
+    const y2 = argInt32(argc, vp, 3);
+    const player = globals.playerUnit().* orelse { retInt32(argc, vp, 0); return 1; };
+    const path = player.dynamicPath() orelse { retInt32(argc, vp, 0); return 1; };
+    const room1 = path.pRoom1 orelse { retInt32(argc, vp, 0); return 1; };
+    // Find the room at the target position for the raycast
+    const target_room = d2.FindBetterNearbyRoom.call(.{ room1, x2, y2 }) orelse {
+        retInt32(argc, vp, 0);
+        return 1;
+    };
+    // Mask 0xC01 = walls + objects + doors (same as monster AI spell LoS)
+    const clear = d2.HasLineOfSight.call(x1, y1, x2, y2, target_room, 0xC01);
+    retInt32(argc, vp, if (clear) 1 else 0);
+    return 1;
+}
+
 // ── Binding table ───────────────────────────────────────────────────
 
 const Binding = struct {
