@@ -583,9 +583,17 @@ fn writeSnapshot() void {
     writeToFile(data);
 }
 
+const diff_filenames = [3][*:0]const u8{
+    "game_data_normal.jsonl",
+    "game_data_nightmare.jsonl",
+    "game_data_hell.jsonl",
+};
+
 fn writeToFile(data: []const u8) void {
+    const diff = getDifficulty();
+    const filename = if (diff < 3) diff_filenames[diff] else diff_filenames[0];
     const h = CreateFileA(
-        "game_data.jsonl",
+        filename,
         GENERIC_WRITE,
         FILE_SHARE_READ,
         null,
