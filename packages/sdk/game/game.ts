@@ -1,5 +1,5 @@
 import {
-  getArea, getAct, getDifficulty, inGame, getTickCount, log as nativeLog,
+  getArea, getAct, getDifficulty, inGame, getTickCount, log as nativeLog, logVerbose as nativeLogVerbose,
   meGetUnitId,
   clickMap, move as nativeMove, selectSkill, castSkillAt,
   getUIFlag as nativeGetUIFlag, say as nativeSay,
@@ -136,6 +136,15 @@ export class Game {
     return { x: parseInt(parts[0]!, 10), y: parseInt(parts[1]!, 10) }
   }
 
+  /** Run a generator, yielding each frame. Breaks out cleanly if we leave the game. */
+  *run(gen: Generator<void>): Generator<void> {
+    while (this.inGame) {
+      const r = gen.next()
+      if (r.done) return
+      yield
+    }
+  }
+
   *delay(ms: number) {
     const ticks = Math.ceil(ms / 40)
     for (let i = 0; i < ticks; i++) yield
@@ -198,6 +207,12 @@ export class Game {
   log(...args: any[]) {
     const msg = args.map(a => String(a)).join(' ')
     nativeLog(`[f${this._frame}] ${msg}`)
+  }
+
+  /** Log to verbose file (aether_verbose.txt) + console, but NOT the main log. */
+  logVerbose(...args: any[]) {
+    const msg = args.map(a => String(a)).join(' ')
+    nativeLogVerbose(`[f${this._frame}] ${msg}`)
   }
 
   /** Print colored text on the game screen (chat area). No-op in headless mode. */

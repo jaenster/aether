@@ -1,13 +1,14 @@
-import { createService, type Game, type NPC, UiFlags } from "diablo:game"
+import { createService, type Game, type NPC, UiFlags, Area } from "diablo:game"
 import { Config, townAreas } from "../config.js"
 import { Movement } from "./movement.js"
 import { ItemGrading } from "../lib/item/evaluator.js"
 import { getTown } from "../lib/waypoints.js"
-import { npcClose } from "../lib/packets.js"
+import { npcClose, useItem } from "../lib/packets.js"
 import { TownPlan } from "../lib/town/planner.js"
 import { townActions } from "../lib/town/registry.js"
 import { Urgency } from "../lib/town/enums.js"
 import type { TownContext } from "../lib/town/action.js"
+import { HP_POT_SET, MP_POT_SET, RV_POT_SET } from "../lib/item-data.js"
 
 export const Town = createService((game: Game, services) => {
   const cfg = services.get(Config)
@@ -19,14 +20,77 @@ export const Town = createService((game: Game, services) => {
   }
 
   return {
-    *goToTown() {
+    *goToTown(act?: number) {
       const town = getTown(game.area)
-      if (game.area === town) return
-      yield* move.useWaypoint(town)
+      if (game.area !== town) {
+        // Use TP tome/scroll via packet 0x20 (use item at location)
+        const tpTome = game.items.find(i => i.location === 0 && (i.code === 'tbk' || i.code === 'tsc'))
+        if (!tpTome) {
+          game.log(`[town] no TP tome or scroll — falling back to waypoint`)
+          yield* move.useWaypoint(town)
+          return
+        }
+        game.log(`[town] TP to town`)
+        game.sendPacket(useItem(tpTome.unitId, game.player.x, game.player.y))
+
+        // Wait for portal to spawn
+        yield* game.delay(500)
+        let portal = null
+        for (let attempt = 0; attempt < 20; attempt++) {
+          portal = game.objects.find(o => o.classid === 59 && o.name === game.player.charname)
+          if (portal) break
+          yield* game.delay(100)
+        }
+
+        if (!portal) {
+          game.log(`[town] portal didn't spawn, using waypoint`)
+          yield* move.useWaypoint(town)
+          return
+        }
+
+        game.interact(portal)
+        yield* game.waitForArea(town)
+      }
+
+      // Switch acts if requested
+      if (act && act >= 1 && act <= 5) {
+        const townAreas = [0, Area.RogueEncampment, Area.LutGholein, Area.KurastDocks, Area.PandemoniumFortress, Area.Harrogath]
+        const targetTown = townAreas[act]!
+        if (game.area !== targetTown) {
+          yield* move.useWaypoint(targetTown)
+        }
+      }
     },
 
     get inTown(): boolean {
       return townAreas.has(game.area)
+    },
+
+    /** Full town visit: TP to town, do chores, TP back. */
+    *visitTown() {
+      if (townAreas.has(game.area)) {
+        yield* this.planAndExecute()
+        return
+      }
+
+      const preArea = game.area
+
+      // Go to town
+      yield* this.goToTown()
+
+      // Do chores
+      yield* this.planAndExecute()
+
+      // Return via portal
+      const returnPortal = game.objects.find(o => o.classid === 59 && o.name === game.player.charname)
+      if (returnPortal) {
+        game.log(`[town] returning to area ${preArea}`)
+        yield* move.walkTo(returnPortal.x, returnPortal.y)
+        game.interact(returnPortal)
+        yield* game.waitForArea(preArea)
+      } else {
+        game.log(`[town] return portal not found`)
+      }
     },
 
     /** Plan and execute all needed town tasks using the route optimizer. */
@@ -34,6 +98,8 @@ export const Town = createService((game: Game, services) => {
       if (!townAreas.has(game.area)) {
         yield* this.goToTown()
       }
+
+      this.clearBelt()
 
       const ctx = makeContext()
       const plan = new TownPlan(townActions, ctx)
@@ -54,6 +120,41 @@ export const Town = createService((game: Game, services) => {
       yield* this.planAndExecute()
     },
 
+    /** Remove wrong potion types from belt columns.
+     *  Belt layout: columns 0-1 = HP, column 2 = MP, column 3 = RV (rejuv). */
+    clearBelt() {
+      let cleared = 0
+      for (const item of game.items) {
+        if (item.location !== 2) continue
+        // x coordinate mod 4 gives the column
+        const col = item.x % 4
+        const isHp = HP_POT_SET.has(item.code)
+        const isMp = MP_POT_SET.has(item.code)
+        const isRv = RV_POT_SET.has(item.code)
+
+        let wrong = false
+        if (col <= 1) {
+          // HP columns — only HP and RV are acceptable
+          wrong = isMp
+        } else if (col === 2) {
+          // MP column
+          wrong = isHp
+        } else {
+          // RV column — only RV acceptable, HP/MP wrong
+          wrong = isHp || isMp
+        }
+
+        if (wrong) {
+          // Use the potion (drink it) to clear it from belt
+          game.interact(item)
+          cleared++
+        }
+      }
+      if (cleared > 0) {
+        game.log(`[town] cleared ${cleared} wrong pots from belt`)
+      }
+    },
+
     /** Heal at the nearest heal NPC if health/mana is low. */
     *heal() {
       if (game.player.hp >= game.player.hpmax && game.player.mp >= game.player.mpmax) return
@@ -64,11 +165,9 @@ export const Town = createService((game: Game, services) => {
         return
       }
 
-      game.log(`[town] healing at ${npc.name} cls=${npc.classid} dist=${npc.distance|0} (hp=${game.player.hp}/${game.player.hpmax} mp=${game.player.mp}/${game.player.mpmax})`)
+      game.log(`[town] heal at ${npc.name} (hp=${game.player.hp}/${game.player.hpmax} mp=${game.player.mp}/${game.player.mpmax})`)
       yield* move.walkTo(npc.x, npc.y)
-      game.log(`[town] walked to ${npc.name}, dist=${npc.distance|0}`)
       yield* npc.heal()
-      game.log(`[town] healed hp=${game.player.hp}/${game.player.hpmax} mp=${game.player.mp}/${game.player.mpmax}`)
     },
 
     /** Repair all items at the nearest repair NPC. */
@@ -79,7 +178,7 @@ export const Town = createService((game: Game, services) => {
         return
       }
 
-      game.log(`[town] repairing at ${npc.name}`)
+      game.log(`[town] repair at ${npc.name}`)
       yield* move.walkTo(npc.x, npc.y)
 
       if (npc.canHeal && (game.player.hp < game.player.hpmax || game.player.mp < game.player.mpmax)) {
@@ -87,7 +186,6 @@ export const Town = createService((game: Game, services) => {
       }
 
       yield* npc.repair()
-      game.log(`[town] repair done`)
     },
 
     /** Open trade with an NPC. Returns the NPC or null. */
@@ -123,7 +221,6 @@ export const Town = createService((game: Game, services) => {
         return
       }
 
-      game.log(`[town] identifying at ${npc.name}`)
       yield* move.walkTo(npc.x, npc.y)
       yield* npc.interact()
       yield* game.delay(1000)

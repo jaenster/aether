@@ -14,14 +14,17 @@ export default createBot('sorc-farmer', function*(game, svc) {
   while (true) {
     while (!game.inGame) yield
 
-    // Heal + repair in town before starting the run
-    yield* town.doTownChores()
+    yield* game.run(function*() {
+      // Heal + repair in town before starting the run
+      yield* town.doTownChores()
 
-    // Buff up before leaving town
-    yield* buffs.refreshAll()
+      // Buff up before leaving town
+      yield* buffs.refreshAll()
 
-    yield* Chaos.factory(game, svc)
-    game.exitGame()
+      yield* Chaos.factory(game, svc)
+      game.exitGame()
+    }())
+
     while (game.inGame) yield
     yield* game.delay(2000)
   }

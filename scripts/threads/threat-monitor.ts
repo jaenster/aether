@@ -31,19 +31,19 @@ export const ThreatMonitor = createScript(function*(game, _svc) {
     // Skip logging if nothing interesting
     if (bf.activeThreats === 0) continue
 
-    // Brief status every assessment
+    // Brief status → main log
     const ttd = bf.timeToDeathSec === Infinity ? '∞' : bf.timeToDeathSec.toFixed(1) + 's'
-    game.log(`[threat] ${bf.situationDanger.toUpperCase()} → ${bf.action} | ${bf.activeThreats} threats ${bf.totalIncomingDps | 0} dps TTD=${ttd} melee=${bf.meleePackCount}`)
+    game.log(`[threat] ${bf.situationDanger.toUpperCase()} → ${bf.action} | ${bf.activeThreats} threats ${bf.totalIncomingDps | 0} dps TTD=${ttd} fightDmg=${bf.totalFightDamage | 0} melee=${bf.meleePackCount}`)
 
-    // Full report less frequently
+    // Individual threats → verbose log only
+    for (const p of bf.threats) {
+      if (p.threat.threat === "trivial") break
+      game.logVerbose(`  ${formatThreat(p.mon, p.threat)}`)
+    }
+
+    // Full battlefield report → verbose log only, less frequently
     if (frameTick % LOG_INTERVAL === 0) {
-      game.log(formatBattlefield(bf))
-      // Log top 3 individual threats
-      for (let i = 0; i < Math.min(3, bf.threats.length); i++) {
-        const p = bf.threats[i]!
-        if (p.threat.threat === "trivial") break
-        game.log(`  ${formatThreat(p.mon, p.threat)}`)
-      }
+      game.logVerbose(formatBattlefield(bf))
     }
   }
 })

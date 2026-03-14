@@ -394,7 +394,7 @@ export const Buffs = createService((game: Game) => {
     return false
   }
 
-  function needsRefresh(t: TrackedBuff): boolean {
+  function needsRefresh(t: TrackedBuff, eager = false): boolean {
     if (t.def.target === 'ally') {
       const merc = findMerc()
       if (!merc) return false
@@ -407,37 +407,84 @@ export const Buffs = createService((game: Game) => {
     }
     // Buff is not active — but defer if a stronger player might recast
     if (shouldDeferToStrongerCaster(t)) return false
+    // Not eager (refreshOne during combat): skip CTA buffs unless expired >5s ago
+    // This avoids weapon-swapping mid-combat for a buff that just fell off
+    if (!eager && t.requiresSwap && t.lastCast > 0) {
+      const pid = meGetUnitId()
+      const entry = activeStates.get(stateKey(0, pid, t.def.stateId))
+      const endTick = entry?.endTick ?? 0
+      if (endTick > 0 && (getTickCount() - endTick) < 5000) return false
+    }
     return true
   }
 
+  let swapAcked = false
+  game.onPacket(0x97, () => { swapAcked = true })
+
   function* swapWeapon() {
-    // Server rejects swap while running/casting — stop movement and wait for idle
-    game.move(game.player.x, game.player.y)
+    // Server rejects swap while running/casting — wait for idle
     for (let i = 0; i < 50; i++) {
       if (game.player.idle) break
       yield
     }
+    swapAcked = false
     game.sendPacket(new Uint8Array([0x60]))
-    // Wait longer — client needs time to process 0x97 response and update skill list
-    for (let i = 0; i < 25; i++) yield
+    // Wait for server to ack the swap (0x97) — skill list updates on this packet
+    for (let i = 0; i < 50; i++) {
+      if (swapAcked) break
+      yield
+    }
+    if (!swapAcked) {
+      game.log('[buffs] swap timeout — 0x97 not received')
+    }
+    // Extra frames for client to process the new skill list
+    for (let i = 0; i < 5; i++) yield
   }
 
-  function* castSelfBuff(skillId: number) {
+  function* castSelfBuff(skillId: number, usePacket = false) {
     const px = game.player.x, py = game.player.y
-    game.useSkill(skillId, px, py)
-    yield
-    for (let i = 0; i < 25; i++) {
-      if (game.player.canCast) return
+    game.selectSkill(skillId)
+    if (usePacket) {
+      // CTA/oskills: client won't cast at level 0, bypass via packet
+      for (let f = 0; f < 10; f++) {
+        if (game.player.idle) break
+        yield
+      }
+      game.selectSkill(skillId)
+      for (let f = 0; f < 6; f++) yield
+      game.castSkillPacket(px, py)
+      for (let f = 0; f < 20; f++) yield
+    } else {
+      // Native skills: client-side cast with proper animation
       yield
+      game.castSkill(px, py)
+      yield
+      for (let i = 0; i < 25; i++) {
+        if (game.player.canCast) return
+        yield
+      }
     }
   }
 
-  function* castOnTarget(skillId: number, x: number, y: number) {
-    game.useSkill(skillId, x, y)
-    yield
-    for (let i = 0; i < 25; i++) {
-      if (game.player.canCast) return
+  function* castOnTarget(skillId: number, x: number, y: number, usePacket = false) {
+    if (usePacket) {
+      for (let f = 0; f < 10; f++) {
+        if (game.player.idle) break
+        yield
+      }
+      game.selectSkill(skillId)
+      for (let f = 0; f < 6; f++) yield
+      game.castSkillPacket(x, y)
+      for (let f = 0; f < 20; f++) yield
+    } else {
+      game.selectSkill(skillId)
       yield
+      game.castSkill(x, y)
+      yield
+      for (let i = 0; i < 25; i++) {
+        if (game.player.canCast) return
+        yield
+      }
     }
   }
 
@@ -447,16 +494,15 @@ export const Buffs = createService((game: Game) => {
 
   function* castTracked(t: TrackedBuff) {
     if (t.def.target === 'ally') {
-      // Enchant-type: cast on each ally that doesn't have the buff
       const allies = findAllies()
       for (const ally of allies) {
         if (allyHasBuff(ally, t.def.stateId)) continue
         game.log(`[buffs] enchanting ally classid=${ally.classid} at ${ally.x},${ally.y}`)
-        yield* castOnTarget(t.def.skillId, ally.x, ally.y)
-        yield // gap between casts
+        yield* castOnTarget(t.def.skillId, ally.x, ally.y, t.requiresSwap)
+        yield
       }
     } else {
-      yield* castSelfBuff(t.def.skillId)
+      yield* castSelfBuff(t.def.skillId, t.requiresSwap)
     }
     t.lastCast = getTickCount()
   }
@@ -513,7 +559,7 @@ export const Buffs = createService((game: Game) => {
       init()
       if (tracked.length === 0) return
 
-      const missing = tracked.filter(t => needsRefresh(t))
+      const missing = tracked.filter(t => needsRefresh(t, true))
       if (missing.length === 0) {
         game.log(`[buffs] all ${tracked.length} buffs active`)
         return

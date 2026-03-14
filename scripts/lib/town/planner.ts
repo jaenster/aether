@@ -135,23 +135,44 @@ export class TownPlan {
 
   *execute(ctx: TownContext) {
     for (const node of this.route) {
+      let npc: any = null
+
       // Walk to the NPC or stash
       if (node.classid === -1) {
         // Stash — handled by the stash action's run()
       } else {
-        const npc = ctx.game.npcs.find(n => n.classid === node.classid)
-        if (npc) {
-          yield* ctx.move.walkTo(npc.x, npc.y)
-        } else {
+        npc = ctx.game.npcs.find(n => n.classid === node.classid)
+        if (!npc) {
           ctx.game.log(`[town:plan] NPC classid=${node.classid} not found, skipping`)
           continue
         }
+        yield* ctx.move.walkTo(npc.x, npc.y)
       }
 
-      // Run tasks at this stop
-      for (const task of node.tasks) {
-        ctx.game.log(`[town:plan] running ${task.action.type} at ${node.entry?.name ?? 'Stash'}`)
+      // Split tasks: non-trade first, then trade tasks in a single session
+      const nonTrade = node.tasks.filter(t => !t.action.needsTrade)
+      const trade = node.tasks.filter(t => t.action.needsTrade)
+
+      // Run non-trade tasks (heal, repair, identify, resurrect)
+      for (const task of nonTrade) {
+        ctx.game.log(`[town:plan] ${task.action.type} at ${node.entry?.name ?? 'Stash'}`)
         yield* task.action.run(ctx, node.classid)
+      }
+
+      // Run trade tasks in a single open/close session
+      if (trade.length > 0 && npc) {
+        const ok = yield* npc.openTrade()
+        if (ok) {
+          yield* ctx.game.delay(300)
+          for (const task of trade) {
+            ctx.game.log(`[town:plan] ${task.action.type} at ${node.entry?.name ?? 'Stash'}`)
+            yield* task.action.run(ctx, node.classid)
+          }
+          yield* npc.close()
+        } else {
+          ctx.game.log(`[town:plan] trade failed at ${node.entry?.name}`)
+          yield* npc.close()
+        }
       }
     }
   }

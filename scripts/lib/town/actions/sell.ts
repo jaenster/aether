@@ -13,6 +13,7 @@ function getSellableItems(ctx: TownContext) {
 export const sellAction: TownAction = {
   type: 'sell',
   npcFlag: NpcFlags.TRADE,
+  needsTrade: true,
 
   get dependencies() {
     return ['identify']
@@ -21,7 +22,6 @@ export const sellAction: TownAction = {
   check(ctx: TownContext): Urgency {
     const junk = getSellableItems(ctx)
     if (junk.length > 0) return Urgency.Needed
-    // Unidentified items may become sellable after identification
     const hasUnids = ctx.game.items.find(i =>
       i.location === 0 && ctx.grading.evaluate(i) === ItemAction.Identify
     ) !== undefined
@@ -34,28 +34,14 @@ export const sellAction: TownAction = {
     if (junk.length === 0) return true
 
     const npc = ctx.game.npcs.find(n => n.classid === npcClassid && n.canTrade)
-    if (!npc) {
-      ctx.game.log(`[town:sell] NPC classid=${npcClassid} not found`)
-      return false
-    }
+    if (!npc) return false
 
-    ctx.game.log(`[town:sell] selling ${junk.length} items at ${npc.name}`)
-    const ok = yield* npc.openTrade()
-    if (!ok) {
-      ctx.game.log(`[town:sell] trade failed`)
-      yield* npc.close()
-      return false
-    }
-    yield* ctx.game.delay(500)
-
+    ctx.game.log(`[town:sell] selling ${junk.length} items`)
     for (const item of junk) {
-      ctx.game.log(`[town:sell] selling ${item.name} (${item.code})`)
       ctx.game.sendPacket(npcSell(npc.unitId, item.unitId, 0, 0))
       yield* ctx.game.delay(200)
     }
 
-    yield* npc.close()
-    ctx.game.log(`[town:sell] done`)
     return true
   },
 }

@@ -7,6 +7,8 @@ import { identifyAction } from "./actions/identify.js"
 import { sellAction } from "./actions/sell.js"
 import { stashAction } from "./actions/stash.js"
 import { resurrectAction } from "./actions/resurrect.js"
+import { keysAction } from "./actions/keys.js"
+import { gambleAction } from "./actions/gamble.js"
 
 export const townActions: TownAction[] = [
   healAction,
@@ -15,6 +17,8 @@ export const townActions: TownAction[] = [
   scrollAction,
   identifyAction,
   sellAction,
+  keysAction,
+  gambleAction,
   stashAction,
   resurrectAction,
 ]

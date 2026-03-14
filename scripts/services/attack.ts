@@ -33,7 +33,7 @@ export const Attack = createService((game: Game, services) => {
   }
 
   function* preSelect(skill: number) {
-    game.useSkill(skill, game.player.x, game.player.y)
+    game.selectSkill(skill)
     yield
     for (let f = 0; f < 8; f++) {
       if (game.player.canCast) return
@@ -215,21 +215,27 @@ export const Attack = createService((game: Game, services) => {
         }
 
         if (action.needsReposition) {
+          game.log(`[atk] repo ${game.player.x},${game.player.y} → ${action.casterPos.x},${action.casterPos.y}`)
           yield* move.teleportTo(action.casterPos.x, action.casterPos.y, 5)
-        }
-
-        if (action.skillId !== currentSkill) {
-          yield* preSelect(action.skillId)
-          currentSkill = action.skillId
+          currentSkill = -1 // teleportTo changed right skill to teleport
         }
 
         if (isNova(action.skillId)) {
           const novaR = splashRadius(action.skillId) || 5
           if (target.distance > novaR) {
+            game.log(`[atk] closing to nova range ${novaR} (dist=${target.distance|0}) → ${target.x},${target.y}`)
             yield* move.moveNear(target.x, target.y, novaR)
+            currentSkill = -1 // moveNear may teleport
           }
         } else if (target.distance > skillRange(action.skillId)) {
+          game.log(`[atk] closing to range ${skillRange(action.skillId)} (dist=${target.distance|0}) → ${target.x},${target.y}`)
           yield* move.moveNear(target.x, target.y, skillRange(action.skillId))
+          currentSkill = -1 // moveNear may teleport
+        }
+
+        if (action.skillId !== currentSkill) {
+          yield* preSelect(action.skillId)
+          currentSkill = action.skillId
         }
 
         game.castSkill(action.targetPos.x, action.targetPos.y)
@@ -301,8 +307,10 @@ export const Attack = createService((game: Game, services) => {
         }
 
         if (shouldRepo) {
+          game.log(`[atk] repo ${game.player.x},${game.player.y} → ${action.casterPos.x},${action.casterPos.y}`)
           const prevX = game.player.x, prevY = game.player.y
           yield* move.teleportTo(action.casterPos.x, action.casterPos.y, 5)
+          currentSkill = -1 // teleportTo changed right skill
           const moved = Math.abs(game.player.x - prevX) + Math.abs(game.player.y - prevY)
           if (moved < 3) {
             repoFails++
@@ -313,20 +321,16 @@ export const Attack = createService((game: Game, services) => {
           repoFails = 0
         }
 
-        if (action.skillId !== currentSkill) {
-          yield* preSelect(action.skillId)
-          currentSkill = action.skillId
-        }
-
         if (isNova(action.skillId)) {
-          // Nova: move closer if no monsters in splash range
           const novaR = splashRadius(action.skillId) || 5
           const d = Math.sqrt(
             (game.player.x - action.targetPos.x) ** 2 +
             (game.player.y - action.targetPos.y) ** 2
           )
           if (d > novaR) {
+            game.log(`[atk] closing to nova range ${novaR} (dist=${d|0}) → ${action.targetPos.x},${action.targetPos.y}`)
             yield* move.moveNear(action.targetPos.x, action.targetPos.y, novaR)
+            currentSkill = -1
           }
         } else {
           const d = Math.sqrt(
@@ -334,8 +338,15 @@ export const Attack = createService((game: Game, services) => {
             (game.player.y - action.targetPos.y) ** 2
           )
           if (d > skillRange(action.skillId)) {
+            game.log(`[atk] closing to range ${skillRange(action.skillId)} (dist=${d|0}) → ${action.targetPos.x},${action.targetPos.y}`)
             yield* move.moveNear(action.targetPos.x, action.targetPos.y, skillRange(action.skillId))
+            currentSkill = -1
           }
+        }
+
+        if (action.skillId !== currentSkill) {
+          yield* preSelect(action.skillId)
+          currentSkill = action.skillId
         }
 
         game.castSkill(action.targetPos.x, action.targetPos.y)
