@@ -90,9 +90,18 @@ fn recreateContext() void {
     setupContext(eng, ctx);
 }
 
+var gc_counter: u32 = 0;
+
 fn tickCommon() void {
     ensureInit();
     const eng = &(engine orelse return);
+
+    // GC nudge once per second (~25 ticks), not every frame
+    gc_counter += 1;
+    if (gc_counter >= 25) {
+        gc_counter = 0;
+        eng.pumpMicrotasks();
+    }
 
     if (!daemon_enabled) return;
 
