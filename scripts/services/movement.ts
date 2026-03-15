@@ -23,14 +23,16 @@ export const Movement = createService((game: Game, services) => {
     },
 
     *teleportTo(targetX: number, targetY: number, threshold = 5) {
-      if (dist(game.player.x, game.player.y, targetX, targetY) < threshold) return
+      const startD = dist(game.player.x, game.player.y, targetX, targetY)
+      if (startD < threshold) return
 
-      const d = dist(game.player.x, game.player.y, targetX, targetY)
+      game.log(`[move] tele to ${targetX},${targetY} dist=${startD|0} from=${game.player.x},${game.player.y}`)
       const path = game.findTelePath(targetX, targetY)
       if (path.length === 0) {
-        game.log(`[move] no tele path to ${targetX},${targetY} dist=${d|0}`)
+        game.log(`[move] no tele path to ${targetX},${targetY} dist=${startD|0}`)
         return
       }
+      game.log(`[move] path: ${path.length} hops`)
       // game.log(`[move] tele ${path.length} hops, dist=${d|0} from=${game.player.x},${game.player.y} to=${targetX},${targetY}`)
 
       // Select teleport skill — just switch, do NOT cast
@@ -256,8 +258,27 @@ export const Movement = createService((game: Game, services) => {
       }
 
       for (const nextArea of route.exitPath) {
-        const ok: unknown = yield* this.takeExit(nextArea)
-        if (!ok) throw new Error(`[move] exit to area ${nextArea} failed (journey to ${targetArea})`)
+        // First try: teleport to exit and interact
+        let ok: unknown = yield* this.takeExit(nextArea)
+        if (ok) continue
+
+        // For same-layer exits (outdoor→outdoor): the exit tile may be far.
+        // Teleport around near the known exit coords to find it.
+        const exits = game.getExits()
+        const exit = exits.find(e => e.area === nextArea)
+        if (exit) {
+          game.log(`[move] searching for exit to area ${nextArea} near ${exit.x},${exit.y}`)
+          const offsets = [[0,0],[20,0],[-20,0],[0,20],[0,-20],[20,20],[-20,-20],[30,0],[-30,0],[0,30],[0,-30]]
+          for (const [dx, dy] of offsets) {
+            yield* this.moveTo(exit.x + dx, exit.y + dy)
+            ok = yield* this.takeExit(nextArea)
+            if (ok || game.area === nextArea) break
+          }
+        }
+
+        if (!ok && game.area !== nextArea) {
+          throw new Error(`[move] exit to area ${nextArea} failed (journey to ${targetArea})`)
+        }
       }
     },
   }
