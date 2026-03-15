@@ -11,7 +11,7 @@ import {
   closeNPCInteract as nativeCloseNPCInteract,
   npcMenuSelect as nativeNpcMenuSelect,
 } from "diablo:native"
-import { UnitType, PlayerMode, UiFlags } from "diablo:constants";
+import { UnitType, PlayerMode, UiFlags, MonsterSpecType, ItemFlags } from "diablo:constants";
 
 export abstract class Unit {
   constructor(readonly type: number, readonly unitId: number) {}
@@ -92,10 +92,10 @@ export class Monster extends Unit {
   }
 
   get spectype(): number { return monGetSpecType(this.unitId) }
-  get isSuperUnique(): boolean { return (this.spectype & 0x02) !== 0 }
-  get isChampion(): boolean { return (this.spectype & 0x04) !== 0 }
-  get isUnique(): boolean { return (this.spectype & 0x08) !== 0 }
-  get isMinion(): boolean { return (this.spectype & 0x10) !== 0 }
+  get isSuperUnique(): boolean { return (this.spectype & MonsterSpecType.SuperUnique) !== 0 }
+  get isChampion(): boolean { return (this.spectype & MonsterSpecType.Champion) !== 0 }
+  get isUnique(): boolean { return (this.spectype & MonsterSpecType.Unique) !== 0 }
+  get isMinion(): boolean { return (this.spectype & MonsterSpecType.Minion) !== 0 }
 
   get enchants(): number[] {
     const s = monGetEnchants(this.unitId)
@@ -224,9 +224,9 @@ export class ItemUnit extends Unit {
   get ilvl(): number { return this.getStat(92, 0) }
   get sockets(): number { return this.getStat(194, 0) }
 
-  get ethereal(): boolean { return (itemGetFlags(this.unitId) & 0x400000) !== 0 }
-  get identified(): boolean { return (itemGetFlags(this.unitId) & 0x10) !== 0 }
-  get runeword(): boolean { return (itemGetFlags(this.unitId) & 0x4000000) !== 0 }
+  get ethereal(): boolean { return (itemGetFlags(this.unitId) & ItemFlags.Ethereal) !== 0 }
+  get identified(): boolean { return (itemGetFlags(this.unitId) & ItemFlags.Identified) !== 0 }
+  get runeword(): boolean { return (itemGetFlags(this.unitId) & ItemFlags.Runeword) !== 0 }
   get runewordIndex(): number { return itemGetRunewordIndex(this.unitId) }
 
   get location(): number { return itemGetLocation(this.unitId) }

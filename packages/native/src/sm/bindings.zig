@@ -496,6 +496,9 @@ fn jsItemGetLocation(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c)
         // vendor pages
         if (page == 6 or page == 7 or grid == 6 or grid == 7) break :blk 6;
 
+        // Ground items: not in any inventory
+        if (data.pOwnerInventory == null) break :blk @as(i32, 5); // ground
+
         // Player-owned: use body_location and node_page to disambiguate
         if (body != 0) break :blk @as(i32, 1); // equipped (has body slot)
         if (npage == 2) break :blk @as(i32, 2); // belt
@@ -1133,9 +1136,25 @@ fn jsGetCollision(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_
         retInt32(argc, vp, -1);
         return 1;
     };
-    // Unit size 1 (player), collision mask 0x1C09 (PLAYER_COLLISION_DEFAULT)
-    const coll = d2.CheckCollisionWidth.call(.{ target_room, x, y, @as(u32, 1), @as(u16, 0x1C09) });
-    retInt32(argc, vp, @as(i32, coll));
+    // Read collision directly from the room's collision map (safe, no D2 function call)
+    const pColl = target_room.pColl orelse {
+        retInt32(argc, vp, -1);
+        return 1;
+    };
+    const cx = x - @as(i32, @bitCast(pColl.dwPosGameX));
+    const cy = y - @as(i32, @bitCast(pColl.dwPosGameY));
+    const sx: i32 = @bitCast(pColl.dwSizeGameX);
+    const sy: i32 = @bitCast(pColl.dwSizeGameY);
+    if (cx < 0 or cy < 0 or cx >= sx or cy >= sy) {
+        retInt32(argc, vp, -1);
+        return 1;
+    }
+    const map = pColl.pMapStart orelse {
+        retInt32(argc, vp, -1);
+        return 1;
+    };
+    const idx: usize = @intCast(cy * sx + cx);
+    retInt32(argc, vp, @as(i32, map[idx]));
     return 1;
 }
 

@@ -5,6 +5,7 @@ export const enum ItemContainer {
   Belt = 2,
   Cube = 3,
   Stash = 4,
+  Ground = 5,
   Vendor = 6,
   Socketed = -1,
 }
