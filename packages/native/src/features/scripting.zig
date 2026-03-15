@@ -93,7 +93,6 @@ fn recreateContext() void {
 fn tickCommon() void {
     ensureInit();
     const eng = &(engine orelse return);
-    eng.pumpMicrotasks();
 
     if (!daemon_enabled) return;
 
