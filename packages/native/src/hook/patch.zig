@@ -87,6 +87,17 @@ pub fn writeBytes(addr: usize, bytes: []const BYTE) bool {
     return writeBytesProtected(addr, bytes);
 }
 
+/// Restore saved bytes to addr (for trampoline unhook/rehook pattern).
+/// Unlike revertRange, this takes caller-provided bytes, not the original_bytes log.
+pub fn restoreBytes(addr: usize, bytes: []const u8) void {
+    var old_protect: DWORD = 0;
+    const ptr: *anyopaque = @ptrFromInt(addr);
+    if (VirtualProtect(ptr, bytes.len, PAGE_READWRITE, &old_protect) == 0) return;
+    const dest: [*]u8 = @ptrFromInt(addr);
+    @memcpy(dest[0..bytes.len], bytes);
+    _ = VirtualProtect(ptr, bytes.len, old_protect, &old_protect);
+}
+
 /// Revert all patched bytes to their original values.
 pub fn revertAll() void {
     var i: usize = original_count;

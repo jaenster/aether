@@ -35,6 +35,7 @@ const scripting = @import("features/scripting.zig");
 const resource_monitor = @import("features/resource_monitor.zig");
 const game_data = @import("features/game_data.zig");
 const frame_limiter = @import("features/frame_limiter.zig");
+const perf_tracker = @import("features/perf_tracker.zig");
 
 const BOOL = win.BOOL;
 const HMODULE = win.HINSTANCE;
@@ -98,6 +99,7 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
             feature.register(&scripting.hooks);
             feature.register(&resource_monitor.hooks);
             feature.register(&game_data.hooks);
+            feature.register(&perf_tracker.hooks);
             feature.register(&frame_limiter.hooks); // LAST — sleeps after all other features
             // Init features, then install hooks
             feature.initAll();
