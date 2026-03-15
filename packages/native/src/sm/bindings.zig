@@ -1158,6 +1158,14 @@ fn jsGetCollision(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_
     return 1;
 }
 
+/// getMapSeed() → the act's map seed (u32)
+fn jsGetMapSeed(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const player = globals.playerUnit().* orelse { retInt32(argc, vp, 0); return 1; };
+    const act = player.pAct orelse { retInt32(argc, vp, 0); return 1; };
+    retInt32(argc, vp, @bitCast(act.dwMapSeed));
+    return 1;
+}
+
 /// getRoomSeed(x, y) → [seedLow, seedHigh] of the room at (x,y), as a single i64-packed i32
 /// Returns two values via string "low:high" so JS can parse both 32-bit values.
 fn jsGetRoomSeed(cx_ptr: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
@@ -1407,6 +1415,7 @@ const bindings = [_]Binding{
     .{ .name = "getCollision", .func = &jsGetCollision, .nargs = 2 },
     .{ .name = "getCollisionRect", .func = &jsGetCollisionRect, .nargs = 4 },
     .{ .name = "getRooms", .func = &jsGetRooms, .nargs = 0 },
+    .{ .name = "getMapSeed", .func = &jsGetMapSeed, .nargs = 0 },
     .{ .name = "getRoomSeed", .func = &jsGetRoomSeed, .nargs = 2 },
     .{ .name = "hasLineOfSight", .func = &jsHasLineOfSight, .nargs = 4 },
 };

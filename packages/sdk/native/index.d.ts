@@ -112,6 +112,7 @@
   /** Get all Room1 bounding boxes: "x,y,w,h;x,y,w,h;..." */
   export function getRooms(): string;
   export function hasLineOfSight(x1: number, y1: number, x2: number, y2: number): number;
+  export function getMapSeed(): number;
   export function getRoomSeed(x: number, y: number): string;
 
   // Screen output

@@ -23,6 +23,7 @@ import {
   getCollisionRect as nativeGetCollisionRect,
   getRooms as nativeGetRooms,
   hasLineOfSight as nativeHasLineOfSight,
+  getMapSeed as nativeGetMapSeed,
   getRoomSeed as nativeGetRoomSeed,
   getMercState as nativeGetMercState,
 } from "diablo:native"
@@ -250,6 +251,9 @@ export class Game {
   hasLineOfSight(x1: number, y1: number, x2: number, y2: number): boolean {
     return nativeHasLineOfSight(x1, y1, x2, y2) === 1
   }
+
+  /** Get the act's map seed (deterministic per game instance). */
+  get mapSeed(): number { return nativeGetMapSeed() }
 
   /** Get the room seed at (x,y). Returns {low, high} or null if room not loaded. */
   getRoomSeed(x: number, y: number): { low: number, high: number } | null {
