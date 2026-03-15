@@ -133,6 +133,7 @@ fn handleDaemonMessage(eng: *Engine, msg: []const u8) void {
     // Hot-reload: clear module entries but keep the context alive (globalThis survives)
     if (is_reload and @import("../net/json.zig").hasStringValue(msg, "type", "file:response")) {
         log.print("scripting: hot-reload — clearing modules, keeping context");
+        eng.invalidateCallCache();
         eng.moduleClear(ctx);
         _ = loader.handleMessage(msg, eng, ctx);
         return;

@@ -38,9 +38,10 @@ SM_API int      sm_eval(void* context, const char* source, int source_len,
 // GC pump — call once per tick
 SM_API void     sm_pump_gc(void* context);
 
-// Call a named global function (no compile, just property lookup + JS::Call).
+// Call a named global function. Caches the function value after first lookup.
 // Returns: 0=success, 1=function returned false, -1=null ctx, -2=not callable, -3=call failed
 SM_API int      sm_call_global_function(void* context, const char* name);
+SM_API void     sm_invalidate_call_cache(void);
 
 // Native function registration
 // callback signature: bool fn(void* context, unsigned argc, void* vp)

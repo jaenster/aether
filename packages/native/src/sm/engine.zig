@@ -73,10 +73,15 @@ pub const Engine = struct {
         if (self.game_context) |ctx| c.sm_pump_gc(ctx);
     }
 
-    /// Call a named global function directly (no eval/compile overhead).
+    /// Call a named global function directly (cached after first lookup).
     /// Returns true if the function was called successfully.
     pub fn callGlobalFn(_: *Engine, ctx: *anyopaque, name: [*:0]const u8) bool {
         return c.sm_call_global_function(ctx, name) == 0;
+    }
+
+    /// Invalidate the cached function (call on hot-reload / context destroy).
+    pub fn invalidateCallCache(_: *Engine) void {
+        c.sm_invalidate_call_cache();
     }
 
     pub fn moduleInit(_: *Engine, ctx: *anyopaque) bool {

@@ -215,7 +215,12 @@ int sm_eval(void* context, const char* source, int source_len,
     return write_to_buf(cstr, len, result_buf, result_buf_len);
 }
 
-// ── Call global function (no compile, just lookup + call) ─────────────
+// ── Cached function call (minimal overhead per tick) ─────────────────
+
+// Cache: stores the resolved function value so we skip property lookup each frame.
+// Invalidated on context destroy or module reload.
+static JS::PersistentRootedValue* cached_tick_fn = nullptr;
+static ContextHandle* cached_tick_ctx = nullptr;
 
 int sm_call_global_function(void* context, const char* name) {
     auto* ch = static_cast<ContextHandle*>(context);
@@ -225,40 +230,59 @@ int sm_call_global_function(void* context, const char* name) {
     JSAutoRequest ar(cx);
     JSAutoCompartment ac(cx, ch->global);
 
-    // Look up the function on globalThis
+    // Use cached function if available and context matches — minimal overhead path
+    if (cached_tick_fn && cached_tick_ctx == ch) {
+        // Skip JSAutoRequest (no-op with THREADSAFE=OFF) and JSAutoCompartment
+        // (we never leave the compartment). Just root, call, done.
+        JS::RootedValue rval(cx);
+        JS::RootedValue fn(cx, cached_tick_fn->get());
+        JS::RootedValue thisv(cx, JS::ObjectValue(*ch->global));
+        bool ok = JS::Call(cx, thisv, fn, JS::HandleValueArray::empty(), &rval);
+        if (!ok) {
+            JS_ClearPendingException(cx);
+            delete cached_tick_fn;
+            cached_tick_fn = nullptr;
+            cached_tick_ctx = nullptr;
+            return -3;
+        }
+        if (rval.isBoolean() && !rval.toBoolean()) return 1;
+        return 0;
+    }
+
+    // First call or cache miss — look up and cache
     JS::RootedValue fn_val(cx);
     if (!JS_GetProperty(cx, ch->global, name, &fn_val)) {
         JS_ClearPendingException(cx);
         return -1;
     }
     if (!fn_val.isObject() || !JS::IsCallable(&fn_val.toObject())) {
-        return -2; // not a function
+        return -2;
     }
 
-    // Call it with no arguments, thisv = global
+    // Cache the function value
+    if (cached_tick_fn) delete cached_tick_fn;
+    cached_tick_fn = new JS::PersistentRootedValue(cx, fn_val);
+    cached_tick_ctx = ch;
+
+    // Call it
     JS::RootedValue rval(cx);
     JS::RootedValue thisv(cx, JS::ObjectValue(*ch->global));
-    JS::HandleValueArray args(JS::HandleValueArray::empty());
-
-    bool ok = JS::Call(cx, thisv, fn_val, args, &rval);
+    bool ok = JS::Call(cx, thisv, fn_val, JS::HandleValueArray::empty(), &rval);
     if (!ok) {
-        if (JS_IsExceptionPending(cx)) {
-            JS::RootedValue exc(cx);
-            if (JS_GetPendingException(cx, &exc)) {
-                JS_ClearPendingException(cx);
-                // Log error via JS::ToString
-                JSString* exc_str = JS::ToString(cx, exc);
-                if (exc_str) {
-                    // Could log here but caller handles it
-                }
-            }
-        }
+        JS_ClearPendingException(cx);
         return -3;
     }
-
-    // Return 0=success, 1=function returned false (for packet blocking)
     if (rval.isBoolean() && !rval.toBoolean()) return 1;
     return 0;
+}
+
+// Invalidate cache (call on context destroy / hot-reload)
+void sm_invalidate_call_cache(void) {
+    if (cached_tick_fn) {
+        delete cached_tick_fn;
+        cached_tick_fn = nullptr;
+    }
+    cached_tick_ctx = nullptr;
 }
 
 // ── Native function registration ─────────────────────────────────────
