@@ -145,11 +145,14 @@ pub fn getOpenNodes(cx: i32, cy: i32, ex: i32, ey: i32, buf: []Point) u32 {
         }
     }
 
-    // expand point normally if smart tele isnt found (8-neighbor)
-    var i: i32 = 1;
-    while (i >= -1) : (i -= 1) {
-        var jj: i32 = 1;
-        while (jj >= -1) : (jj -= 1) {
+    // Fallback: expand with coarse steps (5 tiles) instead of 1-tile crawl.
+    // Teleport doesn't need tile-level resolution — 5-tile steps reduce
+    // search space by 25x while still finding paths through corridors.
+    const STEP: i32 = 5;
+    var i: i32 = STEP;
+    while (i >= -STEP) : (i -= STEP) {
+        var jj: i32 = STEP;
+        while (jj >= -STEP) : (jj -= STEP) {
             if ((i == 0 and jj == 0) or reject(cx + i, cy + jj))
                 continue;
             if (count < buf.len) {

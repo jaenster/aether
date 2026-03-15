@@ -24,7 +24,7 @@ export default createBot('sorc-farmer', function*(game, svc) {
       // Buff up before leaving town
       yield* buffs.refreshAll()
 
-      yield* AncientTunnels.factory(game, svc)
+      yield* Chaos.factory(game, svc)
       game.exitGame()
     }())
 
