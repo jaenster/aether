@@ -42,16 +42,18 @@ const HMODULE = win.HINSTANCE;
 extern "kernel32" fn DisableThreadLibraryCalls(h: HMODULE) callconv(.winapi) BOOL;
 extern "kernel32" fn GetCommandLineA() callconv(.winapi) [*:0]const u8;
 
+/// Check for --flag in command line (e.g. hasFlag("headless") matches "--headless")
 fn hasFlag(comptime flag: []const u8) bool {
+    const needle = "--" ++ flag;
     const cmdline: [*:0]const u8 = GetCommandLineA();
     var i: usize = 0;
     while (cmdline[i] != 0) : (i += 1) {
-        if (cmdline[i] == '-') {
+        if (cmdline[i] == '-' and cmdline[i + 1] == '-') {
             var j: usize = 0;
-            while (j < flag.len and cmdline[i + 1 + j] != 0) : (j += 1) {
-                if (cmdline[i + 1 + j] != flag[j]) break;
+            while (j < needle.len and cmdline[i + j] != 0) : (j += 1) {
+                if (cmdline[i + j] != needle[j]) break;
             } else {
-                const after = cmdline[i + 1 + flag.len];
+                const after = cmdline[i + needle.len];
                 if (after == 0 or after == ' ' or after == '\t') return true;
             }
         }
@@ -69,7 +71,7 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
 
             // Register features
             feature.register(&headless.hooks); // null guards + ExitProcess hook (always)
-            if (hasFlag("-headless")) {
+            if (hasFlag("headless")) {
                 headless.enableHeadlessMode();
                 log.print("aether: headless rendering disabled");
             }
@@ -87,7 +89,7 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
             feature.register(&settings.hooks);
             feature.register(&esc_menu.hooks);
             //feature.register(&arcane_portal.hooks);
-            if (hasFlag("-spawn")) {
+            if (hasFlag("spawn")) {
                 feature.register(&spawn_capture.hooks);
                 log.print("aether: spawn capture enabled");
             }
