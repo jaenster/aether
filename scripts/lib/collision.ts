@@ -1,4 +1,10 @@
 import type { Game } from "diablo:game"
+import { seedAdvance, seedRoll } from "./seed.js"
+
+export type { D2Seed } from "./seed.js"
+export { seedClone } from "./seed.js"
+// Re-export the ones we also use locally
+export { seedAdvance, seedRoll }
 
 export interface Pos { x: number, y: number }
 
@@ -91,4 +97,92 @@ function checkArea(game: Game, x: number, y: number, size: number, mask: number)
  */
 export function findMonsterSpawnPoint(game: Game, x: number, y: number): Pos | null {
   return findSpawnableLocation(game, x, y, 3, CollisionMask.SPAWN, 100)
+}
+
+// ── SpawnMonster position search ────────────────────────────────────
+
+// Collision masks by spawnCol (from MonStats2.txt)
+const SPAWN_COL_MASK: Record<number, number> = {
+  0: 0x3C01,
+  1: 0x01C0,
+  2: 0x3F11,
+  3: 0x0000,
+}
+
+/**
+ * Replicate D2's CreateMonster spawn position search.
+ * Uses the room's RNG seed to determine the random starting point on the
+ * perimeter, then walks the perimeter checking collision.
+ *
+ * @param game - Game instance for collision checks
+ * @param seed - Room seed (read via game.getRoomSeed, COPIED — will be mutated)
+ * @param cx, cy - Center position (glow/target coords)
+ * @param nSpawnRadius - SpawnMonster's radius param (1 for seal bosses → maxRadius=3)
+ * @param spawnCol - From MonStats2.txt (determines collision mask)
+ */
+export function predictSpawnMonsterPosition(
+  game: Game, seed: D2Seed,
+  cx: number, cy: number,
+  nSpawnRadius: number,
+  spawnCol: number,
+): Pos | null {
+  const maxRadius = nSpawnRadius * 3
+  const mask = SPAWN_COL_MASK[spawnCol] ?? 0x3C01
+
+  for (let radius = 3; radius <= maxRadius; radius += 3) {
+    const range = radius * 2
+
+    // RNG step 1: pick axis (coin flip)
+    seedAdvance(seed)
+    const coin = (seed.high & 1) === 0
+
+    let startA: number, startB: number
+    let dx: number, dy: number
+    if (coin) {
+      startA = seedRoll(seed, range >> 1)
+      startB = radius
+      dx = 1; dy = 0
+    } else {
+      startA = radius
+      startB = seedRoll(seed, range >> 1)
+      dx = 0; dy = 1
+    }
+
+    // RNG step 2: sign of A
+    seedAdvance(seed)
+    if (seed.high & 1) startA = -startA
+
+    // RNG step 3: sign of B
+    seedAdvance(seed)
+    if (seed.high & 1) startB = -startB
+
+    let px = cx + startA
+    let py = cy + startB
+
+    const left = cx - radius
+    const right = cx + radius
+    const top = cy - radius
+    const bottom = cy + radius
+
+    const steps = radius * 8
+    for (let i = 0; i < steps; i++) {
+      // Corner detection → direction change
+      if (px <= left  && py <= top)    { dx =  1; dy =  0 }
+      if (px >= right && py <= top)    { dx =  0; dy =  1 }
+      if (px >= right && py >= bottom) { dx = -1; dy =  0 }
+      if (px <= left  && py >= bottom) { dx =  0; dy = -1 }
+
+      px += dx
+      py += dy
+
+      // Collision check (simplified — uses single-tile check, not SizeX-aware)
+      const c = game.getCollision(px, py)
+      if (c < 0) continue // unloaded tile
+      if (mask === 0 || (c & mask) === 0) {
+        return { x: px, y: py }
+      }
+    }
+  }
+
+  return null
 }

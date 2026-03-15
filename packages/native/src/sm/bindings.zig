@@ -1158,6 +1158,136 @@ fn jsGetCollision(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_
     return 1;
 }
 
+/// getRoomSeed(x, y) → [seedLow, seedHigh] of the room at (x,y), as a single i64-packed i32
+/// Returns two values via string "low:high" so JS can parse both 32-bit values.
+fn jsGetRoomSeed(cx_ptr: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const x = argInt32(argc, vp, 0);
+    const y = argInt32(argc, vp, 1);
+    const player = globals.playerUnit().* orelse { retString(cx_ptr, argc, vp, ""); return 1; };
+    const path = player.dynamicPath() orelse { retString(cx_ptr, argc, vp, ""); return 1; };
+    const room1 = path.pRoom1 orelse { retString(cx_ptr, argc, vp, ""); return 1; };
+    const target_room = d2.FindBetterNearbyRoom.call(.{ room1, x, y }) orelse {
+        retString(cx_ptr, argc, vp, "");
+        return 1;
+    };
+    // Room1 seed at offset 0x6C: D2SeedStrc { nSeedLow: u32, nSeedHigh: u32 }
+    const seed_ptr: *const [2]u32 = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(target_room)) + 0x6C));
+    var buf: [32]u8 = undefined;
+    var pos: usize = 0;
+    // Write seedLow as decimal
+    var v: u32 = seed_ptr[0];
+    var digits: [10]u8 = undefined;
+    var dlen: usize = 0;
+    if (v == 0) { digits[0] = '0'; dlen = 1; } else {
+        while (v > 0) : (dlen += 1) { digits[dlen] = @intCast('0' + (v % 10)); v /= 10; }
+    }
+    var i: usize = dlen;
+    while (i > 0) { i -= 1; buf[pos] = digits[i]; pos += 1; }
+    buf[pos] = ':'; pos += 1;
+    // Write seedHigh as decimal
+    v = seed_ptr[1];
+    dlen = 0;
+    if (v == 0) { digits[0] = '0'; dlen = 1; } else {
+        while (v > 0) : (dlen += 1) { digits[dlen] = @intCast('0' + (v % 10)); v /= 10; }
+    }
+    i = dlen;
+    while (i > 0) { i -= 1; buf[pos] = digits[i]; pos += 1; }
+    retString(cx_ptr, argc, vp, buf[0..pos]);
+    return 1;
+}
+
+/// getRooms() → "x,y,w,h;x,y,w,h;..." for all Room1s in the current act
+fn jsGetRooms(cx_ptr: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const player = globals.playerUnit().* orelse { retString(cx_ptr, argc, vp, ""); return 1; };
+    const act = player.pAct orelse { retString(cx_ptr, argc, vp, ""); return 1; };
+
+    // Max ~200 rooms, each "x,y,w,h;" is at most 30 chars → 6000 bytes
+    var buf: [8192]u8 = undefined;
+    var pos: usize = 0;
+    var room1: ?*types.Room1 = act.pRoom1;
+    while (room1) |room| : (room1 = room.pRoomNext) {
+        const coll = room.pColl orelse continue;
+        // Write "x,y,w,h;"
+        const vals = [4]u32{ coll.dwPosGameX, coll.dwPosGameY, coll.dwSizeGameX, coll.dwSizeGameY };
+        for (vals, 0..) |v, vi| {
+            if (vi > 0) { buf[pos] = ','; pos += 1; }
+            pos += writeDecimal(buf[pos..], v);
+        }
+        buf[pos] = ';';
+        pos += 1;
+        if (pos > buf.len - 40) break;
+    }
+    retString(cx_ptr, argc, vp, buf[0..pos]);
+    return 1;
+}
+
+fn writeDecimal(buf: []u8, val: u32) usize {
+    if (val == 0) { buf[0] = '0'; return 1; }
+    var v = val;
+    var digits: [10]u8 = undefined;
+    var dlen: usize = 0;
+    while (v > 0) : (dlen += 1) {
+        digits[dlen] = @intCast('0' + (v % 10));
+        v /= 10;
+    }
+    var i: usize = dlen;
+    var pos: usize = 0;
+    while (i > 0) {
+        i -= 1;
+        buf[pos] = digits[i];
+        pos += 1;
+    }
+    return pos;
+}
+
+/// getCollisionRect(x, y, w, h) → packed collision data as string of hex nibbles
+/// Each tile is one WORD, encoded as 4 hex chars. Tiles in row-major order.
+/// Max 80x80 = 6400 tiles = 25600 hex chars.
+fn jsGetCollisionRect(cx_ptr: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const rx = argInt32(argc, vp, 0);
+    const ry = argInt32(argc, vp, 1);
+    const rw: u32 = @intCast(@max(1, @min(80, argInt32(argc, vp, 2))));
+    const rh: u32 = @intCast(@max(1, @min(80, argInt32(argc, vp, 3))));
+    const player = globals.playerUnit().* orelse { retString(cx_ptr, argc, vp, ""); return 1; };
+    const path = player.dynamicPath() orelse { retString(cx_ptr, argc, vp, ""); return 1; };
+    const base_room = path.pRoom1 orelse { retString(cx_ptr, argc, vp, ""); return 1; };
+
+    const hex = "0123456789abcdef";
+    // 4 hex chars per tile, max 80*80 = 25600
+    var buf: [25600]u8 = undefined;
+    var pos: usize = 0;
+
+    var dy: u32 = 0;
+    while (dy < rh) : (dy += 1) {
+        var dx: u32 = 0;
+        while (dx < rw) : (dx += 1) {
+            const tx = rx + @as(i32, @intCast(dx));
+            const ty = ry + @as(i32, @intCast(dy));
+            var val: u16 = 0xFFFF; // default: blocked
+            if (d2.FindBetterNearbyRoom.call(.{ base_room, tx, ty })) |room| {
+                if (room.pColl) |coll| {
+                    const cx = tx - @as(i32, @bitCast(coll.dwPosGameX));
+                    const cy = ty - @as(i32, @bitCast(coll.dwPosGameY));
+                    const sx: i32 = @bitCast(coll.dwSizeGameX);
+                    const sy: i32 = @bitCast(coll.dwSizeGameY);
+                    if (cx >= 0 and cy >= 0 and cx < sx and cy < sy) {
+                        if (coll.pMapStart) |map| {
+                            val = map[@intCast(cy * sx + cx)];
+                        }
+                    }
+                }
+            }
+            buf[pos] = hex[(val >> 12) & 0xF];
+            buf[pos + 1] = hex[(val >> 8) & 0xF];
+            buf[pos + 2] = hex[(val >> 4) & 0xF];
+            buf[pos + 3] = hex[val & 0xF];
+            pos += 4;
+        }
+    }
+    retString(cx_ptr, argc, vp, buf[0..pos]);
+    return 1;
+}
+
 /// hasLineOfSight(x1, y1, x2, y2) → true if no wall/object blocks the path
 fn jsHasLineOfSight(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const x1 = argInt32(argc, vp, 0);
@@ -1275,6 +1405,9 @@ const bindings = [_]Binding{
     .{ .name = "injectPacket", .func = &jsInjectPacket, .nargs = 1 },
     // Collision
     .{ .name = "getCollision", .func = &jsGetCollision, .nargs = 2 },
+    .{ .name = "getCollisionRect", .func = &jsGetCollisionRect, .nargs = 4 },
+    .{ .name = "getRooms", .func = &jsGetRooms, .nargs = 0 },
+    .{ .name = "getRoomSeed", .func = &jsGetRoomSeed, .nargs = 2 },
     .{ .name = "hasLineOfSight", .func = &jsHasLineOfSight, .nargs = 4 },
 };
 

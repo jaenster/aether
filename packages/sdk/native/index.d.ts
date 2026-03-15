@@ -105,9 +105,14 @@
   export function getPacketSize(): number;
   export function injectPacket(data: Uint8Array): void;
 
-  // Collision
+  // Collision & spatial
   export function getCollision(x: number, y: number): number;
+  /** Get collision for a rectangle. Returns hex string: 4 chars per tile, row-major. */
+  export function getCollisionRect(x: number, y: number, w: number, h: number): string;
+  /** Get all Room1 bounding boxes: "x,y,w,h;x,y,w,h;..." */
+  export function getRooms(): string;
   export function hasLineOfSight(x1: number, y1: number, x2: number, y2: number): number;
+  export function getRoomSeed(x: number, y: number): string;
 
   // Screen output
   export function printScreen(message: string, color: number): void;

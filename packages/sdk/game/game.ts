@@ -20,7 +20,10 @@ import {
   getPacketData,
   injectPacket as nativeInjectPacket,
   getCollision as nativeGetCollision,
+  getCollisionRect as nativeGetCollisionRect,
+  getRooms as nativeGetRooms,
   hasLineOfSight as nativeHasLineOfSight,
+  getRoomSeed as nativeGetRoomSeed,
   getMercState as nativeGetMercState,
 } from "diablo:native"
 import { UnitCollection } from "./unit.collection.js";
@@ -221,9 +224,39 @@ export class Game {
   /** Check collision flags at (x,y). Returns 0 if walkable, >0 if blocked, -1 on error. */
   getCollision(x: number, y: number): number { return nativeGetCollision(x, y) }
 
+  /** Get collision data for a rectangle. Returns Uint16Array in row-major order. */
+  getCollisionRect(x: number, y: number, w: number, h: number): Uint16Array {
+    const hex = nativeGetCollisionRect(x, y, w, h)
+    if (!hex) return new Uint16Array(0)
+    const count = hex.length / 4
+    const result = new Uint16Array(count)
+    for (let i = 0; i < count; i++) {
+      result[i] = parseInt(hex.substring(i * 4, i * 4 + 4), 16)
+    }
+    return result
+  }
+
+  /** Get all loaded Room1 bounding boxes as {x, y, w, h} array. */
+  getRooms(): { x: number, y: number, w: number, h: number }[] {
+    const raw = nativeGetRooms()
+    if (!raw) return []
+    return raw.split(';').filter(Boolean).map(function(entry: string) {
+      const p = entry.split(',')
+      return { x: parseInt(p[0]!, 10), y: parseInt(p[1]!, 10), w: parseInt(p[2]!, 10), h: parseInt(p[3]!, 10) }
+    })
+  }
+
   /** Check if a straight line from (x1,y1) to (x2,y2) is clear of walls/objects/doors. */
   hasLineOfSight(x1: number, y1: number, x2: number, y2: number): boolean {
     return nativeHasLineOfSight(x1, y1, x2, y2) === 1
+  }
+
+  /** Get the room seed at (x,y). Returns {low, high} or null if room not loaded. */
+  getRoomSeed(x: number, y: number): { low: number, high: number } | null {
+    const raw = nativeGetRoomSeed(x, y)
+    if (!raw) return null
+    const parts = raw.split(':')
+    return { low: parseInt(parts[0]!, 10), high: parseInt(parts[1]!, 10) }
   }
 
   // ── Logging ────────────────────────────────────────────────────────
