@@ -56,23 +56,32 @@ export function findSpawnableLocation(
 }
 
 /**
+ * Safe collision check — returns -1 for unloaded tiles, treats as blocked.
+ */
+function safeCollision(game: Game, x: number, y: number, mask: number): boolean {
+  const c = game.getCollision(x, y)
+  return c >= 0 && (c & mask) === 0
+}
+
+/**
  * Check if a square area centered at (x, y) with size `size` is free of collision flags.
  * Approximates CheckCollision_Vector by sampling key points in the area.
+ * Returns false if any tile is unloaded (-1) or blocked.
  */
 function checkArea(game: Game, x: number, y: number, size: number, mask: number): boolean {
   const half = size >> 1
-  // Check center
-  if (game.getCollision(x + half, y + half) & mask) return false
+  // Check center first — if unloaded, area is too far away
+  if (!safeCollision(game, x + half, y + half, mask)) return false
   // Check corners
-  if (game.getCollision(x, y) & mask) return false
-  if (game.getCollision(x + size - 1, y) & mask) return false
-  if (game.getCollision(x, y + size - 1) & mask) return false
-  if (game.getCollision(x + size - 1, y + size - 1) & mask) return false
+  if (!safeCollision(game, x, y, mask)) return false
+  if (!safeCollision(game, x + size - 1, y, mask)) return false
+  if (!safeCollision(game, x, y + size - 1, mask)) return false
+  if (!safeCollision(game, x + size - 1, y + size - 1, mask)) return false
   // Check edge midpoints
-  if (game.getCollision(x + half, y) & mask) return false
-  if (game.getCollision(x + half, y + size - 1) & mask) return false
-  if (game.getCollision(x, y + half) & mask) return false
-  if (game.getCollision(x + size - 1, y + half) & mask) return false
+  if (!safeCollision(game, x + half, y, mask)) return false
+  if (!safeCollision(game, x + half, y + size - 1, mask)) return false
+  if (!safeCollision(game, x, y + half, mask)) return false
+  if (!safeCollision(game, x + size - 1, y + half, mask)) return false
   return true
 }
 
