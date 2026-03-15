@@ -100,7 +100,7 @@ fn buildDistanceRing(tp_range: i32) void {
 pub fn getOpenNodes(cx: i32, cy: i32, ex: i32, ey: i32, buf: []Point) u32 {
     var count: u32 = 0;
 
-    // if were in tele range take the jump
+    // In teleport range — jump directly to goal
     if (euclidean(ex, ey, cx, cy) < range - 20) {
         if (count < buf.len) {
             buf[count] = .{ .x = ex, .y = ey };
@@ -109,7 +109,7 @@ pub fn getOpenNodes(cx: i32, cy: i32, ex: i32, ey: i32, buf: []Point) u32 {
         return count;
     }
 
-    // find best tele spot
+    // Greedy ring search: find best landing spot closest to goal
     if (best_pt_so_far.x == 0)
         best_pt_so_far = .{ .x = cx, .y = cy };
 
@@ -145,9 +145,7 @@ pub fn getOpenNodes(cx: i32, cy: i32, ex: i32, ey: i32, buf: []Point) u32 {
         }
     }
 
-    // Fallback: expand with coarse steps (5 tiles) instead of 1-tile crawl.
-    // Teleport doesn't need tile-level resolution — 5-tile steps reduce
-    // search space by 25x while still finding paths through corridors.
+    // Fallback: 8-directional coarse steps (5 tiles)
     const STEP: i32 = 5;
     var i: i32 = STEP;
     while (i >= -STEP) : (i -= STEP) {
