@@ -300,13 +300,8 @@ static bool native_trampoline(JSContext* cx, unsigned argc, JS::Value* vp) {
     const JS::Value& fnval = js::GetFunctionNativeReserved(callee, 0);
     auto fn = reinterpret_cast<sm_native_fn>(static_cast<uintptr_t>(fnval.toPrivateUint32()));
 
-    LARGE_INTEGER t0, t1;
-    QueryPerformanceCounter(&t0);
-    bool result = fn(cx, argc, vp) != 0;
-    QueryPerformanceCounter(&t1);
     g_native_call_count++;
-    g_native_call_ticks += t1.QuadPart - t0.QuadPart;
-    return result;
+    return fn(cx, argc, vp) != 0;
 }
 
 // Snapshot + reset: copy to output, then zero atomically

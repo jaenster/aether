@@ -28,7 +28,7 @@ export const Movement = createService((game: Game, services) => {
       const d = dist(game.player.x, game.player.y, targetX, targetY)
       const path = game.findTelePath(targetX, targetY)
       if (path.length === 0) {
-        // game.log(`[move] no tele path to ${targetX},${targetY} dist=${d|0}`)
+        game.log(`[move] no tele path to ${targetX},${targetY} dist=${d|0}`)
         return
       }
       // game.log(`[move] tele ${path.length} hops, dist=${d|0} from=${game.player.x},${game.player.y} to=${targetX},${targetY}`)
@@ -247,6 +247,8 @@ export const Movement = createService((game: Game, services) => {
       if (!route) {
         throw new Error(`[move] no route to area ${targetArea} from ${game.area}`)
       }
+
+      game.log(`[move] journey ${game.area}→${targetArea} via wp=${route.wpArea} exits=[${route.exitPath}]`)
 
       if (game.area !== route.wpArea) {
         const ok: unknown = yield* this.useWaypoint(route.wpArea)
