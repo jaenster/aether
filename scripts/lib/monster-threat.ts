@@ -1,4 +1,4 @@
-import { type Monster, MonsterMode } from "diablo:game"
+import { type Monster, MonsterMode, MonsterSpecType } from "diablo:game"
 import { getUnitStat, getDifficulty, getUnitHP, getUnitMaxHP, getUnitMP, getUnitMaxMP } from "diablo:native"
 import { Stat } from "diablo:constants"
 import { getBaseStat } from "./txt.js"
@@ -590,6 +590,19 @@ export function assessThreat(mon: Monster): ThreatAssessment {
 // BATTLEFIELD — full tactical situation analysis
 // ═══════════════════════════════════════════════════════════════════════
 
+/** Max distance to consider a monster "nearby" and contributing real threat */
+const NEARBY_RADIUS = 25
+
+/** Potion cooldown in D2: 30 frames = 1.2 seconds at 25fps */
+const POT_COOLDOWN_SEC = 1.2
+
+/** HP healed per potion tier (hp1..hp5, rvs, rvl) */
+const POT_HEAL: Record<string, number> = {
+  hp1: 45, hp2: 90, hp3: 150, hp4: 225, hp5: 320,
+  rvs: 0, rvl: 0, // rejuvs heal % based — handled separately
+}
+const REJUV_PCT: Record<string, number> = { rvs: 0.35, rvl: 1.0 }
+
 export type TacticalAction =
   | "engage"        // fight them
   | "cc_first"      // apply CC before committing kills
@@ -602,62 +615,52 @@ export type TacticalAction =
 export interface KillPriority {
   mon: Monster
   threat: ThreatAssessment
-  /** DPS this monster contributes / casts to kill = efficiency of killing it first */
   dpsPerCast: number
-  /** Adjusted score including tactical modifiers (reviver bonus, CC state, etc) */
   priorityScore: number
-  /** Why this score */
   reason: string
 }
 
 export interface AuraContext {
-  /** Any monster in the pack has Conviction aura */
   hasConviction: boolean
   convictionPenalty: number
-  /** Any monster has Fanaticism (boosts all nearby monsters) */
   hasFanaticism: boolean
-  /** Any monster has Holy Freeze (slows player) */
   hasHolyFreeze: boolean
-  /** Unique/champion aura sources for tactical targeting */
   auraSources: Monster[]
 }
 
+export interface PotionInfo {
+  /** Belt pot codes (e.g. ['hp3','hp3','hp4','mp3','rvs']) */
+  beltPots: string[]
+}
+
 export interface BattlefieldAssessment {
-  /** All assessed threats, sorted by priority score */
   threats: KillPriority[]
-  /** Combined DPS from all monsters factoring in distance + CC */
+  /** DPS from nearby monsters only (distance-adjusted) */
   totalIncomingDps: number
-  /** Sum of raw max DPS if everything were in melee and un-CCed */
+  /** Raw max DPS if everything were in melee */
   worstCaseDps: number
-  /** Active non-trivial threats */
   activeThreats: number
-  /** Peak individual threat */
   peakThreat: ThreatLevel
-  /** Overall situation danger */
   situationDanger: ThreatLevel
-  /** Recommended tactical action */
   action: TacticalAction
-  /** Why that action */
   actionReason: string
-  /** In melee range (<8 tiles) */
   meleePackCount: number
-  /** Seconds until death at current incoming rate */
+  /** Seconds until death accounting for potion healing */
   timeToDeathSec: number
-  /** Total casts needed to clear everything */
   totalCastsToKill: number
-  /** Total fight damage estimate if we stand and fight */
+  /** Damage taken while clearing the fight (minus pot healing) */
   totalFightDamage: number
-  /** CC value: DPS difference if we CC vs don't */
+  /** How much our pots heal per second */
+  potHealPerSec: number
+  /** Whether pots can out-heal incoming DPS */
+  canSustain: boolean
+  /** Total pot charges remaining */
+  potCharges: number
   ccDpsDelta: number
-  /** Aura context from nearby monsters */
   auras: AuraContext
-  /** Player HP % right now */
   playerHpPct: number
-  /** Player MP % right now */
   playerMpPct: number
-  /** Corpse chain risk: fire enchanted near pack */
   corpseChainRisk: boolean
-  /** Reviver present with corpses potentially nearby */
   reviverActive: boolean
 }
 
@@ -670,17 +673,43 @@ function aliveFilter(m: Monster): boolean {
   return m.valid && m.hp > 0 && m.mode !== MonsterMode.Death && m.mode !== MonsterMode.Dead
 }
 
-export function assessBattlefield(monsters: Monster[]): BattlefieldAssessment {
+function computePotSustain(pots: PotionInfo, playerMaxHp: number): { healPerSec: number, totalHeal: number, charges: number } {
+  let totalHeal = 0
+  let charges = 0
+  for (const code of pots.beltPots) {
+    const flat = POT_HEAL[code]
+    if (flat !== undefined && flat > 0) {
+      totalHeal += flat
+      charges++
+    } else {
+      const pct = REJUV_PCT[code]
+      if (pct !== undefined) {
+        totalHeal += playerMaxHp * pct
+        charges++
+      }
+    }
+  }
+  // Heal per second = we can drink one pot every POT_COOLDOWN_SEC
+  // Average heal per pot * drink rate
+  const avgHeal = charges > 0 ? totalHeal / charges : 0
+  const healPerSec = avgHeal / POT_COOLDOWN_SEC
+  return { healPerSec, totalHeal, charges }
+}
+
+export function assessBattlefield(monsters: Monster[], potions?: PotionInfo): BattlefieldAssessment {
   const alive = monsters.filter(aliveFilter)
 
-  // ── 1. Detect aura context first — it modifies effective threat ────
+  // ── 1. Filter to nearby monsters only ──────────────────────────────
+  const nearby = alive.filter(m => m.distance <= NEARBY_RADIUS)
+
+  // ── 2. Detect aura context ─────────────────────────────────────────
   const auras: AuraContext = {
     hasConviction: false, convictionPenalty: 0,
     hasFanaticism: false, hasHolyFreeze: false,
     auraSources: [],
   }
 
-  for (const m of alive) {
+  for (const m of nearby) {
     let ench: number[]
     try { ench = m.enchants } catch { ench = [] }
     const enchSet = new Set(ench)
@@ -700,50 +729,39 @@ export function assessBattlefield(monsters: Monster[]): BattlefieldAssessment {
     }
   }
 
-  // ── 2. Assess each monster ─────────────────────────────────────────
-  const assessed = alive.map(m => ({
+  // ── 3. Assess each nearby monster ──────────────────────────────────
+  const assessed = nearby.map(m => ({
     mon: m,
     threat: assessThreat(m),
   }))
 
-  // ── 3. Build kill priority ─────────────────────────────────────────
+  // ── 4. Build kill priority ─────────────────────────────────────────
   const priorities: KillPriority[] = assessed.map(({ mon, threat }) => {
     let priorityScore = threat.dpsPerCast
     let reason = `${threat.dpsPerCast | 0} dps/cast`
 
-    // Reviver bonus: revivers must die first or pack never dies
     if (getProfile(mon.classid).isReviver) {
       priorityScore *= 5
       reason = `REVIVER ${reason}`
     }
-
-    // Aura source bonus: killing conviction/fanaticism source drops whole pack's damage
     if (auras.auraSources.includes(mon)) {
       priorityScore *= 3
       reason = `AURA SOURCE ${reason}`
     }
-
-    // Already frozen = deprioritize (it's not hurting us right now)
     if (threat.isFrozen) {
       priorityScore *= 0.2
       reason = `frozen ${reason}`
     }
-
-    // Super uniques / champions get a small boost (they're the pack leader)
-    if (mon.spectype & 0x02) {
+    if (mon.spectype & MonsterSpecType.SuperUnique) {
       priorityScore *= 1.5
       reason = `boss ${reason}`
-    } else if (mon.spectype & 0x04) {
+    } else if (mon.spectype & MonsterSpecType.Champion) {
       priorityScore *= 1.2
     }
-
-    // Extreme threats get urgency boost
     if (threat.threat === "extreme") {
       priorityScore *= 2
       reason = `EXTREME ${reason}`
     }
-
-    // One-shot targets: if castsToKill <= 2 and DPS > 0, quick wins clear DPS fast
     if (threat.castsToKill <= 2 && threat.effectiveDps > 0) {
       priorityScore *= 1.5
       reason = `quick-kill ${reason}`
@@ -754,7 +772,7 @@ export function assessBattlefield(monsters: Monster[]): BattlefieldAssessment {
 
   priorities.sort((a, b) => b.priorityScore - a.priorityScore)
 
-  // ── 4. Aggregate stats ─────────────────────────────────────────────
+  // ── 5. Aggregate stats ─────────────────────────────────────────────
   let totalIncomingDps = 0
   let worstCaseDps = 0
   let activeThreats = 0
@@ -774,19 +792,16 @@ export function assessBattlefield(monsters: Monster[]): BattlefieldAssessment {
     totalCastsToKill += threat.castsToKill
     ccDpsDelta += (threat.effectiveDps - threat.ccReducedDps)
 
-    const profile = getProfile(mon.classid)
-    if (profile.isReviver) reviverActive = true
+    if (getProfile(mon.classid).isReviver) reviverActive = true
 
-    // Corpse chain: fire enchanted monster near other monsters = chain explosion risk
     let monEnch: number[]
     try { monEnch = mon.enchants } catch { monEnch = [] }
-    const ench = new Set(monEnch)
-    if (ench.has(ENCH.FIRE) || deathExplosion.has(mon.classid)) {
+    if ((new Set(monEnch)).has(ENCH.FIRE) || deathExplosion.has(mon.classid)) {
       if (meleePackCount >= 3) corpseChainRisk = true
     }
   }
 
-  // ── 5. Player state ────────────────────────────────────────────────
+  // ── 6. Player state ────────────────────────────────────────────────
   const playerMaxHp = getUnitMaxHP()
   const playerHp = getUnitHP()
   const playerMaxMp = getUnitMaxMP()
@@ -794,54 +809,54 @@ export function assessBattlefield(monsters: Monster[]): BattlefieldAssessment {
   const playerHpPct = playerMaxHp > 0 ? playerHp / playerMaxHp : 0
   const playerMpPct = playerMaxMp > 0 ? playerMp / playerMaxMp : 0
 
-  // ── 6. Time to death ──────────────────────────────────────────────
-  // How fast the combined monster DPS eats through our current HP
-  const timeToDeathSec = totalIncomingDps > 0 ? playerHp / totalIncomingDps : Infinity
+  // ── 7. Potion sustain ──────────────────────────────────────────────
+  const potSustain = potions
+    ? computePotSustain(potions, playerMaxHp)
+    : { healPerSec: 0, totalHeal: 0, charges: 0 }
 
-  // ── 7. Total fight damage estimate ─────────────────────────────────
-  // Simplified model: kill monsters in priority order, each kill removes that DPS
-  // Fight damage = sum of (monster_dps * time_until_killed)
+  const netDps = Math.max(0, totalIncomingDps - potSustain.healPerSec)
+  const canSustain = potSustain.healPerSec >= totalIncomingDps && potSustain.charges > 0
+
+  // ── 8. Time to death (factoring in pot healing) ────────────────────
+  let timeToDeathSec: number
+  if (totalIncomingDps <= 0) {
+    timeToDeathSec = Infinity
+  } else if (canSustain) {
+    // Pots out-heal damage — we die when pots run out
+    // Total sustain time = totalHeal / totalIncomingDps + playerHp/totalIncomingDps
+    timeToDeathSec = (playerHp + potSustain.totalHeal) / totalIncomingDps
+  } else {
+    // Net damage after pot healing eats through HP
+    timeToDeathSec = netDps > 0 ? playerHp / netDps : Infinity
+  }
+
+  // ── 9. Fight damage (damage taken while clearing, minus pot healing) ─
+  const secsPerCast = 0.4
   let totalFightDamage = 0
   let castsSoFar = 0
-  const secsPerCast = 0.4
   for (const { threat } of priorities) {
-    // During the casts spent killing this monster, all remaining DPS is hitting us
-    const remainingDps = totalIncomingDps - priorities
-      .filter(p => p !== priorities[0]) // rough: subtract already-killed DPS
-      .reduce((s, p) => s, 0) // placeholder: real model below
-    totalFightDamage += threat.effectiveDps * (castsSoFar * secsPerCast)
+    // Monster outputs positioned DPS from now until we kill it
+    const monAliveSec = (castsSoFar + threat.castsToKill) * secsPerCast
+    totalFightDamage += threat.positionedDps * monAliveSec
     castsSoFar += threat.castsToKill
   }
-  // Simpler accurate model: sum(each monster's DPS × total_fight_duration)
-  // minus DPS savings from killing them in order
+  // Subtract pot healing over the fight duration
   const totalFightSec = totalCastsToKill * secsPerCast
-  totalFightDamage = 0
-  castsSoFar = 0
-  for (const { threat } of priorities) {
-    // This monster is alive for (totalFightSec - time_it_dies)
-    // It dies after castsSoFar + castsToKill casts
-    const diesAtSec = (castsSoFar + threat.castsToKill) * secsPerCast
-    const aliveFor = totalFightSec - castsSoFar * secsPerCast
-    // But really: monster outputs DPS from now until we kill it
-    const monAlive = (castsSoFar + threat.castsToKill) * secsPerCast
-    totalFightDamage += threat.positionedDps * monAlive
-    castsSoFar += threat.castsToKill
-  }
+  const potHealDuringFight = Math.min(potSustain.totalHeal, potSustain.healPerSec * totalFightSec)
+  totalFightDamage = Math.max(0, totalFightDamage - potHealDuringFight)
 
-  // ── 8. Situation danger ────────────────────────────────────────────
-  // Use totalFightDamage (how much damage we take while clearing the whole pack)
-  // compared to our HP — this accounts for both monster DPS AND our kill speed
-  const hpFactor = Math.max(0.3, playerHpPct)
-  const adjustedFightDmg = totalFightDamage / hpFactor
-
+  // ── 10. Situation danger ───────────────────────────────────────────
   let situationDanger: ThreatLevel
-  if (adjustedFightDmg < playerMaxHp * 0.1 || activeThreats === 0) {
+  if (activeThreats === 0) {
     situationDanger = "trivial"
-  } else if (adjustedFightDmg < playerMaxHp * 0.5) {
+  } else if (canSustain && totalFightDamage < playerHp * 0.3) {
+    // Pots out-heal damage and fight won't dent us much
+    situationDanger = "trivial"
+  } else if (totalFightDamage < playerMaxHp * 0.3) {
     situationDanger = "low"
-  } else if (adjustedFightDmg < playerMaxHp * 1.5) {
+  } else if (totalFightDamage < playerMaxHp * 1.0) {
     situationDanger = "medium"
-  } else if (adjustedFightDmg < playerMaxHp * 3.0) {
+  } else if (totalFightDamage < playerMaxHp * 2.0) {
     situationDanger = "high"
   } else {
     situationDanger = "extreme"
@@ -857,54 +872,40 @@ export function assessBattlefield(monsters: Monster[]): BattlefieldAssessment {
     situationDanger = "high"
   }
 
-  // Low MP = can't sustain damage output
+  // Low MP = can't output damage
   if (playerMpPct < 0.1 && activeThreats > 0 && threatRank[situationDanger] < 3) {
     situationDanger = threatFromRank[Math.min(4, threatRank[situationDanger] + 1)]!
   }
 
-  // ── 9. Tactical action decision ────────────────────────────────────
+  // ── 11. Tactical action ────────────────────────────────────────────
   let action: TacticalAction = "engage"
   let actionReason = "standard engagement"
 
-  // RETREAT: total fight damage would kill us
   if (totalFightDamage > playerHp * 0.9 && situationDanger === "extreme") {
     action = "retreat"
-    actionReason = `fightDmg=${totalFightDamage | 0} > HP=${playerHp | 0} — we die before clearing`
-  }
-  // RETREAT: HP critical and surrounded
-  else if (playerHpPct < 0.25 && meleePackCount >= 4) {
+    actionReason = `fightDmg=${totalFightDamage | 0} > HP=${playerHp | 0}`
+  } else if (playerHpPct < 0.25 && meleePackCount >= 4) {
     action = "retreat"
     actionReason = `HP=${(playerHpPct * 100) | 0}% surrounded by ${meleePackCount}`
-  }
-  // KITE: we have ranged ability but melee pack is closing
-  else if (meleePackCount >= 4 && totalIncomingDps > playerMaxHp * 0.3) {
+  } else if (meleePackCount >= 4 && totalIncomingDps > playerMaxHp * 0.3) {
     action = "kite"
     actionReason = `${meleePackCount} melee in range, reposition`
-  }
-  // CC FIRST: freezing the pack drops DPS significantly
-  else if (ccDpsDelta > totalIncomingDps * 0.4 && activeThreats >= 3) {
+  } else if (ccDpsDelta > totalIncomingDps * 0.4 && activeThreats >= 3) {
     action = "cc_first"
     actionReason = `CC drops ${ccDpsDelta | 0} dps (${((ccDpsDelta / totalIncomingDps) * 100) | 0}%)`
-  }
-  // FOCUS REVIVER: reviver present
-  else if (reviverActive) {
+  } else if (reviverActive) {
     action = "focus_reviver"
     actionReason = "reviver in pack — kill first"
-  }
-  // BURST: single extreme target
-  else if (peakThreat === "extreme" && activeThreats <= 3) {
+  } else if (peakThreat === "extreme" && activeThreats <= 3) {
     action = "burst_priority"
     const top = priorities[0]
     actionReason = top ? `burst ${top.mon.name ?? `cls=${top.mon.classid}`}` : "burst extreme"
-  }
-  // SKIP: pack is trivial
-  else if (situationDanger === "trivial" && activeThreats === 0) {
+  } else if (situationDanger === "trivial" && activeThreats === 0) {
     action = "skip"
     actionReason = "trivial pack, skip"
-  }
-  // Default engage
-  else {
-    actionReason = `${activeThreats} threats, ${totalIncomingDps | 0} dps, TTD=${timeToDeathSec === Infinity ? '∞' : timeToDeathSec.toFixed(1) + 's'}`
+  } else {
+    actionReason = `${activeThreats} nearby, ${totalIncomingDps | 0} dps` +
+      (canSustain ? ' (pots sustain)' : ` TTD=${timeToDeathSec === Infinity ? '∞' : timeToDeathSec.toFixed(1) + 's'}`)
   }
 
   return {
@@ -912,6 +913,7 @@ export function assessBattlefield(monsters: Monster[]): BattlefieldAssessment {
     totalIncomingDps, worstCaseDps, activeThreats, peakThreat,
     situationDanger, action, actionReason,
     meleePackCount, timeToDeathSec, totalCastsToKill, totalFightDamage,
+    potHealPerSec: potSustain.healPerSec, canSustain, potCharges: potSustain.charges,
     ccDpsDelta, auras, playerHpPct, playerMpPct,
     corpseChainRisk, reviverActive,
   }
@@ -938,17 +940,16 @@ export function formatBattlefield(bf: BattlefieldAssessment): string {
   const lines: string[] = []
   const ttd = bf.timeToDeathSec === Infinity ? '∞' : bf.timeToDeathSec.toFixed(1) + 's'
   lines.push(`[${bf.situationDanger.toUpperCase()}] → ${bf.action} | ${bf.actionReason}`)
-  lines.push(`  ${bf.activeThreats} threats, ${bf.totalIncomingDps | 0}/${bf.worstCaseDps | 0} dps (pos/max), TTD=${ttd}, ${bf.totalCastsToKill} casts to clear`)
+  lines.push(`  ${bf.activeThreats} nearby threats, ${bf.totalIncomingDps | 0} dps, TTD=${ttd}, ${bf.totalCastsToKill} casts`)
   lines.push(`  HP=${(bf.playerHpPct * 100) | 0}% MP=${(bf.playerMpPct * 100) | 0}% melee=${bf.meleePackCount} fightDmg=${bf.totalFightDamage | 0}`)
+  lines.push(`  Pots: ${bf.potCharges} charges, ${bf.potHealPerSec | 0} hp/s sustain ${bf.canSustain ? '(SUSTAINING)' : '(NOT sustaining)'}`)
 
-  if (bf.auras.hasConviction) lines.push(`  ⚡ Conviction aura: -${bf.auras.convictionPenalty} res`)
-  if (bf.auras.hasFanaticism) lines.push(`  ⚡ Fanaticism aura: pack hits harder + faster`)
-  if (bf.auras.hasHolyFreeze) lines.push(`  ⚡ Holy Freeze aura: we are slowed`)
-  if (bf.corpseChainRisk) lines.push(`  ⚠ Corpse chain risk — fire enchanted in dense pack`)
-  if (bf.reviverActive) lines.push(`  ⚠ Reviver active — infinite fight if not killed first`)
-  if (bf.ccDpsDelta > 0) lines.push(`  ❄ CC value: -${bf.ccDpsDelta | 0} dps if frozen`)
+  if (bf.auras.hasConviction) lines.push(`  Conviction aura: -${bf.auras.convictionPenalty} res`)
+  if (bf.auras.hasFanaticism) lines.push(`  Fanaticism aura: pack hits harder + faster`)
+  if (bf.auras.hasHolyFreeze) lines.push(`  Holy Freeze aura: we are slowed`)
+  if (bf.corpseChainRisk) lines.push(`  Corpse chain risk — fire enchanted in dense pack`)
+  if (bf.reviverActive) lines.push(`  Reviver active — infinite fight if not killed first`)
 
-  // Top 3 priority targets
   for (let i = 0; i < Math.min(3, bf.threats.length); i++) {
     const p = bf.threats[i]!
     lines.push(`  #${i + 1} ${p.reason}: ${p.mon.name ?? `cls=${p.mon.classid}`} (${p.threat.threat})`)

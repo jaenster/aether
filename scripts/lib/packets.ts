@@ -1,3 +1,5 @@
+import { C2SPacket, UiButton, REPAIR_ALL_FLAG } from "diablo:game"
+
 /**
  * Packet builder for D2GS client→server packets.
  * Uses Uint8Array + DataView for proper binary layout.
@@ -41,74 +43,73 @@ export class Packet {
 
 // --- Pre-built packet constructors ---
 
-/** 0x13: Entity interaction (opens NPC menu) */
+/** Entity interaction (opens NPC menu) */
 export function entityInteract(unitType: number, unitId: number) {
-  return new Packet(0x13, 8).dword(unitType).dword(unitId).toUint8Array()
+  return new Packet(C2SPacket.EntityInteract, 8).dword(unitType).dword(unitId).toUint8Array()
 }
 
-/** 0x30: Close NPC interaction */
+/** Close NPC interaction */
 export function npcClose(unitType: number, unitId: number) {
-  return new Packet(0x30, 8).dword(unitType).dword(unitId).toUint8Array()
+  return new Packet(C2SPacket.NpcClose, 8).dword(unitType).dword(unitId).toUint8Array()
 }
 
 /**
- * 0x38: NPC session actions
+ * NPC session actions
  *   mode 0 = open trade, mode 1 = repair, mode 2 = gamble
  */
 export function npcSession(mode: number, npcId: number, extra = 0) {
-  return new Packet(0x38, 12).dword(mode).dword(npcId).dword(extra).toUint8Array()
+  return new Packet(C2SPacket.NpcSession, 12).dword(mode).dword(npcId).dword(extra).toUint8Array()
 }
 
-/** 0x32: Buy item from NPC */
+/** Buy item from NPC */
 export function npcBuy(npcId: number, itemId: number, flags: number, cost: number) {
-  return new Packet(0x32, 16).dword(npcId).dword(itemId).dword(flags).dword(cost).toUint8Array()
+  return new Packet(C2SPacket.NpcBuy, 16).dword(npcId).dword(itemId).dword(flags).dword(cost).toUint8Array()
 }
 
-/** 0x33: Sell item to NPC */
+/** Sell item to NPC */
 export function npcSell(npcId: number, itemId: number, animMode: number, cost: number) {
-  return new Packet(0x33, 16).dword(npcId).dword(itemId).dword(animMode).dword(cost).toUint8Array()
+  return new Packet(C2SPacket.NpcSell, 16).dword(npcId).dword(itemId).dword(animMode).dword(cost).toUint8Array()
 }
 
-/** 0x35: Repair item(s). itemId=0 + cost=0x80000000 for repair-all */
+/** Repair item(s). itemId=0 + cost=REPAIR_ALL_FLAG for repair-all */
 export function npcRepair(npcId: number, itemId: number, animMode: number, cost: number) {
-  return new Packet(0x35, 16).dword(npcId).dword(itemId).dword(animMode).dword(cost).toUint8Array()
+  return new Packet(C2SPacket.NpcRepair, 16).dword(npcId).dword(itemId).dword(animMode).dword(cost).toUint8Array()
 }
 
-/** 0x2F: NPC interact — triggers heal for healing NPCs (Akara, Fara, Ormus, Jamella, Malah, Atma).
+/** NPC interact — triggers heal for healing NPCs (Akara, Fara, Ormus, Jamella, Malah, Atma).
  *  Server calls HealByPlayerByNPC: restores HP, MP, stamina, removes poison+freeze. */
 export function npcHeal(npcId: number) {
-  return new Packet(0x2F, 8).dword(1).dword(npcId).toUint8Array()
+  return new Packet(C2SPacket.NpcHeal, 8).dword(1).dword(npcId).toUint8Array()
 }
 
-/** 0x18: Pick up item to cursor buffer */
+/** Pick up item to cursor buffer */
 export function itemToBuffer(itemId: number) {
-  return new Packet(0x18, 4).dword(itemId).toUint8Array()
+  return new Packet(C2SPacket.ItemToBuffer, 4).dword(itemId).toUint8Array()
 }
 
-/** 0x19: Place cursor item into storage container.
+/** Place cursor item into storage container.
  *  storageId: 1=inventory, 3=cube, 4=stash */
 export function bufferToStorage(itemId: number, x: number, y: number, storageId: number) {
-  return new Packet(0x19, 16).dword(itemId).dword(x).dword(y).dword(storageId).toUint8Array()
+  return new Packet(C2SPacket.BufferToStorage, 16).dword(itemId).dword(x).dword(y).dword(storageId).toUint8Array()
 }
 
-/** 0x20: Use item at current location (right-click tome/scroll in inventory).
+/** Use item at current location (right-click tome/scroll in inventory).
  *  Sends itemId + player world coords. */
 export function useItem(itemId: number, x: number, y: number) {
-  return new Packet(0x20, 12).dword(itemId).dword(x).dword(y).toUint8Array()
+  return new Packet(C2SPacket.UseItem, 12).dword(itemId).dword(x).dword(y).toUint8Array()
 }
 
-/** 0x44: Transmute items in the Horadric Cube */
+/** Transmute items in the Horadric Cube */
 export function cubeTransmute() {
-  return new Packet(0x44, 4).dword(0).toUint8Array()
+  return new Packet(C2SPacket.CubeTransmute, 4).dword(0).toUint8Array()
 }
 
-/** 0x4F: Click UI button. Used for gold stash/withdraw, trade accept, etc.
- *  Button IDs: 0x12=CloseStash, 0x13=WithdrawGold, 0x14=StashGold */
-export function clickButton(button: number, complement: number) {
-  return new Packet(0x4F, 6).word(button).dword(complement).toUint8Array()
+/** Click UI button. Used for gold stash/withdraw, trade accept, etc. */
+export function clickButton(button: UiButton, complement: number) {
+  return new Packet(C2SPacket.ClickButton, 6).word(button).dword(complement).toUint8Array()
 }
 
-/** 0x50: Drop gold on the ground */
+/** Drop gold on the ground */
 export function dropGold(playerId: number, amount: number) {
-  return new Packet(0x50, 8).dword(playerId).dword(amount).toUint8Array()
+  return new Packet(C2SPacket.DropGold, 8).dword(playerId).dword(amount).toUint8Array()
 }

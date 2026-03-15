@@ -1,4 +1,4 @@
-import { createScript, Area, type Game, ItemContainer } from "diablo:game"
+import { createScript, Area, type Game, ItemContainer, StorageId } from "diablo:game"
 import { Movement } from "../services/movement.js"
 import { Attack } from "../services/attack.js"
 import { Pickit } from "../services/pickit.js"
@@ -79,7 +79,7 @@ function* openCowPortal(game: Game) {
   if (leg.location !== ItemContainer.Cube) {
     game.sendPacket(itemToBuffer(leg.unitId))
     yield* game.delay(300)
-    game.sendPacket(bufferToStorage(leg.unitId, 0, 0, 3))
+    game.sendPacket(bufferToStorage(leg.unitId, 0, 0, StorageId.Cube))
     yield* game.delay(300)
   }
 
@@ -87,7 +87,7 @@ function* openCowPortal(game: Game) {
   if (tome.location !== ItemContainer.Cube) {
     game.sendPacket(itemToBuffer(tome.unitId))
     yield* game.delay(300)
-    game.sendPacket(bufferToStorage(tome.unitId, 2, 0, 3))
+    game.sendPacket(bufferToStorage(tome.unitId, 2, 0, StorageId.Cube))
     yield* game.delay(300)
   }
 

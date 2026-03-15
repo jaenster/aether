@@ -4,6 +4,7 @@ import { NpcFlags } from "../npc-flags.js"
 import { ItemAction } from "../../item/types.js"
 import type { TownAction, TownContext } from "../action.js"
 import { findStash } from "../act-data.js"
+import { UiButton, StorageId } from "diablo:game"
 import { itemToBuffer, bufferToStorage, clickButton } from "../../packets.js"
 
 /** Max gold in stash (2.5M) */
@@ -59,7 +60,7 @@ export const stashAction: TownAction = {
       ctx.game.log(`[town:stash] stashing ${item.name} (${item.code})`)
       ctx.game.sendPacket(itemToBuffer(item.unitId))
       yield* ctx.game.delay(200)
-      ctx.game.sendPacket(bufferToStorage(item.unitId, 0, 0, 4))
+      ctx.game.sendPacket(bufferToStorage(item.unitId, 0, 0, StorageId.Stash))
       yield* ctx.game.delay(200)
     }
 
@@ -67,7 +68,7 @@ export const stashAction: TownAction = {
     if (needGold) {
       const amount = ctx.game.player.gold
       ctx.game.log(`[town:stash] stashing ${amount} gold`)
-      ctx.game.sendPacket(clickButton(0x14, amount))
+      ctx.game.sendPacket(clickButton(UiButton.StashGold, amount))
       yield* ctx.game.delay(300)
     }
 

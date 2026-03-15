@@ -11,7 +11,7 @@ import {
   closeNPCInteract as nativeCloseNPCInteract,
   npcMenuSelect as nativeNpcMenuSelect,
 } from "diablo:native"
-import { UnitType, PlayerMode, UiFlags, MonsterSpecType, ItemFlags } from "diablo:constants";
+import { UnitType, PlayerMode, UiFlags, MonsterSpecType, ItemFlags, C2SPacket, REPAIR_ALL_FLAG } from "diablo:constants";
 
 export abstract class Unit {
   constructor(readonly type: number, readonly unitId: number) {}
@@ -189,8 +189,7 @@ export class NPC extends Monster {
     // Use NPC menu callback for repair (typically option index 1)
     nativeNpcMenuSelect(1)
     yield* delay(300)
-    // 0x35: repair all — npcId, itemId=0, animMode=0, cost=0x80000000
-    nativeSendPacket(buildPacket(0x35, this.unitId, 0, 0, 0x80000000 | 0))
+    nativeSendPacket(buildPacket(C2SPacket.NpcRepair, this.unitId, 0, 0, REPAIR_ALL_FLAG))
     yield* delay(200)
     yield* this.close()
   }
