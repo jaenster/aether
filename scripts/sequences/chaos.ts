@@ -1,6 +1,7 @@
 import { createScript, Area, type Game, type Monster } from "diablo:game"
 import type { Pos } from "../lib/attack-types.js"
-// findSpawnableLocation available from ../lib/collision.js for general spawn prediction
+import { predictSpawnMonsterPosition } from "../lib/collision.js"
+import type { D2Seed } from "../lib/seed.js"
 import { Movement } from "../services/movement.js"
 import { Attack } from "../services/attack.js"
 import { Pickit } from "../services/pickit.js"
@@ -54,18 +55,33 @@ const BOSS_CLASSID: Record<string, number> = {
 const SEAL_SPAWN_DELAY = 8
 
 /**
- * Predict exactly where a seal boss will spawn.
- * Replicates server logic: sealPos + delta → FindSpawnableLocation spiral scan.
+ * Predict boss spawn position using the actual D2 SpawnMonster algorithm.
+ * Reads room seed, replicates the perimeter walk with RNG to find exact tile.
+ * Falls back to glow position if seed can't be read (room not loaded).
  */
-/**
- * Get boss spawn target position for a given arm.
- * Glow position is static per layout. SpawnMonster searches from glow outward
- * with a random perimeter walk (RNG-seeded), so exact position is unpredictable.
- * Boss will be within ~9 tiles of the glow — use glow as pre-attack target
- * since Blizzard/Meteor splash covers this range easily.
- */
-function getBossSpawnTarget(name: string, layout: 1 | 2): Pos | undefined {
-  return GLOW_POS[name]?.[layout]
+function predictBossSpawn(game: Game, name: string, layout: 1 | 2): Pos | undefined {
+  const glowPos = GLOW_POS[name]?.[layout]
+  if (!glowPos) return undefined
+
+  // Read room seed at glow position (same seed the server uses for SpawnMonster)
+  const roomSeed = game.getRoomSeed(glowPos.x, glowPos.y)
+  if (!roomSeed) {
+    game.log(`[chaos] ${name}: room not loaded at glow, using glow pos`)
+    return glowPos
+  }
+
+  // Copy seed (predictSpawnMonsterPosition mutates it)
+  const seed: D2Seed = { low: roomSeed.low, high: roomSeed.high }
+
+  // spawnCol for super uniques: typically 0 (default mask 0x3C01)
+  const spawn = predictSpawnMonsterPosition(game, seed, glowPos.x, glowPos.y, 1, 0)
+  if (spawn) {
+    game.log(`[chaos] ${name}: glow=${glowPos.x},${glowPos.y} seed=${roomSeed.low}:${roomSeed.high} → spawn=${spawn.x},${spawn.y}`)
+    return spawn
+  }
+
+  game.log(`[chaos] ${name}: no valid spawn found, using glow pos`)
+  return glowPos
 }
 
 export const Chaos = createScript(function*(game, svc) {
@@ -113,7 +129,7 @@ export const Chaos = createScript(function*(game, svc) {
     }
 
     // Predict boss spawn from static glow position + runtime collision scan
-    const bossPos = getBossSpawnTarget(name, layouts[name]!)
+    const bossPos = predictBossSpawn(game, name, layouts[name]!)
     if (!bossPos) {
       game.log(`[chaos] no predicted spawn for ${name}, skipping`)
       continue
