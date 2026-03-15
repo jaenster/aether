@@ -32,7 +32,7 @@ export const CollisionMask = {
  */
 export function findSpawnableLocation(
   game: Game, cx: number, cy: number,
-  scanRadius = 3, mask = CollisionMask.SPAWN, maxRings = 100
+  scanRadius = 3, mask: number = CollisionMask.SPAWN, maxRings = 100
 ): Pos | null {
   const halfR = scanRadius >> 1
   const startX = cx - halfR

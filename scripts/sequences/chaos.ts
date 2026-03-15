@@ -1,6 +1,6 @@
 import { createScript, Area, type Game, type Monster } from "diablo:game"
 import type { Pos } from "../lib/attack-types.js"
-import { findSpawnableLocation, CollisionMask } from "../lib/collision.js"
+// findSpawnableLocation available from ../lib/collision.js for general spawn prediction
 import { Movement } from "../services/movement.js"
 import { Attack } from "../services/attack.js"
 import { Pickit } from "../services/pickit.js"
@@ -20,12 +20,6 @@ const GLOW_POS: Record<string, Record<1|2, Pos>> = {
   infector: { 1: { x: 7903, y: 5269 }, 2: { x: 7903, y: 5269 } }, // TODO: verify layout 2
 }
 
-// Scan radii per arm (from Ghidra: CreateSealGlow nParam → radius)
-const BOSS_SCAN_RADIUS: Record<string, number> = {
-  infector: 13,  // arm 1, 0xD
-  deseis:   15,  // arm 2, 0xF
-  vizier:   14,  // arm 3, 0xE
-}
 
 // Layout detection: each seal wing has 2 possible tile layouts.
 function getLayout(game: Game, sealClassid: number, checkValue: number): 1 | 2 {
@@ -64,23 +58,14 @@ const SEAL_SPAWN_DELAY = 8
  * Replicates server logic: sealPos + delta → FindSpawnableLocation spiral scan.
  */
 /**
- * Predict boss spawn position for a given arm.
- * Glow position is static per layout. Boss spawns at the first walkable tile
- * found by FindSpawnableLocation starting from the glow — this CAN shift
- * at runtime if players/monsters block the default spot.
+ * Get boss spawn target position for a given arm.
+ * Glow position is static per layout. SpawnMonster searches from glow outward
+ * with a random perimeter walk (RNG-seeded), so exact position is unpredictable.
+ * Boss will be within ~9 tiles of the glow — use glow as pre-attack target
+ * since Blizzard/Meteor splash covers this range easily.
  */
-function predictBossSpawn(game: Game, name: string, layout: 1 | 2): Pos | undefined {
-  const glowPos = GLOW_POS[name]?.[layout]
-  if (!glowPos) return undefined
-
-  const radius = BOSS_SCAN_RADIUS[name] ?? 13
-  const spawn = findSpawnableLocation(game, glowPos.x, glowPos.y, radius, CollisionMask.SPAWN)
-  if (spawn) {
-    game.log(`[chaos] ${name} glow=${glowPos.x},${glowPos.y} → boss=${spawn.x},${spawn.y}`)
-  } else {
-    game.log(`[chaos] ${name} glow=${glowPos.x},${glowPos.y} → no spawnable tile, using glow pos`)
-  }
-  return spawn ?? glowPos
+function getBossSpawnTarget(name: string, layout: 1 | 2): Pos | undefined {
+  return GLOW_POS[name]?.[layout]
 }
 
 export const Chaos = createScript(function*(game, svc) {
@@ -128,7 +113,7 @@ export const Chaos = createScript(function*(game, svc) {
     }
 
     // Predict boss spawn from static glow position + runtime collision scan
-    const bossPos = predictBossSpawn(game, name, layouts[name]!)
+    const bossPos = getBossSpawnTarget(name, layouts[name]!)
     if (!bossPos) {
       game.log(`[chaos] no predicted spawn for ${name}, skipping`)
       continue
