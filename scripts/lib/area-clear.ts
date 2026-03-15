@@ -1,21 +1,11 @@
 import type { Game, Monster } from "diablo:game"
 import { CollisionMask } from "./collision.js"
 
-/**
- * Area clearing using collision-based room discovery.
- *
- * Scans the collision grid to find walkable tiles, tracks which tiles
- * have been "cleared" (player was close enough to see monsters), and
- * moves to the nearest uncleared walkable tile. Monsters always take
- * priority over exploration.
- */
-
 const WALL_MASK = CollisionMask.BLOCK_WALK | CollisionMask.BLOCK_MISSILE
 const SCAN_SIZE = 60           // collision grid scan per step (tiles per side)
 const CLEAR_RADIUS = 20        // tiles around player marked as "cleared" per visit
-const KILL_RANGE = 30          // scan + attack range (same for both)
-const MAX_STEPS = 120          // safety cap
-const MAX_EMPTY_STREAK = 12    // bail after N consecutive empty positions
+const KILL_RANGE = 30          // scan + attack range
+const MAX_STEPS = 200          // safety cap
 
 interface ClearContext {
   game: Game
@@ -27,10 +17,6 @@ interface ClearContext {
   tag: string
 }
 
-/**
- * Track cleared positions using a grid of cells.
- * Cell size matches CLEAR_RADIUS so each visit clears exactly one cell.
- */
 class ClearedMap {
   private cleared = new Set<string>()
   private walkable = new Set<string>()
@@ -47,14 +33,18 @@ class ClearedMap {
     return this.cleared.has(this.cellKey(wx, wy))
   }
 
-  /** Register walkable tiles discovered from collision scan */
-  addWalkable(tiles: { x: number, y: number }[]) {
+  addWalkable(tiles: { x: number, y: number }[]): number {
+    let added = 0
     for (const t of tiles) {
-      this.walkable.add(this.cellKey(t.x, t.y))
+      const k = this.cellKey(t.x, t.y)
+      if (!this.walkable.has(k)) {
+        this.walkable.add(k)
+        added++
+      }
     }
+    return added
   }
 
-  /** Find nearest uncleared walkable cell center */
   nearestUncleared(wx: number, wy: number): { x: number, y: number } | null {
     let best: { x: number, y: number } | null = null
     let bestDist = Infinity
@@ -74,11 +64,18 @@ class ClearedMap {
     return best
   }
 
+  get unclearedCount(): number {
+    let count = 0
+    for (const key of this.walkable) {
+      if (!this.cleared.has(key)) count++
+    }
+    return count
+  }
+
   get clearedCount() { return this.cleared.size }
   get walkableCount() { return this.walkable.size }
 }
 
-/** Scan collision grid and return walkable tile positions */
 function scanWalkable(game: Game, cx: number, cy: number): { x: number, y: number }[] {
   const half = SCAN_SIZE / 2
   const x0 = cx - half, y0 = cy - half
@@ -97,14 +94,23 @@ function scanWalkable(game: Game, cx: number, cy: number): { x: number, y: numbe
   return result
 }
 
-/**
- * Clear an area by systematically visiting all walkable regions.
- */
+function findWalkableNear(game: Game, x: number, y: number): { x: number, y: number } | null {
+  const coll = game.getCollision(x, y)
+  if (coll >= 0 && !(coll & WALL_MASK)) return { x, y }
+  for (let r = 1; r <= 8; r++) {
+    for (const [dx, dy] of [[r,0],[-r,0],[0,r],[0,-r],[r,r],[-r,-r],[r,-r],[-r,r]]) {
+      const c = game.getCollision(x + dx, y + dy)
+      if (c >= 0 && !(c & WALL_MASK)) return { x: x + dx, y: y + dy }
+    }
+  }
+  return null
+}
+
 export function* clearArea(ctx: ClearContext) {
   const { game, move, atk, loot, buffs, tag } = ctx
   const map = new ClearedMap()
-  let emptyStreak = 0
   let totalKills = 0
+  let consecutiveEmpty = 0
 
   for (let step = 0; step < MAX_STEPS; step++) {
     if (!game.inGame) break
@@ -112,63 +118,50 @@ export function* clearArea(ctx: ClearContext) {
     // Mark current position as cleared
     map.markCleared(game.player.x, game.player.y)
 
-    // Scan collision around us and register walkable tiles
+    // Scan collision around us — discover new walkable cells
     const walkable = scanWalkable(game, game.player.x, game.player.y)
-    map.addWalkable(walkable)
+    const newCells = map.addWalkable(walkable)
+    if (newCells > 0) consecutiveEmpty = 0 // discovered new territory
 
     // Kill anything nearby
     const hasMonsters = game.monsters.find((m: Monster) => atk.alive(m) && m.distance < KILL_RANGE)
 
     if (hasMonsters) {
-      emptyStreak = 0
+      consecutiveEmpty = 0
       if (buffs.needsRefresh()) yield* buffs.refreshOne()
 
       const before = game.monsters.filter((m: Monster) => atk.alive(m)).length
-      yield* atk.clear({ killRange: KILL_RANGE, maxCasts: 30, priority: ctx.priority })
+      yield* atk.clear({ killRange: KILL_RANGE, maxCasts: 40, priority: ctx.priority })
       const after = game.monsters.filter((m: Monster) => atk.alive(m)).length
       totalKills += Math.max(0, before - after)
 
       yield* loot.lootGround()
-      continue // re-check before exploring
+      continue
     }
 
-    emptyStreak++
-    if (emptyStreak >= MAX_EMPTY_STREAK) {
-      game.log(`${tag} ${emptyStreak} empty visits — area clear`)
-      break
-    }
-
-    // Move to nearest uncleared walkable cell
+    // Find next uncleared cell
     const next = map.nearestUncleared(game.player.x, game.player.y)
     if (!next) {
-      game.log(`${tag} all walkable cells cleared`)
+      game.log(`${tag} all ${map.walkableCount} cells explored`)
       break
     }
 
-    // Verify destination is actually walkable (cell center might be in a wall)
-    let tx = next.x, ty = next.y
-    const coll = game.getCollision(tx, ty)
-    if (coll === -1 || (coll & WALL_MASK)) {
-      // Cell center is blocked — find a nearby walkable tile
-      let found = false
-      for (let r = 1; r <= 5 && !found; r++) {
-        for (const [dx, dy] of [[r,0],[-r,0],[0,r],[0,-r],[r,r],[-r,-r]]) {
-          const c2 = game.getCollision(tx + dx, ty + dy)
-          if (c2 >= 0 && !(c2 & WALL_MASK)) {
-            tx += dx; ty += dy
-            found = true
-            break
-          }
-        }
-      }
-      if (!found) {
-        // Can't reach this cell — mark it cleared and skip
-        map.markCleared(next.x, next.y)
-        continue
-      }
+    consecutiveEmpty++
+    // Only bail if we've visited many cells without finding ANY new territory or monsters
+    if (consecutiveEmpty > 20 && map.unclearedCount === 0) {
+      game.log(`${tag} exhausted — no reachable uncleared cells`)
+      break
     }
 
-    yield* move.moveTo(tx, ty)
+    // Find a walkable position near the target cell center
+    const target = findWalkableNear(game, next.x, next.y)
+    if (!target) {
+      // Cell center unreachable — mark it and skip
+      map.markCleared(next.x, next.y)
+      continue
+    }
+
+    yield* move.moveTo(target.x, target.y)
   }
 
   game.log(`${tag} done (${map.clearedCount}/${map.walkableCount} cells, ~${totalKills} kills)`)

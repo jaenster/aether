@@ -83,6 +83,11 @@ const ignoreSkill: Record<number, boolean> = {
   37: true,   // Warmth
   // Sorc energy shield
   58: true,   // Energy Shield
+  // Sorc channeled / melee-range — terrible for botting
+  52: true,   // Inferno (channeled, short cone, low DPS per cast)
+  57: true,   // Thunder Storm (passive proc, not castable as attack)
+  62: true,   // Hydra (summon turret, AI-controlled)
+  48: true,   // Enchant (buff, not attack)
   // Paladin auras (non-damaging)
   99: true,   // Prayer
   100: true,  // Defiance
