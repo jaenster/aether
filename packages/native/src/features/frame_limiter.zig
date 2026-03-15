@@ -56,16 +56,14 @@ fn gameLoop() void {
         if (frame_us < min_frame_us) min_frame_us = frame_us;
         if (frame_us > 40_000) frames_over_40ms += 1;
 
-        // Frame limiter: sleep to target 25fps
-        const frame_ms: u32 = @intCast(@min(frame_us / 1000, 1000));
-        if (frame_ms < TARGET_FRAME_MS) {
-            const sleep_ms = TARGET_FRAME_MS - frame_ms;
-            Sleep(sleep_ms);
-            total_sleep_ms += sleep_ms;
-        }
+        // Yield CPU. The game's EndScene handles 25fps pacing.
+        // We replace the game's NOP'd Sleep(10) with our own — same effect but we
+        // get timing data. This fires every message pump iteration, not just renders.
+        Sleep(10);
+        total_sleep_ms += 10;
     }
 
-    last_frame_qpc = qpcNow(); // record AFTER sleep for accurate next-frame timing
+    last_frame_qpc = qpcNow();
 
     // Report every 10 seconds
     const tick = GetTickCount();
