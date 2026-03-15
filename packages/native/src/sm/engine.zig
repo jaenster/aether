@@ -84,6 +84,14 @@ pub const Engine = struct {
         c.sm_invalidate_call_cache();
     }
 
+    /// Get native call stats (count + QPC ticks), resets counters.
+    pub fn getNativeCallStats(_: *Engine) struct { count: u64, ticks: u64 } {
+        var count: u64 = 0;
+        var ticks: u64 = 0;
+        _ = c.sm_get_native_call_stats(&count, &ticks);
+        return .{ .count = count, .ticks = ticks };
+    }
+
     pub fn moduleInit(_: *Engine, ctx: *anyopaque) bool {
         return c.sm_module_init(ctx) == 0;
     }

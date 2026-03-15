@@ -91,6 +91,10 @@ fn recreateContext() void {
 }
 
 var gc_counter: u32 = 0;
+var native_report_tick: u32 = 0;
+
+extern "kernel32" fn GetTickCount() callconv(.winapi) u32;
+extern "kernel32" fn QueryPerformanceFrequency(lp: *i64) callconv(.winapi) i32;
 
 fn tickCommon() void {
     ensureInit();
@@ -101,6 +105,31 @@ fn tickCommon() void {
     if (gc_counter >= 25) {
         gc_counter = 0;
         eng.pumpMicrotasks();
+    }
+
+    // Report native call stats every 10s
+    const tick = GetTickCount();
+    if (tick -% native_report_tick >= 10_000) {
+        native_report_tick = tick;
+        const stats = eng.getNativeCallStats();
+        if (stats.count > 0) {
+            var freq: i64 = 0;
+            _ = QueryPerformanceFrequency(&freq);
+            const freq_u: u64 = @intCast(freq);
+            const us = if (freq_u > 0) (stats.ticks / freq_u) * 1_000_000 + (stats.ticks % freq_u) * 1_000_000 / freq_u else 0;
+            const ms: u32 = @intCast(us / 1000);
+            const avg_ns: u32 = if (stats.count > 0) @intCast((us * 1000) / stats.count) else 0;
+
+            const lh = log.openLogHandle() orelse return;
+            defer log.closeHandle(lh);
+            log.writeRawHandle(lh, "native: ");
+            writeU(lh, ms);
+            log.writeRawHandle(lh, "ms ");
+            writeU(lh, @intCast(stats.count));
+            log.writeRawHandle(lh, " calls avg=");
+            writeU(lh, avg_ns);
+            log.writeRawHandle(lh, "ns/call\r\n");
+        }
     }
 
     if (!daemon_enabled) return;
@@ -117,6 +146,7 @@ fn tickCommon() void {
 }
 
 fn gameLoop() void {
+    was_in_game = true;
     tickCommon();
     const eng = &(engine orelse return);
 
@@ -129,8 +159,27 @@ fn gameLoop() void {
     }
 }
 
+var was_in_game: bool = false;
+
 fn oogLoop() void {
+    // Trigger GC when transitioning out of game — lots of garbage from the run
+    if (was_in_game) {
+        was_in_game = false;
+        const eng = &(engine orelse return);
+        eng.pumpMicrotasks();
+        log.print("scripting: GC after game exit");
+    }
     tickCommon();
+}
+
+
+fn writeU(lh: *anyopaque, val: u32) void {
+    var buf: [10]u8 = undefined;
+    var v = val;
+    var i: usize = 10;
+    if (v == 0) { log.writeRawHandle(lh, "0"); return; }
+    while (v > 0 and i > 0) { i -= 1; buf[i] = @intCast((v % 10) + '0'); v /= 10; }
+    log.writeRawHandle(lh, buf[i..10]);
 }
 
 fn handleDaemonMessage(eng: *Engine, msg: []const u8) void {

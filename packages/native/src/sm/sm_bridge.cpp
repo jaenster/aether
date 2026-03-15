@@ -11,6 +11,7 @@
 #include <cstring>
 #include <vector>
 #include <string>
+#include <windows.h>
 
 // ── Internal types ────────────────────────────────────────────────────
 
@@ -287,6 +288,10 @@ void sm_invalidate_call_cache(void) {
 
 // ── Native function registration ─────────────────────────────────────
 
+// Native call profiling — tracks total time + count in C++ trampolines
+static uint64_t g_native_call_count = 0;
+static uint64_t g_native_call_ticks = 0; // QPC ticks
+
 // Trampoline: SM calls this, we forward to the sm_native_fn stored in reserved slot 0.
 static bool native_trampoline(JSContext* cx, unsigned argc, JS::Value* vp) {
     JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
@@ -295,7 +300,21 @@ static bool native_trampoline(JSContext* cx, unsigned argc, JS::Value* vp) {
     const JS::Value& fnval = js::GetFunctionNativeReserved(callee, 0);
     auto fn = reinterpret_cast<sm_native_fn>(static_cast<uintptr_t>(fnval.toPrivateUint32()));
 
-    return fn(cx, argc, vp) != 0;
+    LARGE_INTEGER t0, t1;
+    QueryPerformanceCounter(&t0);
+    bool result = fn(cx, argc, vp) != 0;
+    QueryPerformanceCounter(&t1);
+    g_native_call_count++;
+    g_native_call_ticks += t1.QuadPart - t0.QuadPart;
+    return result;
+}
+
+int sm_get_native_call_stats(uint64_t* out_count, uint64_t* out_ticks) {
+    *out_count = g_native_call_count;
+    *out_ticks = g_native_call_ticks;
+    g_native_call_count = 0;
+    g_native_call_ticks = 0;
+    return 0;
 }
 
 int sm_register_native_fn(void* context, const char* name, sm_native_fn fn, unsigned nargs) {
