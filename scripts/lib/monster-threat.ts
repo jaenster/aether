@@ -457,8 +457,8 @@ export function assessThreat(mon: Monster): ThreatAssessment {
         counterplay.push("Max light res, teleport on top")
         break
       case "oblivion_knight":
-        dangers.push("Oblivion Knight (IM / Lower Resist)")
-        counterplay.push("Ranged only, no melee")
+        dangers.push("Oblivion Knight (Amp/Decrep/LR curses)")
+        counterplay.push("Kill fast, avoid melee when Amped")
         break
       case "viper":
         dangers.push("Viper (bugged cloud)")

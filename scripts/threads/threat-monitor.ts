@@ -1,4 +1,5 @@
 import { createScript } from "diablo:game"
+import { getBaseStat } from "../lib/txt.js"
 import { assessBattlefield, formatBattlefield, formatThreat } from "../lib/monster-threat.js"
 
 const ASSESS_INTERVAL = 25 // every 25 frames (~1s)
@@ -6,6 +7,37 @@ const LOG_INTERVAL = 75    // full log every 75 frames (~3s)
 
 function isTown(area: number): boolean {
   return area === 1 || area === 40 || area === 75 || area === 103 || area === 109
+}
+
+// One-time skill dump per classid
+const dumpedClassids = new Set<number>()
+
+function dumpMonsterSkills(game: any, classid: number, name: string) {
+  if (dumpedClassids.has(classid)) return
+  dumpedClassids.add(classid)
+
+  const skills: string[] = []
+  for (let i = 1; i <= 8; i++) {
+    const skillId = getBaseStat("monstats", classid, `Skill${i}`)
+    const skillLvl = getBaseStat("monstats", classid, `Sk${i}lvl`)
+    const skillMode = getBaseStat("monstats", classid, `Sk${i}mode`)
+    if (skillId > 0) {
+      skills.push(`S${i}:id=${skillId} lvl=${skillLvl} mode=${skillMode}`)
+    }
+  }
+
+  const a1min = getBaseStat("monstats", classid, "A1MinD")
+  const a1max = getBaseStat("monstats", classid, "A1MaxD")
+  const a2min = getBaseStat("monstats", classid, "A2MinD")
+  const a2max = getBaseStat("monstats", classid, "A2MaxD")
+  const isMelee = getBaseStat("monstats", classid, "isMelee")
+
+  game.logVerbose(`[skills] ${name} (${classid}) melee=${isMelee} A1=${a1min}-${a1max} A2=${a2min}-${a2max}`)
+  if (skills.length > 0) {
+    game.logVerbose(`[skills]   ${skills.join(", ")}`)
+  } else {
+    game.logVerbose(`[skills]   (no skills)`)
+  }
 }
 
 export const ThreatMonitor = createScript(function*(game, _svc) {
@@ -25,6 +57,11 @@ export const ThreatMonitor = createScript(function*(game, _svc) {
 
     const monsters = [...game.monsters]
     if (monsters.length === 0) continue
+
+    // Dump skills for each new monster type
+    for (const mon of monsters) {
+      dumpMonsterSkills(game, mon.classid, mon.name ?? `unknown`)
+    }
 
     const bf = assessBattlefield(monsters)
 
