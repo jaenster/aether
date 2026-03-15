@@ -1,5 +1,6 @@
 import { createScript, Area, type Game, type Monster } from "diablo:game"
 import type { Pos } from "../lib/attack-types.js"
+import { findSpawnableLocation, CollisionMask } from "../lib/collision.js"
 import { Movement } from "../services/movement.js"
 import { Attack } from "../services/attack.js"
 import { Pickit } from "../services/pickit.js"
@@ -43,42 +44,9 @@ const BOSS_CLASSID: Record<string, number> = {
 // Frames between last seal activation and boss spawn (~8 frames observed)
 const SEAL_SPAWN_DELAY = 8
 
-// Collision mask used by server's FindSpawnableLocation for glow/boss placement
-const SPAWN_COLLISION_MASK = 0x3f11
-
-/**
- * Replicate the server's FindSpawnableLocation spiral scan.
- * Searches outward from (cx, cy) in expanding concentric squares (stride 2)
- * for a tile where (collision & mask) === 0.
- * Returns the first walkable position, or the center if none found.
- */
-function findSpawnableLocation(game: Game, cx: number, cy: number, radius: number, mask: number): Pos {
-  // Check center first
-  if ((game.getCollision(cx, cy) & mask) === 0) return { x: cx, y: cy }
-
-  // Expanding square spiral, stride 2 (matches server's sub-tile scan)
-  for (let r = 1; r <= radius; r++) {
-    for (let dx = -r; dx <= r; dx++) {
-      for (const dy of [-r, r]) {
-        const x = cx + dx * 2, y = cy + dy * 2
-        if ((game.getCollision(x, y) & mask) === 0) return { x, y }
-      }
-    }
-    for (let dy = -r + 1; dy < r; dy++) {
-      for (const dx of [-r, r]) {
-        const x = cx + dx * 2, y = cy + dy * 2
-        if ((game.getCollision(x, y) & mask) === 0) return { x, y }
-      }
-    }
-  }
-
-  // Fallback: return center (server would fail to spawn glow, but boss still tries)
-  return { x: cx, y: cy }
-}
-
 /**
  * Predict exactly where a seal boss will spawn.
- * Replicates server logic: sealPos + delta → spiral scan for walkable tile.
+ * Replicates server logic: sealPos + delta → FindSpawnableLocation spiral scan.
  */
 function predictBossSpawn(game: Game, bossSealClassid: number): Pos | undefined {
   const delta = BOSS_DELTA[bossSealClassid]
@@ -90,7 +58,7 @@ function predictBossSpawn(game: Game, bossSealClassid: number): Pos | undefined 
   const rawX = preset.x + delta.dx
   const rawY = preset.y + delta.dy
 
-  return findSpawnableLocation(game, rawX, rawY, 3, SPAWN_COLLISION_MASK)
+  return findSpawnableLocation(game, rawX, rawY, 3, CollisionMask.SPAWN) ?? { x: rawX, y: rawY }
 }
 
 export const Chaos = createScript(function*(game, svc) {
