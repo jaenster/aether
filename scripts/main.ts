@@ -10,7 +10,7 @@ import { Buffs } from "./services/buffs.js"
 
 export default createBot('sorc-farmer', function*(game, svc) {
   game.load.inGame(Chicken)
-  // game.load.inGame(ThreatMonitor)
+  game.load.inGame(ThreatMonitor)
   const town = svc.get(Town)
   const buffs = svc.get(Buffs)
 
@@ -18,13 +18,11 @@ export default createBot('sorc-farmer', function*(game, svc) {
     while (!game.inGame) yield;
 
     yield* game.run(function*() {
-      // Heal + repair in town before starting the run
-      yield* town.doTownChores()
+      // Skip town for testing
+      // yield* town.doTownChores()
+      // yield* buffs.refreshAll()
 
-      // Buff up before leaving town
-      yield* buffs.refreshAll()
-
-      yield* Chaos.factory(game, svc)
+      yield* Pits.factory(game, svc)
       game.exitGame()
     }())
 

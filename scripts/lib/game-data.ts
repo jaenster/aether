@@ -83,11 +83,10 @@ const ignoreSkill: Record<number, boolean> = {
   37: true,   // Warmth
   // Sorc energy shield
   58: true,   // Energy Shield
-  // Sorc channeled / melee-range — terrible for botting
-  52: true,   // Inferno (channeled, short cone, low DPS per cast)
-  57: true,   // Thunder Storm (passive proc, not castable as attack)
+  // Sorc buffs/passive/summons (not direct attacks)
+  48: true,   // Enchant (buff)
+  57: true,   // Thunder Storm (passive proc, not castable)
   62: true,   // Hydra (summon turret, AI-controlled)
-  48: true,   // Enchant (buff, not attack)
   // Paladin auras (non-damaging)
   99: true,   // Prayer
   100: true,  // Defiance
@@ -722,7 +721,24 @@ export function castingFrames(skillId: number, charClass: number): number {
   return Math.ceil(256 * baseCastRate / Math.floor(256 * (100 + effectiveFCR) / 100)) - 1;
 }
 
+/** Channeled skills: per-tick damage, must hold for many frames. */
+const channeledSkills: Record<number, number> = {
+  52: 6,    // Inferno — effective range ~6 tiles (short cone)
+  56: 10,   // Arctic Blast — slightly longer range
+}
+
+/** How many extra frames a channeled skill needs per "cast" to deal meaningful damage.
+ *  Regular skills do all damage in one cast frame. Channeled need ~20 frames of holding. */
+const CHANNEL_FRAME_PENALTY = 20
+
+export function isChanneled(skillId: number): boolean {
+  return skillId in channeledSkills
+}
+
 export function skillRange(skillId: number): number {
+  // Channeled skills have short range despite having missiles
+  if (channeledSkills[skillId]) return channeledSkills[skillId]
+
   // Ranged/AoE: skill has a missile → default 25 (like kolbot)
   const missile = getBaseStat("skills", skillId, "srvmissile") as number
   if (missile > 0) return 25
@@ -1005,7 +1021,9 @@ export function evaluateBattlefield(
   }
   // Teleport costs ~9 cast frames + 1 frame per 30 units of travel
   const teleFrames = needsReposition ? 9 + Math.ceil(moveDist / 30) : 0
-  const totalFrames = frames + teleFrames
+  // Channeled skills need many frames of holding to deal their damage
+  const channelPenalty = isChanneled(skillId) ? CHANNEL_FRAME_PENALTY : 0
+  const totalFrames = frames + teleFrames + channelPenalty
 
   // Mana cost — score = totalUsefulDmg / (frameCost * sqrt(manaCost))
   const manaCost = skillManaCost(skillId)
