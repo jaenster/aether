@@ -32,7 +32,23 @@ export function getSkillMissileReach(skillId: number): { missileId: number, rang
 
 // Stat IDs
 const STAT_LEVEL = 12;
+const STAT_STR = 0;
+const STAT_DEX = 1;
+const STAT_MINDMG = 21;
+const STAT_MAXDMG = 22;
+const STAT_SECONDARY_MINDMG = 23;
+const STAT_SECONDARY_MAXDMG = 24;
+const STAT_DAMAGEPERCENT = 25; // enhanced damage %
+const STAT_IAS = 93;
 const STAT_FCR = 105;
+const STAT_FIRE_MINDMG = 159;
+const STAT_FIRE_MAXDMG = 160;
+const STAT_LIGHT_MINDMG = 161;
+const STAT_LIGHT_MAXDMG = 162;
+const STAT_MAGIC_MINDMG = 163;
+const STAT_MAGIC_MAXDMG = 164;
+const STAT_COLD_MINDMG = 165;
+const STAT_COLD_MAXDMG = 166;
 
 // Mastery stat IDs by element
 const masteryMap: Record<string, number> = {
@@ -431,8 +447,62 @@ export function baseSkillDamage(skillId: number): DamageInfo {
   };
 }
 
+/** Compute melee Attack damage from equipped weapon stats + buffs (Enchant, etc.) */
+function meleeAttackDamage(): DamageInfo {
+  // Physical: weapon damage + enhanced damage + str/dex bonus
+  let pmin = getUnitStat(STAT_MINDMG, 0) + getUnitStat(STAT_SECONDARY_MINDMG, 0)
+  let pmax = getUnitStat(STAT_MAXDMG, 0) + getUnitStat(STAT_SECONDARY_MAXDMG, 0)
+  if (pmin < 1) pmin = 1
+  if (pmax < pmin) pmax = pmin
+  // Enhanced damage % (from gear, skills, etc.)
+  const ed = getUnitStat(STAT_DAMAGEPERCENT, 0)
+  // Str/dex contribution to physical damage
+  const str = getUnitStat(STAT_STR, 0)
+  const dex = getUnitStat(STAT_DEX, 0)
+  // D2 melee: physical damage * (1 + ED/100) * (1 + STR/100) for most weapons
+  const physMult = (100 + ed) / 100 * (100 + str) / 100
+  pmin = (pmin * physMult) | 0
+  pmax = (pmax * physMult) | 0
+
+  // Elemental damage from buffs (Enchant gives fire, Holy Shock gives lightning, etc.)
+  // These are already included in the unit's stats by the server
+  const fireMin = getUnitStat(STAT_FIRE_MINDMG, 0)
+  const fireMax = getUnitStat(STAT_FIRE_MAXDMG, 0)
+  const lightMin = getUnitStat(STAT_LIGHT_MINDMG, 0)
+  const lightMax = getUnitStat(STAT_LIGHT_MAXDMG, 0)
+  const coldMin = getUnitStat(STAT_COLD_MINDMG, 0)
+  const coldMax = getUnitStat(STAT_COLD_MAXDMG, 0)
+  const magicMin = getUnitStat(STAT_MAGIC_MINDMG, 0)
+  const magicMax = getUnitStat(STAT_MAGIC_MAXDMG, 0)
+
+  // Sum all elemental as "bonus" damage. Use the highest element as the type
+  // for resistance calculations
+  const eleTotals = [
+    { type: "Fire" as string, min: fireMin, max: fireMax },
+    { type: "Lightning", min: lightMin, max: lightMax },
+    { type: "Cold", min: coldMin, max: coldMax },
+    { type: "Magic", min: magicMin, max: magicMax },
+  ]
+  const totalEleMin = fireMin + lightMin + coldMin + magicMin
+  const totalEleMax = fireMax + lightMax + coldMax + magicMax
+
+  // Use dominant element type for resistance lookup (simplification)
+  let bestEle = "Physical"
+  let bestEleAvg = 0
+  for (const e of eleTotals) {
+    const avg = (e.min + e.max) / 2
+    if (avg > bestEleAvg) { bestEleAvg = avg; bestEle = e.type }
+  }
+
+  return {
+    type: totalEleMax > pmax ? bestEle : "Physical",
+    pmin, pmax,
+    min: totalEleMin, max: totalEleMax,
+  }
+}
+
 export function skillDamage(skillId: number): DamageInfo {
-  if (skillId === 0) return { type: "Physical", pmin: 2, pmax: 8, min: 0, max: 0 };
+  if (skillId === 0) return meleeAttackDamage();
   if (skillLevel(skillId) < 1) {
     return { type: damageTypes[getBaseStat("skills", skillId, "EType")] || "Physical", pmin: 0, pmax: 0, min: 0, max: 0 };
   }
@@ -620,13 +690,24 @@ export function monsterEffort(monId: number, areaId: number, conviction = 0, amp
 }
 
 export function castingFrames(skillId: number, charClass: number): number {
+  // Melee skills: use IAS formula instead of FCR
+  const isMelee = skillId === 0 || (
+    (getBaseStat("skills", skillId, "srvmissile") as number) <= 0 &&
+    (getBaseStat("skills", skillId, "cltmissile") as number) <= 0 &&
+    (getBaseStat("skills", skillId, "range") as number) < 2
+  )
+  if (isMelee) {
+    const ias = getUnitStat(STAT_IAS, 0)
+    const eias = Math.floor(120 * ias / (120 + ias))
+    // Base attack frames by class (human form, 1H swing)
+    // ama=16, sor=18, nec=18, pal=16, bar=14, dru=18, ass=16
+    const baseFrames = [16, 18, 18, 16, 14, 18, 16][charClass] ?? 16
+    return Math.max(7, Math.ceil(baseFrames * 256 / Math.floor(256 * (100 + eias) / 100)))
+  }
+
   const fcr = getUnitStat(STAT_FCR, 0);
   const effectiveFCR = Math.min(75, (fcr * 120 / (fcr + 120)) | 0);
   const isLightning = skillId === 49 || skillId === 53;
-
-  // Druid form detection: state 139=werewolf, 140=werebear
-  // In shifted form, use human form cast rate (forms can't cast most spells)
-  // TODO: read shifted form cast frames when we add melee druid support
 
   const baseCastRate = [20, isLightning ? 19 : 14, 16, 16, 14, 15, 17][charClass]!;
 
@@ -934,6 +1015,8 @@ export function evaluateBattlefield(
     if (manaCost > currentMp) score = 0
     // Low mana: penalize if < 3 casts remaining
     else if (manaCost > 0) score *= Math.min(1, currentMp / (manaCost * 3))
+    // Primary target takes 0 damage (immune) — score 0 so we pick a skill that works
+    if (primaryTarget && primaryDmg <= 0) score = 0
   }
 
   return {

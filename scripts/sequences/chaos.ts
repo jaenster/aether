@@ -10,23 +10,12 @@ import { getLocaleString } from "diablo:native"
 const STAR = { x: 7791, y: 5293 }
 const DIABLO_CLASSID = 243
 
-// Layout detection: each seal wing has 2 possible tile layouts.
-// Check the "active" seal preset position against a known coordinate to determine which.
-// Values from kolbot: Vizier check y=5275, De Seis check x=7773, Infector check x=7893
-function getLayout(game: Game, sealClassid: number, checkValue: number): 1 | 2 {
-  const preset = game.findPreset(2, sealClassid)
-  if (!preset) return 1
-  // findPreset already returns world coords (room*5 + offset)
-  // For vizier we check Y, for deseis/infector we check X
-  if (sealClassid === 396) return preset.y === checkValue ? 1 : 2
-  return preset.x === checkValue ? 1 : 2
-}
-
-// Boss spawn positions per layout (from kolbot)
-const BOSS_POS: Record<string, Record<1|2, Pos>> = {
-  vizier:   { 1: { x: 7691, y: 5292 }, 2: { x: 7695, y: 5316 } },
-  deseis:   { 1: { x: 7771, y: 5196 }, 2: { x: 7798, y: 5186 } },
-  infector: { 1: { x: 7919, y: 5290 }, 2: { x: 7928, y: 5295 } },
+// Boss spawn deltas from the boss-triggering seal's position (from Ghidra: GlowCreate functions)
+// Server flow: sealPos + delta → FindSpawnableLocation(radius=3, mask=0x3f11) → boss spawns there
+const BOSS_DELTA: Record<number, { dx: number, dy: number }> = {
+  392: { dx: -12, dy: -52 },  // Infector of Souls (seal 392)
+  394: { dx: -39, dy: +33 },  // Lord De Seis (seal 394)
+  396: { dx: +32, dy: +16 },  // Grand Vizier of Chaos (seal 396)
 }
 
 // Boss locale string IDs (language-independent)
@@ -37,14 +26,12 @@ const BOSS_LOCALE: Record<string, number> = {
 }
 
 // Seal classids (392–396). All 5 must be activated AND all 3 bosses killed for Diablo to spawn.
-// Seal order from kolbot: vizier 395→396, deseis 394, infector 392→393
+// The LAST seal in each group is the boss-spawning seal (has the delta).
 const SEALS = {
-  vizier:   { seals: [395, 396], layoutSeal: 396, layoutCheck: 5275, dx: 2, dy: 0 },
-  deseis:   { seals: [394],      layoutSeal: 394, layoutCheck: 7773, dx: 0, dy: 0 },
-  infector: { seals: [392, 393], layoutSeal: 392, layoutCheck: 7893, dx: 2, dy: 0 },
+  vizier:   { seals: [395, 396], bossSeal: 396, dx: 2, dy: 0 },
+  deseis:   { seals: [394],      bossSeal: 394, dx: 0, dy: 0 },
+  infector: { seals: [392, 393], bossSeal: 392, dx: 2, dy: 0 },
 }
-
-const ALL_SEAL_IDS = [392, 393, 394, 395, 396]
 
 // Seal boss classids for pre-attack damage estimation
 const BOSS_CLASSID: Record<string, number> = {
@@ -55,6 +42,56 @@ const BOSS_CLASSID: Record<string, number> = {
 
 // Frames between last seal activation and boss spawn (~8 frames observed)
 const SEAL_SPAWN_DELAY = 8
+
+// Collision mask used by server's FindSpawnableLocation for glow/boss placement
+const SPAWN_COLLISION_MASK = 0x3f11
+
+/**
+ * Replicate the server's FindSpawnableLocation spiral scan.
+ * Searches outward from (cx, cy) in expanding concentric squares (stride 2)
+ * for a tile where (collision & mask) === 0.
+ * Returns the first walkable position, or the center if none found.
+ */
+function findSpawnableLocation(game: Game, cx: number, cy: number, radius: number, mask: number): Pos {
+  // Check center first
+  if ((game.getCollision(cx, cy) & mask) === 0) return { x: cx, y: cy }
+
+  // Expanding square spiral, stride 2 (matches server's sub-tile scan)
+  for (let r = 1; r <= radius; r++) {
+    for (let dx = -r; dx <= r; dx++) {
+      for (const dy of [-r, r]) {
+        const x = cx + dx * 2, y = cy + dy * 2
+        if ((game.getCollision(x, y) & mask) === 0) return { x, y }
+      }
+    }
+    for (let dy = -r + 1; dy < r; dy++) {
+      for (const dx of [-r, r]) {
+        const x = cx + dx * 2, y = cy + dy * 2
+        if ((game.getCollision(x, y) & mask) === 0) return { x, y }
+      }
+    }
+  }
+
+  // Fallback: return center (server would fail to spawn glow, but boss still tries)
+  return { x: cx, y: cy }
+}
+
+/**
+ * Predict exactly where a seal boss will spawn.
+ * Replicates server logic: sealPos + delta → spiral scan for walkable tile.
+ */
+function predictBossSpawn(game: Game, bossSealClassid: number): Pos | undefined {
+  const delta = BOSS_DELTA[bossSealClassid]
+  if (!delta) return undefined
+
+  const preset = game.findPreset(2, bossSealClassid)
+  if (!preset) return undefined
+
+  const rawX = preset.x + delta.dx
+  const rawY = preset.y + delta.dy
+
+  return findSpawnableLocation(game, rawX, rawY, 3, SPAWN_COLLISION_MASK)
+}
 
 export const Chaos = createScript(function*(game, svc) {
   const move = svc.get(Movement)
@@ -85,22 +122,29 @@ export const Chaos = createScript(function*(game, svc) {
   })
   yield* loot.lootGround()
 
-  // Detect layouts
-  const layouts: Record<string, 1|2> = {}
+  // Predict boss spawn positions from seal presets + deltas (before opening seals)
+  const bossSpawns: Record<string, Pos> = {}
   for (const [name, group] of Object.entries(SEALS)) {
-    layouts[name] = getLayout(game, group.layoutSeal, group.layoutCheck)
+    const spawn = predictBossSpawn(game, group.bossSeal)
+    if (spawn) {
+      bossSpawns[name] = spawn
+      game.log(`[chaos] predicted ${name} spawn: ${spawn.x},${spawn.y}`)
+    }
   }
-  game.log(`[chaos] layouts: vizier=${layouts.vizier} deseis=${layouts.deseis} infector=${layouts.infector}`)
 
   // Open seals and kill bosses
   for (const [name, group] of Object.entries(SEALS)) {
-    game.log(`[chaos] === ${name} (layout ${layouts[name]}) ===`)
+    game.log(`[chaos] === ${name} ===`)
 
     for (const sealId of group.seals) {
       yield* openSeal(game, move, atk, sealId, group.dx, group.dy)
     }
 
-    const bossPos = BOSS_POS[name]![layouts[name]!]!
+    const bossPos = bossSpawns[name]
+    if (!bossPos) {
+      game.log(`[chaos] no predicted spawn for ${name}, skipping`)
+      continue
+    }
     yield* killSealBoss(game, move, atk, loot, name, bossPos)
 
     // Refresh buffs between wings if any expired

@@ -141,10 +141,12 @@ interface TrackedBuff {
   lastCast: number       // tick when last cast
   lastSeenActive: number // tick when last polled as active
   requiresSwap: boolean  // needs CTA weapon swap
+  castAttempts: number   // times cast without state activating
 }
 
-// CTA warcry skills — BC first (adds +1 to all skills, making BO/Shout stronger)
-const CTA_SKILLS = [155, 149, 138] as const
+// CTA warcry skills — BC first (adds +1 to all skills, making BO/Battle Cry stronger)
+// CTA grants: Battle Command (155), Battle Orders (149), Battle Cry (130)
+const CTA_SKILLS = [155, 149] as const
 const CTA_SKILL_SET = new Set<number>(CTA_SKILLS)
 
 function skillLevel(skillId: number): number {
@@ -154,7 +156,6 @@ function skillLevel(skillId: number): number {
 export const Buffs = createService((game: Game) => {
   const tracked: TrackedBuff[] = []
   let initialized = false
-  let ctaProbed = false  // true after first swap attempt — avoids re-swapping if no CTA
 
   // ── Packet-based state tracking ──────────────────────────────────
   // Authoritative source for whether a buff is active: if we received 0xA7/0xA8
@@ -331,6 +332,7 @@ export const Buffs = createService((game: Game) => {
         lastCast: 0,
         lastSeenActive: 0,
         requiresSwap: false,
+        castAttempts: 0,
       })
     }
 
@@ -348,6 +350,7 @@ export const Buffs = createService((game: Game) => {
           lastCast: 0,
           lastSeenActive: 0,
           requiresSwap: true,
+          castAttempts: 0,
         })
       }
     }
@@ -403,6 +406,7 @@ export const Buffs = createService((game: Game) => {
     }
     if (isActiveOnPlayer(t)) {
       t.lastSeenActive = getTickCount()
+      t.castAttempts = 0
       return false
     }
     // Buff is not active — but defer if a stronger player might recast
@@ -422,8 +426,8 @@ export const Buffs = createService((game: Game) => {
   game.onPacket(0x97, () => { swapAcked = true })
 
   function* swapWeapon() {
-    // Server rejects swap while running/casting — wait for idle
-    for (let i = 0; i < 50; i++) {
+    // Wait for idle — server rejects swap while running/casting
+    for (let i = 0; i < 25; i++) {
       if (game.player.idle) break
       yield
     }
@@ -434,58 +438,36 @@ export const Buffs = createService((game: Game) => {
       if (swapAcked) break
       yield
     }
-    if (!swapAcked) {
-      game.log('[buffs] swap timeout — 0x97 not received')
+    if (swapAcked) {
+      game.log('[buffs] swap acked')
+    } else {
+      game.log('[buffs] swap timeout — 0x97 not received, idle=' + game.player.idle)
     }
     // Extra frames for client to process the new skill list
     for (let i = 0; i < 5; i++) yield
   }
 
-  function* castSelfBuff(skillId: number, usePacket = false) {
-    const px = game.player.x, py = game.player.y
-    game.selectSkill(skillId)
-    if (usePacket) {
-      // CTA/oskills: client won't cast at level 0, bypass via packet
-      for (let f = 0; f < 10; f++) {
-        if (game.player.idle) break
-        yield
-      }
-      game.selectSkill(skillId)
-      for (let f = 0; f < 6; f++) yield
-      game.castSkillPacket(px, py)
-      for (let f = 0; f < 20; f++) yield
-    } else {
-      // Native skills: client-side cast with proper animation
+  function* castSelfBuff(skillId: number) {
+    // All buffs use packet path — clickAtWorld causes walking
+    for (let f = 0; f < 10; f++) {
+      if (game.player.idle) break
       yield
-      game.castSkill(px, py)
-      yield
-      for (let i = 0; i < 25; i++) {
-        if (game.player.canCast) return
-        yield
-      }
     }
+    game.selectSkill(skillId)
+    for (let f = 0; f < 6; f++) yield
+    game.castSkillPacket(game.player.x, game.player.y)
+    for (let f = 0; f < 20; f++) yield
   }
 
-  function* castOnTarget(skillId: number, x: number, y: number, usePacket = false) {
-    if (usePacket) {
-      for (let f = 0; f < 10; f++) {
-        if (game.player.idle) break
-        yield
-      }
-      game.selectSkill(skillId)
-      for (let f = 0; f < 6; f++) yield
-      game.castSkillPacket(x, y)
-      for (let f = 0; f < 20; f++) yield
-    } else {
-      game.selectSkill(skillId)
+  function* castOnTarget(skillId: number, x: number, y: number) {
+    for (let f = 0; f < 10; f++) {
+      if (game.player.idle) break
       yield
-      game.castSkill(x, y)
-      yield
-      for (let i = 0; i < 25; i++) {
-        if (game.player.canCast) return
-        yield
-      }
     }
+    game.selectSkill(skillId)
+    for (let f = 0; f < 6; f++) yield
+    game.castSkillPacket(x, y)
+    for (let f = 0; f < 20; f++) yield
   }
 
   function allyHasBuff(ally: Monster, stateId: number): boolean {
@@ -498,13 +480,20 @@ export const Buffs = createService((game: Game) => {
       for (const ally of allies) {
         if (allyHasBuff(ally, t.def.stateId)) continue
         game.log(`[buffs] enchanting ally classid=${ally.classid} at ${ally.x},${ally.y}`)
-        yield* castOnTarget(t.def.skillId, ally.x, ally.y, t.requiresSwap)
+        yield* castOnTarget(t.def.skillId, ally.x, ally.y)
         yield
       }
     } else {
-      yield* castSelfBuff(t.def.skillId, t.requiresSwap)
+      yield* castSelfBuff(t.def.skillId)
     }
     t.lastCast = getTickCount()
+    t.castAttempts++
+    // If buff never activates after 3 attempts, it's probably not available (wrong CTA skill etc.)
+    if (t.castAttempts >= 3 && t.lastSeenActive === 0) {
+      game.log(`[buffs] removing skill=${t.def.skillId} — never activated after ${t.castAttempts} casts`)
+      const idx = tracked.indexOf(t)
+      if (idx >= 0) tracked.splice(idx, 1)
+    }
   }
 
   return {
@@ -581,24 +570,10 @@ export const Buffs = createService((game: Game) => {
       // Phase 2: CTA weapon swap buffs — skip in town (pointless, buff expires before leaving)
       const swapBuffs = missing.filter(t => t.requiresSwap)
       if (swapBuffs.length > 0 && !townAreas.has(game.area)) {
-        // First time: detect CTA by checking for runeword on swap weapon slots
-        if (!ctaProbed) {
-          ctaProbed = true
-          let hasCTA = false
-          for (const item of game.items) {
-            if (item.location === 1 && (item.x === 11 || item.x === 12) && item.runeword) {
-              hasCTA = true
-            }
-          }
-          if (!hasCTA) {
-            game.log(`[buffs] no runeword on swap slots — removing warcry buffs`)
-            for (let i = tracked.length - 1; i >= 0; i--) {
-              if (tracked[i]!.requiresSwap) tracked.splice(i, 1)
-            }
-            return
-          }
-          game.log(`[buffs] CTA detected on swap weapon (runeword flag)`)
-        }
+
+        // Save current right skill to restore after swap-back (CTA sets pRightSkill
+        // to a swap-weapon skill which becomes a dangling pointer after swap-back)
+        const savedSkill = game.rightSkill
 
         game.log(`[buffs] swapping to CTA for ${swapBuffs.length} warcries`)
         yield* swapWeapon()
@@ -612,7 +587,12 @@ export const Buffs = createService((game: Game) => {
           }
         }
 
+        // Wait for server to finish last cast before swapping back
+        for (let i = 0; i < 30; i++) yield
+
         yield* swapWeapon()
+        // Restore right skill to fix dangling pRightSkill from CTA
+        if (savedSkill > 0) game.selectSkill(savedSkill)
         game.log(`[buffs] swapped back`)
       }
     },
@@ -636,13 +616,16 @@ export const Buffs = createService((game: Game) => {
       // CTA: swap and cast all missing warcries at once
       const swapMissing = tracked.filter(t => t.requiresSwap && needsRefresh(t))
       if (swapMissing.length > 0) {
+        const savedSkill = game.rightSkill
         game.log(`[buffs] CTA refresh: ${swapMissing.length} warcries`)
         yield* swapWeapon()
         for (const t of swapMissing) {
           yield* castTracked(t)
           yield
         }
+        for (let i = 0; i < 30; i++) yield
         yield* swapWeapon()
+        if (savedSkill > 0) game.selectSkill(savedSkill)
         return true
       }
 

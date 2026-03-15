@@ -1153,8 +1153,9 @@ fn jsHasLineOfSight(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) 
         retInt32(argc, vp, 0);
         return 1;
     };
-    // Mask 0xC01 = walls + objects + doors (same as monster AI spell LoS)
-    const clear = d2.HasLineOfSight.call(x1, y1, x2, y2, target_room, 0xC01);
+    // Mask 0xC04 = missile-blocking walls (0x4) + objects (0x400) + doors (0x800)
+    // NOT 0x01 (block walk) — missiles fly over lava/gaps
+    const clear = d2.HasLineOfSight.call(x1, y1, x2, y2, target_room, 0xC04);
     retInt32(argc, vp, if (clear) 1 else 0);
     return 1;
 }
