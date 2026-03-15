@@ -222,6 +222,17 @@ function* killSealBoss(game: Game, move: any, atk: any, loot: any, name: string,
 
   const found: unknown = yield* game.waitUntil(() => !!findBoss(), 200)
 
+  // Log boss position on first few frames to see if it moves from glow
+  if (found) {
+    const b = findBoss()
+    if (b) {
+      for (let f = 0; f < 5; f++) {
+        game.log(`[chaos] ${bossName} f${f}: ${b.x},${b.y} mode=${b.mode}`)
+        yield
+      }
+    }
+  }
+
   if (!found) {
     game.log(`[chaos] ${bossName} not found, searching...`)
     for (const [ox, oy] of [[40, 0], [-40, 0], [0, 40], [0, -40], [30, 30], [-30, -30]] as [number, number][]) {

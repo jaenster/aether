@@ -424,7 +424,7 @@ export const Buffs = createService((game: Game) => {
   let swapAcked = false
   game.onPacket(0x97, () => { swapAcked = true })
 
-  function* swapWeapon() {
+  function* swapWeapon(): Generator<undefined, boolean, unknown> {
     // Wait for idle — server rejects swap while running/casting
     for (let i = 0; i < 25; i++) {
       if (game.player.idle) break
@@ -437,13 +437,22 @@ export const Buffs = createService((game: Game) => {
       if (swapAcked) break
       yield
     }
-    if (swapAcked) {
-      game.log('[buffs] swap acked')
-    } else {
-      game.log('[buffs] swap timeout — 0x97 not received, idle=' + game.player.idle)
+    if (!swapAcked) {
+      game.log('[buffs] swap timeout — retrying')
+      // Retry once
+      game.sendPacket(new Uint8Array([0x60]))
+      for (let i = 0; i < 50; i++) {
+        if (swapAcked) break
+        yield
+      }
+    }
+    if (!swapAcked) {
+      game.log('[buffs] swap failed after retry')
+      return false
     }
     // Extra frames for client to process the new skill list
     for (let i = 0; i < 5; i++) yield
+    return true
   }
 
   function* castSelfBuff(skillId: number) {
@@ -575,7 +584,7 @@ export const Buffs = createService((game: Game) => {
         const savedSkill = game.rightSkill
 
         game.log(`[buffs] swapping to CTA for ${swapBuffs.length} warcries`)
-        yield* swapWeapon()
+        if (!(yield* swapWeapon())) return
 
         for (const t of swapBuffs) {
           game.log(`[buffs] casting CTA skill=${t.def.skillId}`)
@@ -617,7 +626,7 @@ export const Buffs = createService((game: Game) => {
       if (swapMissing.length > 0) {
         const savedSkill = game.rightSkill
         game.log(`[buffs] CTA refresh: ${swapMissing.length} warcries`)
-        yield* swapWeapon()
+        if (!(yield* swapWeapon())) return false
         for (const t of swapMissing) {
           yield* castTracked(t)
           yield
