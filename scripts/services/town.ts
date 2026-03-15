@@ -1,4 +1,4 @@
-import { createService, type Game, type NPC, UiFlags, Area } from "diablo:game"
+import { createService, type Game, type NPC, UiFlags, Area, ItemContainer, ObjectClassId } from "diablo:game"
 import { Config, townAreas } from "../config.js"
 import { Movement } from "./movement.js"
 import { ItemGrading } from "../lib/item/evaluator.js"
@@ -46,7 +46,7 @@ export const Town = createService((game: Game, services) => {
       const town = getTown(game.area)
       if (game.area !== town) {
         // Use TP tome/scroll via packet 0x20 (use item at location)
-        const tpTome = game.items.find(i => i.location === 0 && (i.code === 'tbk' || i.code === 'tsc'))
+        const tpTome = game.items.find(i => i.location === ItemContainer.Inventory && (i.code === 'tbk' || i.code === 'tsc'))
         if (!tpTome) {
           game.log(`[town] no TP tome or scroll — falling back to waypoint`)
           yield* move.useWaypoint(town)
@@ -59,7 +59,7 @@ export const Town = createService((game: Game, services) => {
         yield* game.delay(500)
         let portal = null
         for (let attempt = 0; attempt < 20; attempt++) {
-          portal = game.objects.find(o => o.classid === 59 && o.name === game.player.charname)
+          portal = game.objects.find(o => o.classid === ObjectClassId.TownPortal && o.name === game.player.charname)
           if (portal) break
           yield* game.delay(100)
         }
@@ -111,7 +111,7 @@ export const Town = createService((game: Game, services) => {
       yield* this.planAndExecute()
 
       // Return via portal
-      const returnPortal = game.objects.find(o => o.classid === 59 && o.name === game.player.charname)
+      const returnPortal = game.objects.find(o => o.classid === ObjectClassId.TownPortal && o.name === game.player.charname)
       if (returnPortal) {
         game.log(`[town] returning to area ${preArea}`)
         yield* move.walkTo(returnPortal.x, returnPortal.y)
@@ -161,7 +161,7 @@ export const Town = createService((game: Game, services) => {
     clearBelt() {
       let cleared = 0
       for (const item of game.items) {
-        if (item.location !== 2) continue
+        if (item.location !== ItemContainer.Belt) continue
         // x coordinate mod 4 gives the column
         const col = item.x % 4
         const isHp = HP_POT_SET.has(item.code)

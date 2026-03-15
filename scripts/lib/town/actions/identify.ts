@@ -1,3 +1,4 @@
+import { ItemContainer } from "diablo:game"
 import { Urgency } from "../enums.js"
 import { NpcFlags } from "../npc-flags.js"
 import { ItemAction } from "../../item/types.js"
@@ -5,7 +6,7 @@ import type { TownAction, TownContext } from "../action.js"
 
 function getUnidentified(ctx: TownContext) {
   return ctx.game.items.filter(i =>
-    i.location === 0 && ctx.grading.evaluate(i) === ItemAction.Identify
+    i.location === ItemContainer.Inventory && ctx.grading.evaluate(i) === ItemAction.Identify
   )
 }
 

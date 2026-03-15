@@ -1,3 +1,4 @@
+import { ItemContainer } from "diablo:game"
 import { Urgency } from "../enums.js"
 import { NpcFlags } from "../npc-flags.js"
 import type { TownAction, TownContext } from "../action.js"
@@ -44,7 +45,7 @@ export const gambleAction: TownAction = {
     yield* ctx.game.delay(500)
 
     while (ctx.game.player.gold >= GAMBLE_STOP) {
-      const shopItems = ctx.game.items.filter(i => i.location >= 4)
+      const shopItems = ctx.game.items.filter(i => i.location === ItemContainer.Vendor)
       const candidate = shopItems.find(i => GAMBLE_ITEMS.has(i.classid))
       if (!candidate) break
 
@@ -53,7 +54,7 @@ export const gambleAction: TownAction = {
 
       // Check the item we just bought (latest inventory item)
       const bought = ctx.game.items.find(i =>
-        i.location === 0 && i.classid === candidate.classid
+        i.location === ItemContainer.Inventory && i.classid === candidate.classid
       )
       if (bought) {
         const action = ctx.grading.evaluate(bought)

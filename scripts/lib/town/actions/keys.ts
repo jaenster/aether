@@ -1,3 +1,4 @@
+import { ItemContainer } from "diablo:game"
 import { Urgency } from "../enums.js"
 import { NpcFlags } from "../npc-flags.js"
 import type { TownAction, TownContext } from "../action.js"
@@ -5,9 +6,9 @@ import { npcBuy } from "../../packets.js"
 
 function getKeyCount(ctx: TownContext): number {
   // Check inventory, cube, and stash
-  const keys = ctx.game.items.find(i => i.location === 0 && i.code === 'key')
-    ?? ctx.game.items.find(i => i.location === 3 && i.code === 'key')
-    ?? ctx.game.items.find(i => i.location === 4 && i.code === 'key')
+  const keys = ctx.game.items.find(i => i.location === ItemContainer.Inventory && i.code === 'key')
+    ?? ctx.game.items.find(i => i.location === ItemContainer.Cube && i.code === 'key')
+    ?? ctx.game.items.find(i => i.location === ItemContainer.Stash && i.code === 'key')
   return keys ? keys.quantity : 0
 }
 
@@ -26,7 +27,7 @@ export const keysAction: TownAction = {
     const npc = ctx.game.npcs.find(n => n.classid === npcClassid)
     if (!npc) return false
 
-    const shopKey = ctx.game.items.find(i => i.location >= 4 && i.code === 'key')
+    const shopKey = ctx.game.items.find(i => i.location === ItemContainer.Vendor && i.code === 'key')
     if (shopKey) {
       ctx.game.log(`[town:keys] buying keys`)
       ctx.game.sendPacket(npcBuy(npc.unitId, shopKey.unitId, 0, 0))

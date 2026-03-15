@@ -1,3 +1,4 @@
+import { ItemContainer } from "diablo:game"
 import { Urgency } from "../enums.js"
 import { NpcFlags } from "../npc-flags.js"
 import type { TownAction, TownContext } from "../action.js"
@@ -10,8 +11,7 @@ export const repairAction: TownAction = {
     let worstRatio = 1.0
 
     for (const item of ctx.game.items) {
-      // Equipped items (location=1) with durability
-      if (item.location === 1 && item.maxdurability > 0) {
+      if (item.location === ItemContainer.Equipped && item.maxdurability > 0) {
         const ratio = item.durability / item.maxdurability
         if (ratio < worstRatio) worstRatio = ratio
       }

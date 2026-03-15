@@ -1,3 +1,4 @@
+import { ItemContainer } from "diablo:game"
 import { Urgency } from "../enums.js"
 import { NpcFlags } from "../npc-flags.js"
 import type { TownAction, TownContext } from "../action.js"
@@ -12,7 +13,7 @@ const HP_BUFFER = 0
 const MP_BUFFER = 0
 
 function getBeltSize(ctx: TownContext): number {
-  const belt = ctx.game.items.find(i => i.location === 1 && beltCodes.has(i.code))
+  const belt = ctx.game.items.find(i => i.location === ItemContainer.Equipped && beltCodes.has(i.code))
   if (!belt) return 4
   return beltSlotMap[belt.code] ?? 4
 }
@@ -20,7 +21,7 @@ function getBeltSize(ctx: TownContext): number {
 function countBeltPots(ctx: TownContext) {
   let hp = 0, mp = 0
   for (const item of ctx.game.items) {
-    if (item.location === 2) {
+    if (item.location === ItemContainer.Belt) {
       if (HP_POT_SET.has(item.code)) hp++
       else if (MP_POT_SET.has(item.code)) mp++
     }
@@ -31,7 +32,7 @@ function countBeltPots(ctx: TownContext) {
 function countInventoryPots(ctx: TownContext) {
   let hp = 0, mp = 0
   for (const item of ctx.game.items) {
-    if (item.location === 0) {
+    if (item.location === ItemContainer.Inventory) {
       if (HP_POT_SET.has(item.code)) hp++
       else if (MP_POT_SET.has(item.code)) mp++
     }
@@ -73,7 +74,7 @@ export const potsAction: TownAction = {
     if (hpNeed === 0 && mpNeed === 0) return true
 
     ctx.game.log(`[town:pots] buying ${hpNeed}hp ${mpNeed}mp`)
-    const shopItems = ctx.game.items.filter(i => i.location >= 4)
+    const shopItems = ctx.game.items.filter(i => i.location === ItemContainer.Vendor)
 
     if (hpNeed > 0) {
       const bestCode = [...HP_POTS].reverse().find(code =>

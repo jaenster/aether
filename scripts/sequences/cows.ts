@@ -1,4 +1,4 @@
-import { createScript, Area, type Game } from "diablo:game"
+import { createScript, Area, type Game, ItemContainer } from "diablo:game"
 import { Movement } from "../services/movement.js"
 import { Attack } from "../services/attack.js"
 import { Pickit } from "../services/pickit.js"
@@ -61,7 +61,7 @@ export const Cows = createScript(function*(game, svc) {
 function* openCowPortal(game: Game) {
   // Find Wirt's Leg and a TP Tome in inventory/cube/stash
   const leg = game.items.find(i => i.code.trim() === WIRTS_LEG_CODE.trim())
-  const tome = game.items.find(i => i.code.trim() === TP_TOME_CODE.trim() && i.location !== 0)
+  const tome = game.items.find(i => i.code.trim() === TP_TOME_CODE.trim() && i.location !== ItemContainer.Inventory)
 
   if (!leg) {
     game.log('[cows] no Wirt\'s Leg found')
@@ -76,7 +76,7 @@ function* openCowPortal(game: Game) {
 
   // Move both items to cube
   // Pick up leg → place in cube at 0,0
-  if (leg.location !== 3) { // 3 = cube
+  if (leg.location !== ItemContainer.Cube) {
     game.sendPacket(itemToBuffer(leg.unitId))
     yield* game.delay(300)
     game.sendPacket(bufferToStorage(leg.unitId, 0, 0, 3))
@@ -84,7 +84,7 @@ function* openCowPortal(game: Game) {
   }
 
   // Pick up tome → place in cube at 0,2 (leg is 2x4, tome can go beside it)
-  if (tome.location !== 3) { // 3 = cube
+  if (tome.location !== ItemContainer.Cube) {
     game.sendPacket(itemToBuffer(tome.unitId))
     yield* game.delay(300)
     game.sendPacket(bufferToStorage(tome.unitId, 2, 0, 3))

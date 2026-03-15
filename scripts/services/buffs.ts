@@ -1,4 +1,4 @@
-import { createService, type Game, type Monster } from "diablo:game"
+import { createService, type Game, type Monster, MonsterMode, MonsterClassId } from "diablo:game"
 import { getSkillLevel as _getSkillLevel, getTickCount, meGetUnitId } from "diablo:native"
 import { townAreas } from "../config.js"
 
@@ -276,14 +276,13 @@ export const Buffs = createService((game: Game) => {
     return entry?.observedDuration ?? 0
   }
 
-  // Merc classids: Act1 Rogue=271, Act2 Guard=338, Act3 Iron Wolf=359, Act5 Barb=560
-  const mercClassIds = new Set([271, 338, 359, 560])
+  const mercClassIds = new Set([MonsterClassId.MercA1Rogue, MonsterClassId.MercA2Guard, MonsterClassId.MercA3IronWolf, MonsterClassId.MercA5Barb])
 
   /** Find merc (monster owned by player) */
   function findMerc(): Monster | undefined {
     const pid = meGetUnitId()
     for (const m of game.monsters) {
-      if (m.mode === 0 || m.mode === 12 || m.hp <= 0) continue
+      if (m.mode === MonsterMode.Death || m.mode === MonsterMode.Dead || m.hp <= 0) continue
       if (!mercClassIds.has(m.classid)) continue
       const p = m.parent
       if (p && p.unitId === pid && p.type === 0) return m
@@ -296,7 +295,7 @@ export const Buffs = createService((game: Game) => {
     const pid = meGetUnitId()
     const allies: Monster[] = []
     for (const m of game.monsters) {
-      if (m.mode === 0 || m.mode === 12 || m.hp <= 0) continue
+      if (m.mode === MonsterMode.Death || m.mode === MonsterMode.Dead || m.hp <= 0) continue
       // Check if owned by player (merc + summons share this property)
       const p = m.parent
       if (p && p.unitId === pid && p.type === 0) {

@@ -1,3 +1,4 @@
+import { ItemContainer } from "diablo:game"
 import { Urgency } from "../enums.js"
 import { NpcFlags } from "../npc-flags.js"
 import { ItemAction } from "../../item/types.js"
@@ -12,7 +13,7 @@ const GOLD_STASH_THRESHOLD = 100_000
 
 function getKeepItems(ctx: TownContext) {
   return ctx.game.items.filter(i =>
-    i.location === 0 && ctx.grading.evaluate(i) === ItemAction.Keep
+    i.location === ItemContainer.Inventory && ctx.grading.evaluate(i) === ItemAction.Keep
   )
 }
 
@@ -32,7 +33,7 @@ export const stashAction: TownAction = {
     if (shouldStashGold(ctx)) return Urgency.Needed
     // Unidentified items may become keepers after identification
     const hasUnids = ctx.game.items.find(i =>
-      i.location === 0 && ctx.grading.evaluate(i) === ItemAction.Identify
+      i.location === ItemContainer.Inventory && ctx.grading.evaluate(i) === ItemAction.Identify
     ) !== undefined
     if (hasUnids) return Urgency.Convenience
     return Urgency.Not

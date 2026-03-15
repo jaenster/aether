@@ -1,4 +1,4 @@
-import { createService, type Game, type NPC, UiFlags } from "diablo:game"
+import { createService, type Game, type NPC, UiFlags, ItemContainer } from "diablo:game"
 import { Config } from "../config.js"
 import { Town } from "./town.js"
 import { findNpc, NpcService, type NpcInfo } from "../lib/npcs.js"
@@ -36,7 +36,7 @@ export const Shopping = createService((game: Game, services) => {
         // Scan shop items
         for (const item of game.items) {
           // Shop items have location 2 (in NPC's inventory)
-          if (item.location !== 2) continue
+          if (item.location !== ItemContainer.Vendor) continue
 
           for (const f of filters) {
             let match = true

@@ -1,3 +1,4 @@
+import { ItemContainer } from "diablo:game"
 import { Urgency } from "../enums.js"
 import { NpcFlags } from "../npc-flags.js"
 import type { TownAction, TownContext } from "../action.js"
@@ -5,9 +6,9 @@ import { npcBuy } from "../../packets.js"
 
 /** Find a tome by code anywhere the player has access to (inv > cube > stash) */
 function findTome(ctx: TownContext, code: string) {
-  return ctx.game.items.find(i => i.location === 0 && i.code === code)
-    ?? ctx.game.items.find(i => i.location === 3 && i.code === code)
-    ?? ctx.game.items.find(i => i.location === 4 && i.code === code)
+  return ctx.game.items.find(i => i.location === ItemContainer.Inventory && i.code === code)
+    ?? ctx.game.items.find(i => i.location === ItemContainer.Cube && i.code === code)
+    ?? ctx.game.items.find(i => i.location === ItemContainer.Stash && i.code === code)
     ?? null
 }
 
@@ -36,7 +37,7 @@ export const scrollAction: TownAction = {
     const npc = ctx.game.npcs.find(n => n.classid === npcClassid)
     if (!npc) return false
 
-    const shopItems = ctx.game.items.filter(i => i.location >= 4)
+    const shopItems = ctx.game.items.filter(i => i.location === ItemContainer.Vendor)
 
     // TP tome
     let tpTome = getTpTome(ctx)

@@ -1,12 +1,11 @@
-import { createService, type Game, type Monster } from "diablo:game"
+import { createService, type Game, type Monster, MonsterMode, MonsterClassId } from "diablo:game"
 import { Config } from "../config.js"
 import { Movement } from "./movement.js"
 import { findBestAction, rankActions, skillRange, splashRadius, unitResist, staticFieldEffective, preAttackAdvice, isNova, skillName, skillProjectileType } from "../lib/game-data.js"
 import type { AttackOptions, Pos, CombatSnapshot, MonsterSnapshot, SpawnEvent } from "../lib/attack-types.js"
 import { getUnitHP, getUnitMaxHP, getUnitMP, getDifficulty } from "diablo:native"
 
-// Merc classids: Act1 Rogue=271, Act2 Guard=338, Act3 Iron Wolf=359, Act5 Barb=560
-const mercClassIds = new Set([271, 338, 359, 560])
+const mercClassIds = new Set([MonsterClassId.MercA1Rogue, MonsterClassId.MercA2Guard, MonsterClassId.MercA3IronWolf, MonsterClassId.MercA5Barb])
 // Common summon classids
 const summonClassIds = new Set([
   363, // Valkyrie
@@ -18,7 +17,7 @@ const summonClassIds = new Set([
 ])
 
 function alive(m: Monster): boolean {
-  if (!m.valid || m.hp <= 0 || m.mode === 0 || m.mode === 12) return false
+  if (!m.valid || m.hp <= 0 || m.mode === MonsterMode.Death || m.mode === MonsterMode.Dead) return false
   // Filter out mercs and player summons
   if (mercClassIds.has(m.classid) || summonClassIds.has(m.classid)) {
     const p = m.parent
@@ -210,7 +209,7 @@ export const Attack = createService((game: Game, services) => {
 
         // Stale detection — immune monster or Static Field at floor
         // Use higher threshold for bosses
-        const isBoss = target.isSuperUnique || target.classid === 243 /* Diablo */ || target.classid === 544 /* Baal */
+        const isBoss = target.isSuperUnique || target.classid === MonsterClassId.Diablo || target.classid === MonsterClassId.BaalClone
         const staleThreshold = isBoss ? 30 : 10
         if (target.hp === lastHp) {
           if (++staleCount >= staleThreshold) {

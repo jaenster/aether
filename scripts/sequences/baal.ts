@@ -1,4 +1,4 @@
-import { createScript, Area, type Monster } from "diablo:game"
+import { createScript, Area, type Monster, MonsterMode, MonsterClassId } from "diablo:game"
 import { Movement } from "../services/movement.js"
 import { Attack } from "../services/attack.js"
 import { Pickit } from "../services/pickit.js"
@@ -56,7 +56,7 @@ export const Baal = createScript(function*(game, svc) {
         focusTarget: (monsters) => monsters.find(m => isReviver(m.classid)) || undefined,
         groupModifier: (target, nearby) => {
           if (isReviver(target.classid)) {
-            const deadNearby = nearby.filter(m => m.mode === 12 || m.hp <= 0).length
+            const deadNearby = nearby.filter(m => m.mode === MonsterMode.Dead || m.hp <= 0).length
             return deadNearby > 0 ? 3.0 : 2.0
           }
           return 1.0
@@ -94,7 +94,7 @@ export const Baal = createScript(function*(game, svc) {
   }
 
   game.log('[baal] engaging baal')
-  const baal = game.monsters.find(m => m.classid === 544 && atk.alive(m))
+  const baal = game.monsters.find(m => m.classid === MonsterClassId.BaalClone && atk.alive(m))
   if (baal) yield* atk.kill(baal, { maxCasts: 200 })
 
   game.log('[baal] looting')

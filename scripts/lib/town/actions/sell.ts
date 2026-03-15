@@ -1,3 +1,4 @@
+import { ItemContainer } from "diablo:game"
 import { Urgency } from "../enums.js"
 import { NpcFlags } from "../npc-flags.js"
 import { ItemAction } from "../../item/types.js"
@@ -6,7 +7,7 @@ import { npcSell } from "../../packets.js"
 
 function getSellableItems(ctx: TownContext) {
   return ctx.game.items.filter(i =>
-    i.location === 0 && ctx.grading.evaluate(i) === ItemAction.Sell
+    i.location === ItemContainer.Inventory && ctx.grading.evaluate(i) === ItemAction.Sell
   )
 }
 
@@ -23,7 +24,7 @@ export const sellAction: TownAction = {
     const junk = getSellableItems(ctx)
     if (junk.length > 0) return Urgency.Needed
     const hasUnids = ctx.game.items.find(i =>
-      i.location === 0 && ctx.grading.evaluate(i) === ItemAction.Identify
+      i.location === ItemContainer.Inventory && ctx.grading.evaluate(i) === ItemAction.Identify
     ) !== undefined
     if (hasUnids) return Urgency.Convenience
     return Urgency.Not

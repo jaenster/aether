@@ -1,4 +1,4 @@
-import type { ItemUnit } from "diablo:game"
+import { type ItemUnit, Quality } from "diablo:game"
 import { ItemAction, ItemCategory } from "./types.js"
 import { classifyItem } from "./classify.js"
 import type { ItemEvaluator } from "./evaluator.js"
@@ -17,13 +17,13 @@ export class SimpleEvaluator implements ItemEvaluator {
     // Skip potions/scrolls on ground (belt managed by supplies)
     if (cat === ItemCategory.Potion || cat === ItemCategory.Scroll) return false
     // Equipment: pick up rare+ (quality 6=rare, 7=unique, 5=set)
-    if (cat === ItemCategory.Equipment) return item.quality >= 5
+    if (cat === ItemCategory.Equipment) return item.quality >= Quality.Set
     return false
   }
 
   evaluate(item: ItemUnit): ItemAction {
     // Unidentified magic+ needs ID first
-    if (!item.identified && item.quality >= 4) return ItemAction.Identify
+    if (!item.identified && item.quality >= Quality.Magic) return ItemAction.Identify
 
     const cat = classifyItem(item)
     // Always keep valuables
@@ -36,7 +36,7 @@ export class SimpleEvaluator implements ItemEvaluator {
     // Gold: keep
     if (cat === ItemCategory.Gold) return ItemAction.Keep
     // Equipment: keep rare+, sell the rest
-    if (cat === ItemCategory.Equipment) return item.quality >= 6 ? ItemAction.Keep : ItemAction.Sell
+    if (cat === ItemCategory.Equipment) return item.quality >= Quality.Rare ? ItemAction.Keep : ItemAction.Sell
     return ItemAction.Ignore
   }
 }

@@ -1,4 +1,4 @@
-import { createService, type Game } from "diablo:game"
+import { createService, type Game, ItemContainer } from "diablo:game"
 import { Town } from "./town.js"
 import {
   beltCodes, beltSlotMap,
@@ -14,7 +14,7 @@ interface SupplyState {
 }
 
 function getBeltSize(game: Game): number {
-  const belt = game.items.find(i => i.location === 1 && beltCodes.has(i.code))
+  const belt = game.items.find(i => i.location === ItemContainer.Equipped && beltCodes.has(i.code))
   if (!belt) return 4
   return beltSlotMap[belt.code] ?? 4
 }
@@ -27,14 +27,14 @@ function checkSupplies(game: Game): SupplyState {
   let needsRepair = false
 
   for (const item of game.items) {
-    if (item.location === 2) {
+    if (item.location === ItemContainer.Belt) {
       if (HP_POT_SET.has(item.code)) hpPots++
       else if (MP_POT_SET.has(item.code)) mpPots++
     }
-    if (item.location === 0 && item.code === 'tbk') {
+    if (item.location === ItemContainer.Inventory && item.code === 'tbk') {
       tpCount = item.quantity
     }
-    if (item.location === 1 && item.maxdurability > 0) {
+    if (item.location === ItemContainer.Equipped && item.maxdurability > 0) {
       const ratio = item.durability / item.maxdurability
       if (ratio < 0.3) needsRepair = true
     }
