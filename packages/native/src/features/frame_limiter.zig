@@ -7,6 +7,8 @@ extern "kernel32" fn GetTickCount() callconv(.winapi) DWORD;
 extern "kernel32" fn Sleep(dwMilliseconds: DWORD) callconv(.winapi) void;
 extern "kernel32" fn QueryPerformanceCounter(lpPerformanceCount: *i64) callconv(.winapi) i32;
 extern "kernel32" fn QueryPerformanceFrequency(lpFrequency: *i64) callconv(.winapi) i32;
+extern "winmm" fn timeBeginPeriod(uPeriod: u32) callconv(.winapi) u32;
+extern "winmm" fn timeEndPeriod(uPeriod: u32) callconv(.winapi) u32;
 
 const TARGET_FRAME_MS: u32 = 40; // 25 FPS
 
@@ -37,6 +39,8 @@ fn init() void {
     var freq: i64 = 0;
     _ = QueryPerformanceFrequency(&freq);
     qpc_freq = @intCast(freq);
+    // Request 1ms timer resolution for accurate Sleep()
+    _ = timeBeginPeriod(1);
 }
 
 fn gameLoop() void {

@@ -39,9 +39,11 @@ fn init() void {
     // NOP "draw all states" overlay rendering
     _ = patch.writeNops(0x46e46f, 0x46e486 - 0x46e46f);
 
-    // Sleepy patches — reduce CPU usage by ensuring Sleep is always called
-    // MessageGameLoop: NOP the JNZ that skips Sleep(10) when mouse events are active
-    _ = patch.writeNops(0x451C31, 2);
+    // Disable game's own Sleep calls — our frame_limiter handles pacing properly.
+    // MessageGameLoop: NOP PUSH 0xA + CALL Sleep (8 bytes at 0x451C42)
+    _ = patch.writeNops(0x451C42, 8);
+    // D2GFX_EndScene: NOP PUSH EAX + CALL Sleep (7 bytes at 0x4F61F7)
+    _ = patch.writeNops(0x4F61F7, 7);
     // MessagePump (OOG): change conditional JZ to unconditional JMP so Sleep(0) always yields
     _ = patch.writeBytes(0x4FA66F, &[_]u8{0xEB});
 
@@ -74,7 +76,8 @@ fn deinit() void {
     patch.revertRange(0x4781AC, 5);
     patch.revertRange(0x4666A5, 1);
     patch.revertRange(0x46e46f, 0x46e486 - 0x46e46f);
-    patch.revertRange(0x451C31, 2);
+    patch.revertRange(0x451C42, 8);
+    patch.revertRange(0x4F61F7, 7);
     patch.revertRange(0x4FA66F, 1);
     patch.revertRange(0x594179, 2);
     patch.revertRange(0x6091D6, 18);
