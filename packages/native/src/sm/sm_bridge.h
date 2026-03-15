@@ -43,8 +43,9 @@ SM_API void     sm_pump_gc(void* context);
 SM_API int      sm_call_global_function(void* context, const char* name);
 SM_API void     sm_invalidate_call_cache(void);
 
-// Native call profiling — returns count + QPC ticks since last call, then resets.
-SM_API int      sm_get_native_call_stats(uint64_t* out_count, uint64_t* out_ticks);
+// Native call profiling — returns count + QPC ticks as 2x u32 pairs, then resets.
+SM_API int      sm_get_native_call_stats(uint32_t* out_count_lo, uint32_t* out_count_hi,
+                                          uint32_t* out_ticks_lo, uint32_t* out_ticks_hi);
 
 // Native function registration
 // callback signature: bool fn(void* context, unsigned argc, void* vp)

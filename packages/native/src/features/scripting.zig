@@ -120,13 +120,18 @@ fn tickCommon() void {
             const ms: u32 = @intCast(us / 1000);
             const avg_ns: u32 = if (stats.count > 0) @intCast((us * 1000) / stats.count) else 0;
 
+            // Calls per frame (assuming 25fps = 250 frames per 10s window)
+            const calls_per_frame: u32 = @intCast(stats.count / 250);
+
             const lh = log.openLogHandle() orelse return;
             defer log.closeHandle(lh);
             log.writeRawHandle(lh, "native: ");
             writeU(lh, ms);
             log.writeRawHandle(lh, "ms ");
             writeU(lh, @intCast(stats.count));
-            log.writeRawHandle(lh, " calls avg=");
+            log.writeRawHandle(lh, " calls (");
+            writeU(lh, calls_per_frame);
+            log.writeRawHandle(lh, "/frame) avg=");
             writeU(lh, avg_ns);
             log.writeRawHandle(lh, "ns/call\r\n");
         }

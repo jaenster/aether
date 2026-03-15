@@ -309,9 +309,13 @@ static bool native_trampoline(JSContext* cx, unsigned argc, JS::Value* vp) {
     return result;
 }
 
-int sm_get_native_call_stats(uint64_t* out_count, uint64_t* out_ticks) {
-    *out_count = g_native_call_count;
-    *out_ticks = g_native_call_ticks;
+// Snapshot + reset: copy to output, then zero atomically
+int sm_get_native_call_stats(uint32_t* out_count_lo, uint32_t* out_count_hi,
+                              uint32_t* out_ticks_lo, uint32_t* out_ticks_hi) {
+    *out_count_lo = (uint32_t)(g_native_call_count & 0xFFFFFFFF);
+    *out_count_hi = (uint32_t)(g_native_call_count >> 32);
+    *out_ticks_lo = (uint32_t)(g_native_call_ticks & 0xFFFFFFFF);
+    *out_ticks_hi = (uint32_t)(g_native_call_ticks >> 32);
     g_native_call_count = 0;
     g_native_call_ticks = 0;
     return 0;

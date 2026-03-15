@@ -86,10 +86,15 @@ pub const Engine = struct {
 
     /// Get native call stats (count + QPC ticks), resets counters.
     pub fn getNativeCallStats(_: *Engine) struct { count: u64, ticks: u64 } {
-        var count: u64 = 0;
-        var ticks: u64 = 0;
-        _ = c.sm_get_native_call_stats(&count, &ticks);
-        return .{ .count = count, .ticks = ticks };
+        var count_lo: u32 = 0;
+        var count_hi: u32 = 0;
+        var ticks_lo: u32 = 0;
+        var ticks_hi: u32 = 0;
+        _ = c.sm_get_native_call_stats(&count_lo, &count_hi, &ticks_lo, &ticks_hi);
+        return .{
+            .count = (@as(u64, count_hi) << 32) | count_lo,
+            .ticks = (@as(u64, ticks_hi) << 32) | ticks_lo,
+        };
     }
 
     pub fn moduleInit(_: *Engine, ctx: *anyopaque) bool {
