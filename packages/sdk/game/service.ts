@@ -160,7 +160,11 @@ export function createBot(name: string, factory: BotFactory): BotToken {
     return game._handlePacket(opcode)
   }
 
+  // Tick profiling — accumulate time in key sections
+  let _profAccum = { main: 0, bg: 0, total: 0, frames: 0, lastReport: 0 }
+
   __g.__onTick = function onTick() {
+    const tickStart = game.tickCount
     state.frameCount++
     game._frame = state.frameCount
     const nowInGame = game.inGame
@@ -202,6 +206,7 @@ export function createBot(name: string, factory: BotFactory): BotToken {
     }
 
     // Step main generator
+    const mainStart = game.tickCount
     try {
       const r = state.mainGen.next()
       if (r.done) state.mainGen = null
@@ -213,8 +218,10 @@ export function createBot(name: string, factory: BotFactory): BotToken {
       game.exitGame()
       return
     }
+    _profAccum.main += game.tickCount - mainStart
 
     // Step all active background generators, remove finished ones
+    const bgStart = game.tickCount
     const alive: Generator<void>[] = []
     for (const gen of state.activeGens) {
       try {
@@ -227,6 +234,23 @@ export function createBot(name: string, factory: BotFactory): BotToken {
       }
     }
     state.activeGens = alive
+    _profAccum.bg += game.tickCount - bgStart
+
+    // Total tick time
+    _profAccum.total += game.tickCount - tickStart
+    _profAccum.frames++
+
+    // Report every 10s
+    if (tickStart - _profAccum.lastReport >= 10000) {
+      _profAccum.lastReport = tickStart
+      if (_profAccum.frames > 0) {
+        game.log(`[perf] JS tick: total=${_profAccum.total}ms main=${_profAccum.main}ms bg=${_profAccum.bg}ms (${_profAccum.frames} frames)`)
+      }
+      _profAccum.total = 0
+      _profAccum.main = 0
+      _profAccum.bg = 0
+      _profAccum.frames = 0
+    }
   }
 
   return token
