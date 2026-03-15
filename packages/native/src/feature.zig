@@ -143,7 +143,7 @@ fn reportPerf() void {
 
     for (0..count) |idx| {
         const us = feature_us[idx];
-        if (us > 100) { // skip noise (<0.1ms)
+        if (us > 0) {
             log.writeRawHandle(lh, "  [");
             writeU(lh, @intCast(idx));
             log.writeRawHandle(lh, "] ");

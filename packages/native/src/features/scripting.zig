@@ -112,10 +112,10 @@ fn gameLoop() void {
     tickCommon();
     const eng = &(engine orelse return);
 
-    // Tick the bot generator each game frame
+    // Tick the bot generator each game frame — direct call, no eval/compile
     if (loader.state == .loaded) {
         const ctx = eng.oog_context orelse return;
-        if (eng.eval(ctx, "typeof __onTick === 'function' && __onTick()")) |_| {} else {
+        if (!eng.callGlobalFn(ctx, "__onTick")) {
             log.print("scripting: __onTick error");
         }
     }

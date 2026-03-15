@@ -215,6 +215,52 @@ int sm_eval(void* context, const char* source, int source_len,
     return write_to_buf(cstr, len, result_buf, result_buf_len);
 }
 
+// ── Call global function (no compile, just lookup + call) ─────────────
+
+int sm_call_global_function(void* context, const char* name) {
+    auto* ch = static_cast<ContextHandle*>(context);
+    if (!ch) return -1;
+
+    JSContext* cx = ch->cx;
+    JSAutoRequest ar(cx);
+    JSAutoCompartment ac(cx, ch->global);
+
+    // Look up the function on globalThis
+    JS::RootedValue fn_val(cx);
+    if (!JS_GetProperty(cx, ch->global, name, &fn_val)) {
+        JS_ClearPendingException(cx);
+        return -1;
+    }
+    if (!fn_val.isObject() || !JS::IsCallable(&fn_val.toObject())) {
+        return -2; // not a function
+    }
+
+    // Call it with no arguments, thisv = global
+    JS::RootedValue rval(cx);
+    JS::RootedValue thisv(cx, JS::ObjectValue(*ch->global));
+    JS::HandleValueArray args(JS::HandleValueArray::empty());
+
+    bool ok = JS::Call(cx, thisv, fn_val, args, &rval);
+    if (!ok) {
+        if (JS_IsExceptionPending(cx)) {
+            JS::RootedValue exc(cx);
+            if (JS_GetPendingException(cx, &exc)) {
+                JS_ClearPendingException(cx);
+                // Log error via JS::ToString
+                JSString* exc_str = JS::ToString(cx, exc);
+                if (exc_str) {
+                    // Could log here but caller handles it
+                }
+            }
+        }
+        return -3;
+    }
+
+    // Return 0=success, 1=function returned false (for packet blocking)
+    if (rval.isBoolean() && !rval.toBoolean()) return 1;
+    return 0;
+}
+
 // ── Native function registration ─────────────────────────────────────
 
 // Trampoline: SM calls this, we forward to the sm_native_fn stored in reserved slot 0.

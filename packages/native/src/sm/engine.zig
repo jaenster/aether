@@ -73,6 +73,12 @@ pub const Engine = struct {
         if (self.game_context) |ctx| c.sm_pump_gc(ctx);
     }
 
+    /// Call a named global function directly (no eval/compile overhead).
+    /// Returns true if the function was called successfully.
+    pub fn callGlobalFn(_: *Engine, ctx: *anyopaque, name: [*:0]const u8) bool {
+        return c.sm_call_global_function(ctx, name) == 0;
+    }
+
     pub fn moduleInit(_: *Engine, ctx: *anyopaque) bool {
         return c.sm_module_init(ctx) == 0;
     }
