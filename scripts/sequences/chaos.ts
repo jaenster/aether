@@ -1,7 +1,7 @@
 import { createScript, Area, type Game, type Monster } from "diablo:game"
 import type { Pos } from "../lib/attack-types.js"
 import { predictSpawnMonsterPosition } from "../lib/collision.js"
-import type { D2Seed } from "../lib/seed.js"
+import { seedAdvance, seedClone, type D2Seed } from "../lib/seed.js"
 import { Movement } from "../services/movement.js"
 import { Attack } from "../services/attack.js"
 import { Pickit } from "../services/pickit.js"
@@ -16,9 +16,9 @@ const DIABLO_CLASSID = 243
 // The glow is where the boss spawn algorithm starts — FindSpawnableLocation runs FROM here
 // to find the actual boss position (which can shift if players/monsters block tiles).
 const GLOW_POS: Record<string, Record<1|2, Pos>> = {
-  vizier:   { 1: { x: 7674, y: 5320 }, 2: { x: 7683, y: 5317 } }, // TODO: verify layout 2
-  deseis:   { 1: { x: 7775, y: 5189 }, 2: { x: 7775, y: 5189 } }, // TODO: verify layout 2
-  infector: { 1: { x: 7903, y: 5269 }, 2: { x: 7903, y: 5269 } }, // TODO: verify layout 2
+  vizier:   { 1: { x: 7674, y: 5320 }, 2: { x: 7674, y: 5320 } }, // observed both layouts
+  deseis:   { 1: { x: 7775, y: 5189 }, 2: { x: 7775, y: 5189 } }, // observed layout 2, TODO verify layout 1
+  infector: { 1: { x: 7906, y: 5288 }, 2: { x: 7906, y: 5288 } }, // observed layout 1, TODO verify layout 2
 }
 
 
@@ -59,14 +59,14 @@ const SEAL_SPAWN_DELAY = 8
  * Reads room seed, replicates the perimeter walk with RNG to find exact tile.
  * Falls back to glow position if seed can't be read (room not loaded).
  */
-function predictBossSpawn(game: Game, name: string, layout: 1 | 2): Pos | undefined {
+function predictBossSpawn(game: Game, name: string, layout: 1 | 2, preSeed?: D2Seed): Pos | undefined {
   const glowPos = GLOW_POS[name]?.[layout]
   if (!glowPos) return undefined
 
-  // Read room seed at glow position (same seed the server uses for SpawnMonster)
-  const roomSeed = game.getRoomSeed(glowPos.x, glowPos.y)
+  // Use pre-captured seed (from before seal activation) or read current
+  const roomSeed = preSeed ?? game.getRoomSeed(glowPos.x, glowPos.y)
   if (!roomSeed) {
-    game.log(`[chaos] ${name}: room not loaded at glow, using glow pos`)
+    game.log(`[chaos] ${name}: no seed available, using glow pos`)
     return glowPos
   }
 
@@ -124,17 +124,58 @@ export const Chaos = createScript(function*(game, svc) {
   for (const [name, group] of Object.entries(SEALS)) {
     game.log(`[chaos] === ${name} (layout ${layouts[name]}) ===`)
 
-    for (const sealId of group.seals) {
-      yield* openSeal(game, move, atk, sealId, group.dx, group.dy)
+    const seals = group.seals
+    // Open non-boss seals first
+    for (let i = 0; i < seals.length - 1; i++) {
+      yield* openSeal(game, move, atk, seals[i]!, group.dx, group.dy)
     }
 
-    // Predict boss spawn from static glow position + runtime collision scan
-    const bossPos = predictBossSpawn(game, name, layouts[name]!)
+    // Move near the last (boss) seal and capture room seed BEFORE opening it
+    const lastSeal = seals[seals.length - 1]!
+    const preset = game.findPreset(2, lastSeal)
+    if (preset) {
+      yield* move.moveTo(preset.x + group.dx, preset.y + group.dy)
+    }
+
+    // Read room seed at glow position NOW — before seal activation consumes it
+    const glowPos = GLOW_POS[name]?.[layouts[name]!]
+    let savedSeed: D2Seed | null = null
+    if (glowPos) {
+      const rs = game.getRoomSeed(glowPos.x, glowPos.y)
+      if (rs) savedSeed = { low: rs.low, high: rs.high }
+    }
+
+    // Open the boss seal
+    yield* openSeal(game, move, atk, lastSeal, group.dx, group.dy)
+
+    // Find the glow object — its position is the SpawnMonster center
+    let observedGlow: Pos | undefined
+    for (let gf = 0; gf < 20; gf++) {
+      const glow = game.objects.find((o: any) => o.classid === 131 && o.mode !== 0)
+      if (glow) {
+        observedGlow = { x: glow.x, y: glow.y }
+        game.log(`[chaos] glow at ${glow.x},${glow.y}`)
+        break
+      }
+      yield
+    }
+
+    // Predict: use observed glow as center + saved seed (skip=0 proven to work)
+    let bossPos: Pos | undefined
+    const center = observedGlow ?? glowPos
+    if (center && savedSeed) {
+      const spawn = predictSpawnMonsterPosition(game, { ...savedSeed }, center.x, center.y, 1, 0)
+      if (spawn) {
+        game.log(`[chaos] predicted ${name} spawn: ${spawn.x},${spawn.y} (from glow ${center.x},${center.y})`)
+        bossPos = spawn
+      }
+    }
+    if (!bossPos) bossPos = center
     if (!bossPos) {
       game.log(`[chaos] no predicted spawn for ${name}, skipping`)
       continue
     }
-    yield* killSealBoss(game, move, atk, loot, name, bossPos)
+    yield* killSealBoss(game, move, atk, loot, name, bossPos, savedSeed ?? undefined)
 
     // Refresh buffs between wings if any expired
     if (buffs.needsRefresh()) {
@@ -214,7 +255,7 @@ function* openSeal(game: Game, move: any, atk: any, sealClassid: number, dx: num
   game.log(`[chaos] seal ${sealClassid} failed to open`)
 }
 
-function* killSealBoss(game: Game, move: any, atk: any, loot: any, name: string, bossPos: Pos) {
+function* killSealBoss(game: Game, move: any, atk: any, loot: any, name: string, bossPos: Pos, debugSeed?: D2Seed) {
   const localeId = BOSS_LOCALE[name]!
   const bossName = getLocaleString(localeId)
 
@@ -238,13 +279,26 @@ function* killSealBoss(game: Game, move: any, atk: any, loot: any, name: string,
 
   const found: unknown = yield* game.waitUntil(() => !!findBoss(), 200)
 
-  // Log boss position on first few frames to see if it moves from glow
+  // Log boss position + brute-force seed advance count
   if (found) {
     const b = findBoss()
     if (b) {
-      for (let f = 0; f < 5; f++) {
-        game.log(`[chaos] ${bossName} f${f}: ${b.x},${b.y} mode=${b.mode}`)
-        yield
+      game.log(`[chaos] ${bossName} spawned at ${b.x},${b.y}`)
+
+      // DEBUG: brute-force find the correct seed advance count
+      if (debugSeed && observedGlow) {
+        for (let skip = 0; skip < 500; skip++) {
+          const s = seedClone(debugSeed)
+          for (let i = 0; i < skip; i++) seedAdvance(s)
+          const predicted = predictSpawnMonsterPosition(game, s, observedGlow.x, observedGlow.y, 1, 0)
+          if (predicted && Math.abs(predicted.x - b.x) <= 2 && Math.abs(predicted.y - b.y) <= 2) {
+            game.log(`[chaos] DEBUG: skip=${skip} → ${predicted.x},${predicted.y} matches actual ${b.x},${b.y} (glow=${observedGlow.x},${observedGlow.y})`)
+            break
+          }
+          if (skip === 499) {
+            game.log(`[chaos] DEBUG: no match in 500. glow=${observedGlow.x},${observedGlow.y} actual=${b.x},${b.y} seed=${debugSeed.low}:${debugSeed.high}`)
+          }
+        }
       }
     }
   }

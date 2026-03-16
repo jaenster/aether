@@ -1,10 +1,8 @@
 import type { Game } from "diablo:game"
-import { seedAdvance, seedRoll } from "./seed.js"
+import { seedAdvance, seedRoll, type D2Seed } from "./seed.js"
 
-export type { D2Seed } from "./seed.js"
-export { seedClone } from "./seed.js"
-// Re-export the ones we also use locally
-export { seedAdvance, seedRoll }
+export type { D2Seed }
+export { seedAdvance, seedRoll, seedClone } from "./seed.js"
 
 export interface Pos { x: number, y: number }
 

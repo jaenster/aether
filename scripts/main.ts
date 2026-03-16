@@ -22,7 +22,7 @@ export default createBot('sorc-farmer', function*(game, svc) {
       // yield* town.doTownChores()
       // yield* buffs.refreshAll()
 
-      yield* Pits.factory(game, svc)
+      yield* Chaos.factory(game, svc)
       game.exitGame()
     }())
 
