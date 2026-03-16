@@ -11,7 +11,7 @@ import {
   closeNPCInteract as nativeCloseNPCInteract,
   npcMenuSelect as nativeNpcMenuSelect,
 } from "diablo:native"
-import { UnitType, PlayerMode, UiFlags, MonsterSpecType, ItemFlags, C2SPacket, REPAIR_ALL_FLAG } from "diablo:constants";
+import { UnitType, PlayerMode, MonsterMode, UiFlags, MonsterSpecType, MonsterClassId, ItemFlags, C2SPacket, REPAIR_ALL_FLAG } from "diablo:constants";
 
 export abstract class Unit {
   constructor(readonly type: number, readonly unitId: number) {}
@@ -77,6 +77,9 @@ export class PlayerUnit extends Unit {
   }
 }
 
+const mercClassIds = new Set([MonsterClassId.MercA1Rogue, MonsterClassId.MercA2Guard, MonsterClassId.MercA3IronWolf, MonsterClassId.MercA5Barb])
+const summonClassIds = new Set([363, 417, 418, 419, 420, 421, 428, 357, 358, 289, 290, 291, 292, 293])
+
 export class Monster extends Unit {
   constructor(id: number) { super(1, id) }
 
@@ -104,6 +107,17 @@ export class Monster extends Unit {
   }
 
   get isNpc(): boolean { return NPC.npcClassIds.has(this.classid) }
+
+  /** True if this monster is hostile and can be attacked (not a merc, summon, or NPC). */
+  get isAttackable(): boolean {
+    if (!this.valid || this.hp <= 0 || this.mode === MonsterMode.Death || this.mode === MonsterMode.Dead) return false
+    if (this.isNpc) return false
+    if (mercClassIds.has(this.classid) || summonClassIds.has(this.classid)) {
+      const p = this.parent
+      if (p && p.type === 0) return false
+    }
+    return true
+  }
 }
 
 // NPC classid → service sets (from Ghidra decompilation + monstats)

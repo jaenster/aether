@@ -1,4 +1,4 @@
-import { type Monster, MonsterMode, MonsterSpecType } from "diablo:game"
+import { type Monster, MonsterSpecType } from "diablo:game"
 import { getUnitStat, getDifficulty, getUnitHP, getUnitMaxHP, getUnitMP, getUnitMaxMP } from "diablo:native"
 import { Stat } from "diablo:constants"
 import { getBaseStat } from "./txt.js"
@@ -670,7 +670,7 @@ const threatRank: Record<ThreatLevel, number> = {
 const threatFromRank: ThreatLevel[] = ["trivial", "low", "medium", "high", "extreme"]
 
 function aliveFilter(m: Monster): boolean {
-  return m.valid && m.hp > 0 && m.mode !== MonsterMode.Death && m.mode !== MonsterMode.Dead
+  return m.isAttackable
 }
 
 function computePotSustain(pots: PotionInfo, playerMaxHp: number): { healPerSec: number, totalHeal: number, charges: number } {

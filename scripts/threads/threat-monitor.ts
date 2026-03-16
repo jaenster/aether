@@ -1,6 +1,7 @@
-import { createScript } from "diablo:game"
+import { createScript, ItemContainer } from "diablo:game"
 import { getBaseStat } from "../lib/txt.js"
-import { assessBattlefield, formatBattlefield, formatThreat } from "../lib/monster-threat.js"
+import { assessBattlefield, formatBattlefield, formatThreat, type PotionInfo } from "../lib/monster-threat.js"
+import { HP_POT_SET, RV_POT_SET } from "../lib/item-data.js"
 
 const ASSESS_INTERVAL = 25 // every 25 frames (~1s)
 const LOG_INTERVAL = 75    // full log every 75 frames (~3s)
@@ -40,6 +41,18 @@ function dumpMonsterSkills(game: any, classid: number, name: string) {
   }
 }
 
+function getBeltPots(game: any): PotionInfo {
+  const beltPots: string[] = []
+  for (const item of game.items) {
+    if (item.location === ItemContainer.Belt) {
+      if (HP_POT_SET.has(item.code) || RV_POT_SET.has(item.code)) {
+        beltPots.push(item.code)
+      }
+    }
+  }
+  return { beltPots }
+}
+
 export const ThreatMonitor = createScript(function*(game, _svc) {
   let frameTick = 0
 
@@ -63,14 +76,16 @@ export const ThreatMonitor = createScript(function*(game, _svc) {
       dumpMonsterSkills(game, mon.classid, mon.name ?? `unknown`)
     }
 
-    const bf = assessBattlefield(monsters)
+    const potions = getBeltPots(game)
+    const bf = assessBattlefield(monsters, potions)
 
     // Skip logging if nothing interesting
     if (bf.activeThreats === 0) continue
 
     // Brief status → main log
     const ttd = bf.timeToDeathSec === Infinity ? '∞' : bf.timeToDeathSec.toFixed(1) + 's'
-    game.log(`[threat] ${bf.situationDanger.toUpperCase()} → ${bf.action} | ${bf.activeThreats} threats ${bf.totalIncomingDps | 0} dps TTD=${ttd} fightDmg=${bf.totalFightDamage | 0} melee=${bf.meleePackCount}`)
+    const sustain = bf.canSustain ? 'sustain' : `TTD=${ttd}`
+    game.log(`[threat] ${bf.situationDanger.toUpperCase()} → ${bf.action} | ${bf.activeThreats} nearby ${bf.totalIncomingDps | 0}dps ${sustain} pots=${bf.potCharges} fightDmg=${bf.totalFightDamage | 0}`)
 
     // Individual threats → verbose log only
     for (const p of bf.threats) {
