@@ -85,11 +85,28 @@ export default createBot('oog-test', function*(game, _svc) {
         yield* game.delay(200)
       }
 
-      // Now call the native create function which sets class, flags, and calls ConfirmCreate
+      // Create the save file via native binding (InitSave + Storm WriteSave + EnumSaves)
       game.log('[oog] creating Expansion Sorceress: ' + CHAR_NAME)
       const ok = game.oogCreateChar(CHAR_NAME, 1, true, false) // 1 = Sorceress
       game.log('[oog] oogCreateChar returned: ' + ok)
 
+      // ConfirmCreate was called — check if a popup appeared
+      yield* game.delay(1000)
+      const afterControls = game.getControls()
+      game.log('[oog] after create: ' + afterControls.length + ' controls')
+      for (const c of afterControls) {
+        if (c.type === FormType.Button || c.type === FormType.Popup || c.type === FormType.TextBox) {
+          const tName = c.type === FormType.Button ? 'BTN' : c.type === FormType.Popup ? 'POP' : 'TEXT'
+          game.log('[oog]   [' + c.i + '] ' + tName + ' (' + c.x + ',' + c.y + ' ' + c.w + 'x' + c.h + ') s=' + c.state + ' "' + (c.text || '') + '"')
+        }
+      }
+      // If there's a popup "OK" button, click it
+      const popupOk = afterControls.find(c => c.type === FormType.Button && c.text?.includes('OK') && c.state === 5)
+      if (popupOk) {
+        game.log('[oog] clicking popup OK')
+        game.clickControl(popupOk.i)
+        yield* game.delay(500)
+      }
       phase = 'wait_game'
       yield* game.delay(3000)
       continue

@@ -168,6 +168,14 @@ fn jsPrintScreen(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_
 const DWORD = u32;
 extern "kernel32" fn GetTickCount() callconv(.winapi) DWORD;
 
+const win32 = struct {
+    extern "kernel32" fn CreateFileA(lpFileName: [*:0]const u8, dwDesiredAccess: u32, dwShareMode: u32, lpSA: ?*anyopaque, dwCreationDisposition: u32, dwFlagsAndAttrs: u32, hTemplate: ?*anyopaque) callconv(.winapi) ?*anyopaque;
+    extern "kernel32" fn WriteFile(hFile: *anyopaque, lpBuffer: [*]const u8, nNumberOfBytesToWrite: u32, lpNumberOfBytesWritten: ?*u32, lpOverlapped: ?*anyopaque) callconv(.winapi) i32;
+    extern "kernel32" fn CloseHandle(hObject: *anyopaque) callconv(.winapi) i32;
+    extern "kernel32" fn FlushFileBuffers(hFile: *anyopaque) callconv(.winapi) i32;
+    extern "kernel32" fn GetLastError() callconv(.winapi) u32;
+};
+
 fn jsGetTickCount(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     retInt32(argc, vp, @bitCast(GetTickCount()));
     return 1;
@@ -1814,32 +1822,57 @@ fn jsOogCreateCharacter(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv
     // Clear szREALM at offset 213
     launcher[213] = 0;
 
-    // Call LAUNCHER_InitNewCharacterSaveFile(szName, classId, pCharSelSaveData, playerStatus)
-    // at 0x0043C540 — __fastcall(char*, BYTE, byte*, uint16_t)
+    // Write szNAME at offset 189 in D2IniConfigStrc
+    @memcpy(launcher[189 .. 189 + slen], name_buf[0..slen]);
+    launcher[189 + slen] = 0;
+    // Clear szREALM at offset 213
+    launcher[213] = 0;
+
+    // Write name as wide string into gpaCharNameBuffers editbox at 0x0077934C
+    // This pointer points at the editbox widget whose text buffer is at offset 0x5C
+    const editbox_ptr: *?[*]u8 = @ptrFromInt(0x0077934C);
+    {
+        var dbg: [64]u8 = undefined;
+        const raw_addr: usize = if (editbox_ptr.*) |p| @intFromPtr(p) else 0;
+        const dm = std.fmt.bufPrint(&dbg, "oog: editbox_ptr={x}", .{raw_addr}) catch "?";
+        log.printStr("", dm);
+    }
+    if (editbox_ptr.*) |editbox| {
+        const wptr: [*]u16 = @ptrCast(@alignCast(editbox + 0x5C));
+        for (0..slen) |i| {
+            wptr[i] = name_buf[i];
+        }
+        wptr[slen] = 0;
+        // Set cursor position at offset 0x58
+        @as(*align(1) u16, @ptrCast(editbox + 0x58)).* = @intCast(slen);
+    }
+
+    // Populate global SAVEFILE struct at 0x0077AC10 via InitNewCharacterSaveFile
     const InitSave = d2.fastcall(0x0043C540, fn ([*]u8, u8, [*]u8, u16) void);
     InitSave.call(.{ launcher + 189, class_id, launcher + 237, status });
 
-    // Call LAUNCHER_WriteSaveFileToD2s(szName) at 0x0043C6B0 — __fastcall(char*)
-    const WriteSave = d2.fastcall(0x0043C6B0, fn ([*]u8) u32);
-    _ = WriteSave.call(.{launcher + 189});
+    // Verify the editbox text is readable by FORMS_TextInput_GetValue
+    const GetTextValue = d2.fastcall(0x004FDD90, fn (?[*]u8) ?[*]u16);
+    const editbox_raw = editbox_ptr.*;
+    const text_result = GetTextValue.call(.{editbox_raw});
+    if (text_result) |wtext| {
+        // Convert first few chars to verify
+        var verify_buf: [32]u8 = undefined;
+        var vi: usize = 0;
+        while (vi < 31) {
+            const ch = wtext[vi];
+            if (ch == 0) break;
+            verify_buf[vi] = if (ch < 128) @intCast(ch) else '?';
+            vi += 1;
+        }
+        log.printStr("oog: editbox text=", verify_buf[0..vi]);
+    } else {
+        log.print("oog: editbox text=NULL");
+    }
 
-    // Set up game entry state (same as UIMENU_ConfirmCreateCharacter does for SP)
-    // nScreenToShow at offset 862
-    launcher[862] = 1;
-    // nGAMETYPE at offset 25 — set to SINGLEPLAYER (0)
-    @as(*align(1) u32, @ptrCast(launcher + 25)).* = 0;
-    // gnSelectedCharGameState at 0x007795E8
-    const game_state: *i32 = @ptrFromInt(0x007795E8);
-    game_state.* = 1;
-    // eArenaFlags at offset 521
-    var arena: u32 = 0x04; // ARENAFLAG_ClientUpdate
-    if (hardcore) arena |= 0x08; // ARENAFLAG_Hardcore
-    if (expansion) arena |= 0x20; // ARENAFLAG_Expansion
-    @as(*align(1) u32, @ptrCast(launcher + 521)).* = arena;
-
-    // Clear message loop to proceed to game
-    const ClearMsgLoop: *const fn () callconv(.winapi) i32 = @ptrFromInt(0x004F9190);
-    _ = ClearMsgLoop();
+    // Now call UIMENU_ConfirmCreateCharacter — it does InitSave + WriteSave + game entry
+    const ConfirmCreate: *const fn () callconv(.winapi) void = @ptrFromInt(0x004365B0);
+    ConfirmCreate();
 
     log.print("oog: created character");
     retBool(argc, vp, true);
