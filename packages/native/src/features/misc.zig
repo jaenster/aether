@@ -49,6 +49,20 @@ fn init() void {
     // TEST EAX,EAX → XOR EAX,EAX (always "not killed")
     _ = patch.writeBytes(0x594179, &[_]u8{ 0x33, 0xC0 });
 
+    // Regenerate map seed in single player — skip saved seed restoration in
+    // PLAYERSAVE_ParseHeaderAndCreateUnit so every game gets a fresh layout.
+    // JNZ → JMP (0x75 → 0xEB)
+    _ = patch.writeBytes(0x56A200, &[_]u8{0xEB});
+
+    // Speed up game — skip D2GFX_EndScene frame-pacing Sleep (JNZ → JMP at 0x4F61CC)
+    _ = patch.writeBytes(0x4F61CC, &[_]u8{0xEB});
+
+    // Speed up game — boost server tick rate from 25fps/40ms to 200fps/5ms
+    const fps_ptr: *volatile i32 = @ptrFromInt(0x883D5C);
+    const tbf_ptr: *volatile i32 = @ptrFromInt(0x883D60);
+    fps_ptr.* = 200;
+    tbf_ptr.* = 5;
+
     // Fix LRUCACHE_Unlink null deref at 0x6091E5 (d2bs GameCrashFix)
     // Rewrite 18-byte unguarded unlink with null-checked version:
     //   mov ecx,[eax+10] / jecxz +0D / mov edx,[eax+0C] / test edx,edx / jz +06 / mov [ecx+0C],edx / mov [edx+10],ecx
@@ -77,6 +91,13 @@ fn deinit() void {
     patch.revertRange(0x451C42, 8);
     patch.revertRange(0x4FA66F, 1);
     patch.revertRange(0x594179, 2);
+    patch.revertRange(0x56A200, 1);
+    patch.revertRange(0x4F61CC, 1);
+    // Restore server tick rate
+    const fps_ptr: *volatile i32 = @ptrFromInt(0x883D5C);
+    const tbf_ptr: *volatile i32 = @ptrFromInt(0x883D60);
+    fps_ptr.* = 25;
+    tbf_ptr.* = 40;
     patch.revertRange(0x6091D6, 18);
 }
 

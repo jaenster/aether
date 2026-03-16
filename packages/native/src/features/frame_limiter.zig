@@ -59,8 +59,8 @@ fn gameLoop() void {
         // Yield CPU. The game's EndScene handles 25fps pacing.
         // We replace the game's NOP'd Sleep(10) with our own — same effect but we
         // get timing data. This fires every message pump iteration, not just renders.
-        Sleep(10);
-        total_sleep_ms += 10;
+        Sleep(1);
+        total_sleep_ms += 1;
     }
 
     last_frame_qpc = qpcNow();
@@ -74,7 +74,7 @@ fn gameLoop() void {
 }
 
 fn oogLoop() void {
-    Sleep(10);
+    Sleep(1);
 }
 
 fn report() void {
