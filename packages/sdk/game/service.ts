@@ -253,5 +253,49 @@ export function createBot(name: string, factory: BotFactory): BotToken {
     }
   }
 
+  // OOG tick — step main generator + OOG/always background scripts during out-of-game
+  __g.__onOogTick = function onOogTick() {
+    state.frameCount++
+    game._frame = state.frameCount
+    const nowInGame = game.inGame
+
+    // Detect transition from in-game to OOG
+    if (state.wasInGame && !nowInGame) {
+      game.clearPlayer()
+      game.log('[' + name + '] left game (oog)')
+      state.activeGens = [
+        ...startScripts(game.load.oogScripts),
+        ...startScripts(game.load.alwaysScripts),
+      ]
+    }
+    state.wasInGame = nowInGame
+
+    // Create main generator on first OOG tick if none exists
+    if (!state.mainGen) {
+      state.mainGen = factory(game, state.svc)
+    }
+
+    // Step main generator
+    try {
+      const r = state.mainGen.next()
+      if (r.done) state.mainGen = null
+    } catch (e: any) {
+      game.log('[' + name + '] OOG error: ' + (e.message || String(e)))
+      state.mainGen = null
+    }
+
+    // Step background generators
+    const alive: Generator<void>[] = []
+    for (const gen of state.activeGens) {
+      try {
+        const r = gen.next()
+        if (!r.done) alive.push(gen)
+      } catch (e: any) {
+        game.log('[' + name + '] OOG script error: ' + (e.message || String(e)))
+      }
+    }
+    state.activeGens = alive
+  }
+
   return token
 }

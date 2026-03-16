@@ -1317,6 +1317,460 @@ fn jsHasLineOfSight(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) 
     return 1;
 }
 
+// ── Quest / Waypoint / Player type bindings ─────────────────────────
+
+/// getQuest(questId, subId) → 1 if quest bit set, 0 otherwise
+/// Reads from PlayerData quest buffers indexed by current difficulty.
+fn jsGetQuest(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const quest_id: u32 = @bitCast(argInt32(argc, vp, 0));
+    const sub_id: u32 = @bitCast(argInt32(argc, vp, 1));
+    const player = globals.playerUnit().* orelse { retInt32(argc, vp, 0); return 1; };
+    const pdata: *types.PlayerData = @ptrCast(@alignCast(player.pUnitData orelse { retInt32(argc, vp, 0); return 1; }));
+    // Select quest buffer by difficulty
+    const gi_ptr = globals.gameInfo().*;
+    const diff: u32 = if (gi_ptr) |gi| blk: {
+        const diff_ptr: *u32 = @ptrFromInt(@intFromPtr(gi) + 0x5C);
+        break :blk diff_ptr.*;
+    } else 0;
+    const quest_buf: ?*anyopaque = switch (diff) {
+        0 => pdata.pNormalQuest,
+        1 => pdata.pNightmareQuest,
+        2 => pdata.pHellQuest,
+        else => pdata.pNormalQuest,
+    };
+    if (quest_buf == null) { retInt32(argc, vp, 0); return 1; }
+    const result = d2.GetQuestState.call(.{ quest_buf, quest_id, sub_id });
+    retInt32(argc, vp, result);
+    return 1;
+}
+
+/// hasWaypoint(wpIndex) → true if waypoint is activated
+/// Reads from PlayerData waypoint buffers, which are bitfields.
+fn jsHasWaypoint(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const wp_index: u32 = @bitCast(argInt32(argc, vp, 0));
+    const player = globals.playerUnit().* orelse { retBool(argc, vp, false); return 1; };
+    const pdata: *types.PlayerData = @ptrCast(@alignCast(player.pUnitData orelse { retBool(argc, vp, false); return 1; }));
+    // Select waypoint buffer by difficulty
+    const gi_ptr = globals.gameInfo().*;
+    const diff: u32 = if (gi_ptr) |gi| blk: {
+        const diff_ptr: *u32 = @ptrFromInt(@intFromPtr(gi) + 0x5C);
+        break :blk diff_ptr.*;
+    } else 0;
+    const wp_buf: ?*anyopaque = switch (diff) {
+        0 => pdata.pNormalWaypoint,
+        1 => pdata.pNightmareWaypoint,
+        2 => pdata.pHellWaypoint,
+        else => pdata.pNormalWaypoint,
+    };
+    const buf_ptr = wp_buf orelse { retBool(argc, vp, false); return 1; };
+    // Waypoint buffer is a bitfield — each waypoint is one bit
+    // The buffer starts with a 2-byte header, then the bitfield
+    const bytes: [*]const u8 = @ptrCast(buf_ptr);
+    const byte_idx = wp_index / 8;
+    const bit_idx: u3 = @intCast(wp_index % 8);
+    // Offset 2 bytes past start (standard D2 waypoint buffer layout)
+    const val = bytes[2 + byte_idx];
+    retBool(argc, vp, (val >> bit_idx) & 1 == 1);
+    return 1;
+}
+
+/// meGetClassId() → player class (0=ama, 1=sor, 2=nec, 3=pal, 4=bar, 5=dru, 6=ass)
+fn jsMeGetClassId(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const player = globals.playerUnit().* orelse { retInt32(argc, vp, -1); return 1; };
+    retInt32(argc, vp, @bitCast(player.dwTxtFileNo));
+    return 1;
+}
+
+/// meGetGameType() → 0=classic, 1=expansion
+fn jsMeGetGameType(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const player = globals.playerUnit().* orelse { retInt32(argc, vp, 0); return 1; };
+    const pdata: *types.PlayerData = @ptrCast(@alignCast(player.pUnitData orelse { retInt32(argc, vp, 0); return 1; }));
+    // PlayerData + 0x28 contains the player status flags
+    const status_ptr: *const types.PlayerStatus = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(pdata)) + 0x28));
+    retInt32(argc, vp, if (status_ptr.expansion) @as(i32, 1) else @as(i32, 0));
+    return 1;
+}
+
+/// meGetPlayerType() → 0=softcore, 1=hardcore
+fn jsMeGetPlayerType(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const player = globals.playerUnit().* orelse { retInt32(argc, vp, 0); return 1; };
+    const pdata: *types.PlayerData = @ptrCast(@alignCast(player.pUnitData orelse { retInt32(argc, vp, 0); return 1; }));
+    const status_ptr: *const types.PlayerStatus = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(pdata)) + 0x28));
+    retInt32(argc, vp, if (status_ptr.hardcore) @as(i32, 1) else @as(i32, 0));
+    return 1;
+}
+
+/// clickItem(mode, unitId) → send item click packet
+/// Modes: 0=use (right-click), 1=equip/unequip, 2=move to belt, etc.
+fn jsClickItem(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const mode: u32 = @bitCast(argInt32(argc, vp, 0));
+    const unit_id: u32 = @bitCast(argInt32(argc, vp, 1));
+    // Packet 0x20: PickupBufferItem — pickup from inventory/stash/cube to cursor
+    // Packet 0x1A: DropItem — drop from cursor to ground
+    // Packet 0x16: PickupGroundItem
+    // For general item actions, packet 0x20 is the standard pick-to-cursor:
+    // [0x20, u32:unitId]
+    // For use-item, packet 0x26: [0x26, u32:unitId, u32:posX, u32:posY]
+    switch (mode) {
+        0 => {
+            // Use item (right-click in inventory) — packet 0x26
+            var buf: [13]u8 = undefined;
+            buf[0] = 0x26;
+            @as(*align(1) u32, @ptrCast(buf[1..5])).* = unit_id;
+            @as(*align(1) u32, @ptrCast(buf[5..9])).* = 0; // posX
+            @as(*align(1) u32, @ptrCast(buf[9..13])).* = 0; // posY
+            d2.sendPacket(&buf);
+        },
+        1 => {
+            // Pick to cursor from buffer — packet 0x20
+            var buf: [5]u8 = undefined;
+            buf[0] = 0x20;
+            @as(*align(1) u32, @ptrCast(buf[1..5])).* = unit_id;
+            d2.sendPacket(&buf);
+        },
+        2 => {
+            // Pick from ground — packet 0x16
+            var buf: [13]u8 = undefined;
+            buf[0] = 0x16;
+            @as(*align(1) u32, @ptrCast(buf[1..5])).* = 4; // unit type = item
+            @as(*align(1) u32, @ptrCast(buf[5..9])).* = unit_id;
+            @as(*align(1) u32, @ptrCast(buf[9..13])).* = 0; // action
+            d2.sendPacket(&buf);
+        },
+        3 => {
+            // Drop from cursor — packet 0x17
+            var buf: [5]u8 = undefined;
+            buf[0] = 0x17;
+            @as(*align(1) u32, @ptrCast(buf[1..5])).* = unit_id;
+            d2.sendPacket(&buf);
+        },
+        else => {},
+    }
+    retUndefined(argc, vp);
+    return 1;
+}
+
+/// getInteractedNPC() → unitId of currently interacted NPC, or -1
+fn jsGetInteractedNPC(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const npc = d2.GetInteractedUnit.call() orelse {
+        retInt32(argc, vp, -1);
+        return 1;
+    };
+    retInt32(argc, vp, @bitCast(npc.dwUnitId));
+    return 1;
+}
+
+/// meGetLevel() → player character level
+fn jsMeGetLevel(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const player = globals.playerUnit().* orelse { retInt32(argc, vp, 0); return 1; };
+    const lvl = d2.GetUnitStat.call(player, 12, 0); // stat 12 = level
+    retInt32(argc, vp, @bitCast(lvl));
+    return 1;
+}
+
+/// meGetGold() → gold on person
+fn jsMeGetGold(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const player = globals.playerUnit().* orelse { retInt32(argc, vp, 0); return 1; };
+    const gold = d2.GetUnitStat.call(player, 14, 0); // stat 14 = gold
+    retInt32(argc, vp, @bitCast(gold));
+    return 1;
+}
+
+/// meGetGoldStash() → gold in stash
+fn jsMeGetGoldStash(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const player = globals.playerUnit().* orelse { retInt32(argc, vp, 0); return 1; };
+    const gold = d2.GetUnitStat.call(player, 15, 0); // stat 15 = goldbank
+    retInt32(argc, vp, @bitCast(gold));
+    return 1;
+}
+
+// ── OOG Control System ──────────────────────────────────────────────
+//
+// Exposes the D2 forms/control linked list to JS for full OOG introspection.
+// Controls are UI widgets (buttons, editboxes, textboxes, lists, etc.) that
+// the game creates on each OOG screen. JS can enumerate them, read their
+// properties, get/set text, and invoke click callbacks.
+//
+// D2ControlStrc layout (64 bytes):
+//   0x00 eD2FormType  (1=EditBox, 2=Image, 3=AnimImage, 4=TextBox, 5=Scrollbar,
+//                      6=Button, 7=List, 8=Timer, 9=Smack, 10=ProgressBar,
+//                      11=Popup, 12=AccountList, 13=ImageEx)
+//   0x08 dwState      (visibility/enabled flags)
+//   0x0C dwPosX
+//   0x10 dwPosY
+//   0x14 dwSizeX
+//   0x18 dwSizeY
+//   0x24 fpPush       (click callback)
+//   0x34 fpOnPress    (press callback)
+//   0x3C pNext        (linked list next)
+//
+// Subtypes extend this:
+//   D2WinEditBox (644 bytes): wszText at offset 0x5C (254 WCHAR)
+//   D2WinButton  (628 bytes): wszLabel at offset 0x64 (256 WCHAR)
+//   D2WinTextBox (172 bytes): text in dynamic line storage
+//
+// pFormsList global: 0x007D55BC
+
+const FORMS_LIST: *?*anyopaque = @ptrFromInt(0x007D55BC);
+
+const D2Control = extern struct {
+    eD2FormType: i32,    // 0x00
+    pDC6: ?*anyopaque,   // 0x04
+    dwState: i32,        // 0x08
+    dwPosX: i32,         // 0x0C
+    dwPosY: i32,         // 0x10
+    dwSizeX: i32,        // 0x14
+    dwSizeY: i32,        // 0x18
+    fpDraw: ?*anyopaque, // 0x1C
+    fpDrawEx: ?*anyopaque, // 0x20
+    fpPush: ?*anyopaque, // 0x24
+    fpMouse: ?*anyopaque, // 0x28
+    fpListCheck: ?*anyopaque, // 0x2C
+    fpKey: ?*anyopaque,  // 0x30
+    fpOnPress: ?*anyopaque, // 0x34
+    fpDrawAnim: ?*anyopaque, // 0x38
+    pNext: ?*D2Control,  // 0x3C
+};
+
+// Snapshot buffer — walk the list once, store up to 128 control pointers
+const MAX_CONTROLS = 128;
+var ctrl_snapshot: [MAX_CONTROLS]*D2Control = undefined;
+var ctrl_count: u32 = 0;
+
+fn snapshotControls() void {
+    ctrl_count = 0;
+    var cur: ?*D2Control = @ptrCast(@alignCast(FORMS_LIST.*));
+    while (cur) |ctrl| {
+        if (ctrl_count >= MAX_CONTROLS) break;
+        ctrl_snapshot[ctrl_count] = ctrl;
+        ctrl_count += 1;
+        cur = ctrl.pNext;
+    }
+}
+
+fn getControl(idx: u32) ?*D2Control {
+    if (idx >= ctrl_count) return null;
+    return ctrl_snapshot[idx];
+}
+
+/// Read wide text from a control subtype and convert to ASCII.
+/// EditBox: 254 WCHAR at offset 0x5C from control base
+/// Button: 256 WCHAR at offset 0x64 from control base
+fn readControlText(ctrl: *D2Control, buf: []u8) usize {
+    const base: [*]const u8 = @ptrCast(ctrl);
+    const form_type = ctrl.eD2FormType;
+    var wptr: [*]const u16 = undefined;
+    var max_chars: usize = 0;
+
+    if (form_type == 1) {
+        // EditBox: wszText at offset 0x5C
+        wptr = @ptrCast(@alignCast(base + 0x5C));
+        max_chars = 254;
+    } else if (form_type == 6) {
+        // Button: wszLabel at offset 0x64
+        wptr = @ptrCast(@alignCast(base + 0x64));
+        max_chars = 256;
+    } else {
+        return 0;
+    }
+
+    var i: usize = 0;
+    while (i < max_chars and i < buf.len - 1) {
+        const ch = wptr[i];
+        if (ch == 0) break;
+        buf[i] = if (ch < 128) @intCast(ch) else '?';
+        i += 1;
+    }
+    return i;
+}
+
+/// oogControlCount() → snapshot controls and return count
+fn jsOogControlCount(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    snapshotControls();
+    retInt32(argc, vp, @bitCast(ctrl_count));
+    return 1;
+}
+
+/// oogControlGetInfo(index) → "type,state,x,y,w,h"
+fn jsOogControlGetInfo(cx_ptr: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const idx: u32 = @bitCast(argInt32(argc, vp, 0));
+    const ctrl = getControl(idx) orelse { retString(cx_ptr, argc, vp, ""); return 1; };
+    var buf: [128]u8 = undefined;
+    const written = std.fmt.bufPrint(&buf, "{d},{d},{d},{d},{d},{d}", .{
+        ctrl.eD2FormType, ctrl.dwState, ctrl.dwPosX, ctrl.dwPosY, ctrl.dwSizeX, ctrl.dwSizeY,
+    }) catch { retString(cx_ptr, argc, vp, ""); return 1; };
+    retString(cx_ptr, argc, vp, written);
+    return 1;
+}
+
+/// oogControlGetText(index) → text content of editbox or button label
+fn jsOogControlGetText(cx_ptr: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const idx: u32 = @bitCast(argInt32(argc, vp, 0));
+    const ctrl = getControl(idx) orelse { retString(cx_ptr, argc, vp, ""); return 1; };
+    var buf: [512]u8 = undefined;
+    const len = readControlText(ctrl, &buf);
+    retString(cx_ptr, argc, vp, buf[0..len]);
+    return 1;
+}
+
+/// oogControlSetText(index, text) → set text on an editbox
+fn jsOogControlSetText(cx_ptr: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const idx: u32 = @bitCast(argInt32(argc, vp, 0));
+    const ctrl = getControl(idx) orelse { retBool(argc, vp, false); return 1; };
+    if (ctrl.eD2FormType != 1) { retBool(argc, vp, false); return 1; } // only editboxes
+
+    var text_buf: [256]u8 = undefined;
+    const text_len = c.sm_arg_string(cx_ptr, argc, vp, 1, &text_buf, text_buf.len);
+    if (text_len < 0) { retBool(argc, vp, false); return 1; }
+
+    // Write as WCHAR to offset 0x5C
+    const base: [*]u8 = @ptrCast(ctrl);
+    const wptr: [*]u16 = @ptrCast(@alignCast(base + 0x5C));
+    const slen: usize = @intCast(text_len);
+    const wlen = @min(slen, 253); // max 254 WCHAR including null
+    for (0..wlen) |i| {
+        wptr[i] = text_buf[i];
+    }
+    wptr[wlen] = 0;
+
+    // Update cursor position at offset 0x58 (u16)
+    const cursor_ptr: *u16 = @ptrCast(@alignCast(base + 0x58));
+    cursor_ptr.* = @intCast(wlen);
+
+    retBool(argc, vp, true);
+    return 1;
+}
+
+/// oogControlClick(index) → invoke the control's push/click callback
+fn jsOogControlClick(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const idx: u32 = @bitCast(argInt32(argc, vp, 0));
+    const ctrl = getControl(idx) orelse { retBool(argc, vp, false); return 1; };
+
+    // Try fpOnPress first (0x34), then fpPush (0x24)
+    if (ctrl.fpOnPress) |press_ptr| {
+        const cb: *const fn (*D2Control) callconv(.winapi) i32 = @ptrCast(press_ptr);
+        _ = cb(ctrl);
+        retBool(argc, vp, true);
+        return 1;
+    }
+
+    // For buttons, the click mechanism is D2WINBUTTON_InvokeClickCallback
+    // which reads the callback from the button-specific data. Let's call it directly.
+    if (ctrl.eD2FormType == 6) {
+        // D2WINBUTTON_InvokeClickCallback at 0x00500ab0 — __fastcall(ppButton)
+        // It reads the OnPress from the button struct and calls it
+        const InvokeClick = d2.fastcall(0x00500ab0, fn (*?*D2Control) void);
+        var ctrl_ptr: ?*D2Control = ctrl;
+        InvokeClick.call(.{&ctrl_ptr});
+        retBool(argc, vp, true);
+        return 1;
+    }
+
+    retBool(argc, vp, false);
+    return 1;
+}
+
+/// oogControlFind(type, x, y, w, h) → index of matching control, or -1
+/// Pass -1 for any param to match any value (wildcard).
+fn jsOogControlFind(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const want_type = argInt32(argc, vp, 0);
+    const want_x = argInt32(argc, vp, 1);
+    const want_y = argInt32(argc, vp, 2);
+    const want_w = argInt32(argc, vp, 3);
+    const want_h = argInt32(argc, vp, 4);
+
+    // Re-snapshot to get fresh data
+    snapshotControls();
+
+    var i: u32 = 0;
+    while (i < ctrl_count) : (i += 1) {
+        const ctrl = ctrl_snapshot[i];
+        if (want_type != -1 and ctrl.eD2FormType != want_type) continue;
+        if (want_x != -1 and ctrl.dwPosX != want_x) continue;
+        if (want_y != -1 and ctrl.dwPosY != want_y) continue;
+        if (want_w != -1 and ctrl.dwSizeX != want_w) continue;
+        if (want_h != -1 and ctrl.dwSizeY != want_h) continue;
+        retInt32(argc, vp, @bitCast(i));
+        return 1;
+    }
+    retInt32(argc, vp, -1);
+    return 1;
+}
+
+/// oogControlGetAll() → JSON array of all controls: [{"type":N,"state":N,"x":N,"y":N,"w":N,"h":N,"text":"..."},...]
+/// Gives a complete dump so JS can see everything at once.
+fn jsOogControlGetAll(cx_ptr: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    snapshotControls();
+
+    // Budget ~200 bytes per control, 128 controls max = ~25KB
+    var buf: [25600]u8 = undefined;
+    var pos: usize = 0;
+    buf[0] = '[';
+    pos = 1;
+
+    var i: u32 = 0;
+    while (i < ctrl_count) : (i += 1) {
+        if (i > 0 and pos < buf.len - 1) {
+            buf[pos] = ',';
+            pos += 1;
+        }
+        const ctrl = ctrl_snapshot[i];
+
+        // Read text if available
+        var text_buf: [256]u8 = undefined;
+        const text_len = readControlText(ctrl, &text_buf);
+
+        // Write JSON — escape text minimally (just quotes)
+        const written = std.fmt.bufPrint(buf[pos..], "{{\"i\":{d},\"type\":{d},\"state\":{d},\"x\":{d},\"y\":{d},\"w\":{d},\"h\":{d}", .{
+            i, ctrl.eD2FormType, ctrl.dwState, ctrl.dwPosX, ctrl.dwPosY, ctrl.dwSizeX, ctrl.dwSizeY,
+        }) catch break;
+        pos += written.len;
+
+        if (text_len > 0) {
+            const tw = std.fmt.bufPrint(buf[pos..], ",\"text\":\"{s}\"", .{text_buf[0..text_len]}) catch break;
+            pos += tw.len;
+        }
+        buf[pos] = '}';
+        pos += 1;
+
+        if (pos > buf.len - 300) break;
+    }
+    if (pos < buf.len) {
+        buf[pos] = ']';
+        pos += 1;
+    }
+    retString(cx_ptr, argc, vp, buf[0..pos]);
+    return 1;
+}
+
+/// oogSelectChar(name) → select character by name and enter game
+fn jsOogSelectChar(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    var name_buf: [64]u8 = undefined;
+    const name_len = c.sm_arg_string(cx, argc, vp, 0, &name_buf, name_buf.len);
+    if (name_len <= 0) { retBool(argc, vp, false); return 1; }
+    const target = name_buf[0..@intCast(name_len)];
+
+    const first_ptr: *?*const types.D2CharSelStrc = @ptrFromInt(0x00779dbc);
+    var cur = first_ptr.* orelse { retBool(argc, vp, false); return 1; };
+
+    while (true) {
+        const name = std.mem.sliceTo(&cur.szCharname, 0);
+        if (std.mem.eql(u8, name, target)) {
+            _ = d2.SelectedCharBnetSingleTcpIp.call(.{
+                @constCast(cur),
+                @as(i16, @bitCast(cur.nCharacterFlags)),
+                @as(u32, cur.ePlayerClassID),
+                @as([*:0]u8, @constCast(@ptrCast("".ptr))),
+            });
+            retBool(argc, vp, true);
+            return 1;
+        }
+        cur = cur.pNext orelse break;
+    }
+    retBool(argc, vp, false);
+    return 1;
+}
+
 // ── Binding table ───────────────────────────────────────────────────
 
 const Binding = struct {
@@ -1418,6 +1872,26 @@ const bindings = [_]Binding{
     .{ .name = "getMapSeed", .func = &jsGetMapSeed, .nargs = 0 },
     .{ .name = "getRoomSeed", .func = &jsGetRoomSeed, .nargs = 2 },
     .{ .name = "hasLineOfSight", .func = &jsHasLineOfSight, .nargs = 4 },
+    // Quest / waypoint / player type
+    .{ .name = "getQuest", .func = &jsGetQuest, .nargs = 2 },
+    .{ .name = "hasWaypoint", .func = &jsHasWaypoint, .nargs = 1 },
+    .{ .name = "meGetClassId", .func = &jsMeGetClassId, .nargs = 0 },
+    .{ .name = "meGetGameType", .func = &jsMeGetGameType, .nargs = 0 },
+    .{ .name = "meGetPlayerType", .func = &jsMeGetPlayerType, .nargs = 0 },
+    .{ .name = "meGetLevel", .func = &jsMeGetLevel, .nargs = 0 },
+    .{ .name = "meGetGold", .func = &jsMeGetGold, .nargs = 0 },
+    .{ .name = "meGetGoldStash", .func = &jsMeGetGoldStash, .nargs = 0 },
+    .{ .name = "clickItem", .func = &jsClickItem, .nargs = 2 },
+    .{ .name = "getInteractedNPC", .func = &jsGetInteractedNPC, .nargs = 0 },
+    // OOG control system
+    .{ .name = "oogControlCount", .func = &jsOogControlCount, .nargs = 0 },
+    .{ .name = "oogControlGetInfo", .func = &jsOogControlGetInfo, .nargs = 1 },
+    .{ .name = "oogControlGetText", .func = &jsOogControlGetText, .nargs = 1 },
+    .{ .name = "oogControlSetText", .func = &jsOogControlSetText, .nargs = 2 },
+    .{ .name = "oogControlClick", .func = &jsOogControlClick, .nargs = 1 },
+    .{ .name = "oogControlFind", .func = &jsOogControlFind, .nargs = 5 },
+    .{ .name = "oogControlGetAll", .func = &jsOogControlGetAll, .nargs = 0 },
+    .{ .name = "oogSelectChar", .func = &jsOogSelectChar, .nargs = 1 },
 };
 
 /// Comptime-generated ES module source for "diablo:native".

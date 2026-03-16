@@ -53,6 +53,16 @@ function getBeltPots(game: any): PotionInfo {
   return { beltPots }
 }
 
+/** Shared latest battlefield report — readable by attack/movement services.
+ *  Stored on globalThis to survive hot-reload. */
+const __g = Function('return this')() as any
+if (!__g.__latestBattlefieldReport) __g.__latestBattlefieldReport = null
+
+/** Get the latest battlefield report (may be null if not yet assessed) */
+export function getLatestReport(): ReturnType<typeof assessBattlefield> | null {
+  return __g.__latestBattlefieldReport
+}
+
 export const ThreatMonitor = createScript(function*(game, _svc) {
   let frameTick = 0
 
@@ -62,6 +72,7 @@ export const ThreatMonitor = createScript(function*(game, _svc) {
     const area = game.player.area
     if (area <= 0 || isTown(area) || !game.inGame || game.player.hp <= 0) {
       frameTick = 0
+      __g.__latestBattlefieldReport = null
       continue
     }
 
@@ -69,7 +80,10 @@ export const ThreatMonitor = createScript(function*(game, _svc) {
     if (frameTick % ASSESS_INTERVAL !== 0) continue
 
     const monsters = [...game.monsters]
-    if (monsters.length === 0) continue
+    if (monsters.length === 0) {
+      __g.__latestBattlefieldReport = null
+      continue
+    }
 
     // Dump skills for each new monster type
     for (const mon of monsters) {
@@ -78,6 +92,9 @@ export const ThreatMonitor = createScript(function*(game, _svc) {
 
     const potions = getBeltPots(game)
     const bf = assessBattlefield(monsters, potions)
+
+    // Store for consumption by other services
+    __g.__latestBattlefieldReport = bf
 
     // Skip logging if nothing interesting
     if (bf.activeThreats === 0) continue

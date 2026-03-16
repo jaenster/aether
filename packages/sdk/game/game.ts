@@ -26,6 +26,25 @@ import {
   getMapSeed as nativeGetMapSeed,
   getRoomSeed as nativeGetRoomSeed,
   getMercState as nativeGetMercState,
+  // Phase 1 additions
+  getQuest as nativeGetQuest,
+  hasWaypoint as nativeHasWaypoint,
+  meGetClassId as nativeMeGetClassId,
+  meGetGameType as nativeMeGetGameType,
+  meGetPlayerType as nativeMeGetPlayerType,
+  meGetLevel as nativeMeGetLevel,
+  meGetGold as nativeMeGetGold,
+  meGetGoldStash as nativeMeGetGoldStash,
+  clickItem as nativeClickItem,
+  getInteractedNPC as nativeGetInteractedNPC,
+  oogControlCount as nativeOogControlCount,
+  oogControlGetInfo as nativeOogControlGetInfo,
+  oogControlGetText as nativeOogControlGetText,
+  oogControlSetText as nativeOogControlSetText,
+  oogControlClick as nativeOogControlClick,
+  oogControlFind as nativeOogControlFind,
+  oogControlGetAll as nativeOogControlGetAll,
+  oogSelectChar as nativeOogSelectChar,
 } from "diablo:native"
 import { UnitCollection } from "./unit.collection.js";
 import { ItemUnit, Missile, Monster, NPC, ObjectUnit, PlayerUnit, Tile } from "./unit.js";
@@ -263,6 +282,58 @@ export class Game {
     return { low: parseInt(parts[0]!, 10), high: parseInt(parts[1]!, 10) }
   }
 
+  // ── Quest / Waypoint / Player ────────────────────────────────────
+
+  /** Check quest state: returns 1 if bit set, 0 otherwise */
+  getQuest(questId: number, subId: number): number { return nativeGetQuest(questId, subId) }
+  /** Check if waypoint is activated for current difficulty */
+  hasWaypoint(wpIndex: number): boolean { return nativeHasWaypoint(wpIndex) }
+  /** Player class: 0=ama, 1=sor, 2=nec, 3=pal, 4=bar, 5=dru, 6=ass */
+  get classId(): number { return nativeMeGetClassId() }
+  /** 0=classic, 1=expansion */
+  get isExpansion(): boolean { return nativeMeGetGameType() === 1 }
+  /** 0=softcore, 1=hardcore */
+  get isHardcore(): boolean { return nativeMeGetPlayerType() === 1 }
+  /** Player character level */
+  get charLevel(): number { return nativeMeGetLevel() }
+  /** Gold on person */
+  get gold(): number { return nativeMeGetGold() }
+  /** Gold in stash */
+  get goldStash(): number { return nativeMeGetGoldStash() }
+  /** Click item: 0=use, 1=pick to cursor, 2=pick from ground, 3=drop from cursor */
+  clickItem(mode: number, unitId: number) { nativeClickItem(mode, unitId) }
+  /** Get unitId of currently interacted NPC, or -1 */
+  get interactedNPC(): number { return nativeGetInteractedNPC() }
+
+  // ── OOG Controls ──────────────────────────────────────────────────
+
+  /** Get all OOG controls as parsed array. Call from OOG tick only. */
+  getControls(): OogControl[] {
+    const raw = nativeOogControlGetAll()
+    if (!raw || raw === '[]') return []
+    return JSON.parse(raw) as OogControl[]
+  }
+
+  /** Find a control by type/position. -1 = wildcard. Returns control index or -1. */
+  findControl(type: number, x = -1, y = -1, w = -1, h = -1): number {
+    return nativeOogControlFind(type, x, y, w, h)
+  }
+
+  /** Get text of a control (editbox text buffer or button label) */
+  getControlText(index: number): string { return nativeOogControlGetText(index) }
+
+  /** Set text on an editbox control */
+  setControlText(index: number, text: string): boolean { return nativeOogControlSetText(index, text) }
+
+  /** Click/invoke a control */
+  clickControl(index: number): boolean { return nativeOogControlClick(index) }
+
+  /** Snapshot controls (call before find/get if you need fresh data) */
+  refreshControls(): number { return nativeOogControlCount() }
+
+  /** Select character by name and enter game (single player) */
+  oogSelectChar(name: string): boolean { return nativeOogSelectChar(name) }
+
   // ── Logging ────────────────────────────────────────────────────────
 
   log(...args: any[]) {
@@ -319,6 +390,43 @@ class NpcView {
     }
     return best
   }
+}
+
+/** OOG control info returned by getControls() */
+export interface OogControl {
+  /** Control index in snapshot */
+  i: number
+  /** Form type: 1=EditBox, 2=Image, 3=AnimImage, 4=TextBox, 5=Scrollbar, 6=Button, 7=List, 8=Timer, 9=Smack, 10=ProgressBar, 11=Popup, 12=AccountList, 13=ImageEx */
+  type: number
+  /** State/visibility flags */
+  state: number
+  /** Position X */
+  x: number
+  /** Position Y */
+  y: number
+  /** Width */
+  w: number
+  /** Height */
+  h: number
+  /** Text content (editbox input or button label) — only present if available */
+  text?: string
+}
+
+/** D2 form type constants */
+export const enum FormType {
+  EditBox = 1,
+  Image = 2,
+  AnimImage = 3,
+  TextBox = 4,
+  Scrollbar = 5,
+  Button = 6,
+  List = 7,
+  Timer = 8,
+  Smack = 9,
+  ProgressBar = 10,
+  Popup = 11,
+  AccountList = 12,
+  ImageEx = 13,
 }
 
 /** D2 game text color codes (ÿcX escape sequence index) */

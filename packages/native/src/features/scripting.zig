@@ -176,6 +176,15 @@ fn oogLoop() void {
         log.print("scripting: GC after game exit");
     }
     tickCommon();
+
+    // Tick JS during OOG — same pattern as gameLoop's __onTick
+    const eng = &(engine orelse return);
+    if (loader.state == .loaded) {
+        const ctx = eng.oog_context orelse return;
+        if (!eng.callGlobalFn(ctx, "__onOogTick")) {
+            // Suppress spam — OOG tick errors are expected if bot doesn't define it
+        }
+    }
 }
 
 

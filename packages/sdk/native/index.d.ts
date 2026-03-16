@@ -117,3 +117,33 @@
 
   // Screen output
   export function printScreen(message: string, color: number): void;
+
+  // Quest / waypoint / player type
+  export function getQuest(questId: number, subId: number): number;
+  export function hasWaypoint(wpIndex: number): boolean;
+  export function meGetClassId(): number;
+  export function meGetGameType(): number;
+  export function meGetPlayerType(): number;
+  export function meGetLevel(): number;
+  export function meGetGold(): number;
+  export function meGetGoldStash(): number;
+  export function clickItem(mode: number, unitId: number): void;
+  export function getInteractedNPC(): number;
+
+  // OOG control system
+  /** Snapshot all OOG controls and return count. Call before get/find. */
+  export function oogControlCount(): number;
+  /** Get control info by index: "type,state,x,y,w,h" */
+  export function oogControlGetInfo(index: number): string;
+  /** Get text from editbox or button label by index */
+  export function oogControlGetText(index: number): string;
+  /** Set text on an editbox control */
+  export function oogControlSetText(index: number, text: string): boolean;
+  /** Click/invoke a control's callback */
+  export function oogControlClick(index: number): boolean;
+  /** Find control by criteria (-1 = wildcard). Returns index or -1. */
+  export function oogControlFind(type: number, x: number, y: number, w: number, h: number): number;
+  /** Get all controls as JSON array with type/state/x/y/w/h/text */
+  export function oogControlGetAll(): string;
+  /** Select a character by name and enter game (single player) */
+  export function oogSelectChar(name: string): boolean;
