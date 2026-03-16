@@ -4,12 +4,29 @@ import { Movement } from "./movement.js"
 import { findBestAction, rankActions, skillRange, splashRadius, unitResist, staticFieldEffective, preAttackAdvice, isNova, skillName, skillProjectileType } from "../lib/game-data.js"
 import type { AttackOptions, Pos, CombatSnapshot, MonsterSnapshot, SpawnEvent } from "../lib/attack-types.js"
 import { getUnitHP, getUnitMaxHP, getUnitMP, getDifficulty } from "diablo:native"
+import { isAttackable, isSpecial, isShaman, isFallen } from "../lib/unit-extensions.js"
+import { findBestPack, type PackInfo } from "../lib/pack-detection.js"
+import { getLatestReport } from "../threads/threat-monitor.js"
+import { Area } from "diablo:constants"
 
 function alive(m: Monster): boolean {
   return m.isAttackable
 }
 
 let combatTick = 0
+
+// Per-GID attack count tracking (from Ryuk Attack.ts)
+const attackCounts = new Map<number, number>()
+const ignoredGids = new Set<number>()
+const ATTACK_CAP = 15   // skip non-unique after this many casts
+const IGNORE_CAP = 50   // after this many failed casts, skip entirely
+const THRONE_AREA = Area.ThroneofDestruction // 131, exempt from attack cap
+
+/** Reset attack tracking (call on area change or new clear) */
+function resetAttackTracking() {
+  attackCounts.clear()
+  ignoredGids.clear()
+}
 
 export const Attack = createService((game: Game, services) => {
   const cfg = services.get(Config)
@@ -427,5 +444,126 @@ export const Attack = createService((game: Game, services) => {
     },
 
     alive,
+
+    // ── Ryuk-ported additions ──────────────────────────────────────
+
+    /** Reset per-monster attack counters (call on new area/clear) */
+    resetTracking: resetAttackTracking,
+
+    /** Check if a monster should be skipped due to attack count cap.
+     *  Non-unique monsters get skipped after 15 casts (except Throne of Baal).
+     *  Any monster is ignored entirely after 50 failed casts. */
+    shouldSkip(m: Monster): boolean {
+      if (ignoredGids.has(m.unitId)) return true
+      const count = attackCounts.get(m.unitId) ?? 0
+      if (count >= IGNORE_CAP) {
+        ignoredGids.add(m.unitId)
+        return true
+      }
+      // Non-special monsters get capped (except in Throne of Baal)
+      if (count >= ATTACK_CAP && !isSpecial(m) && game.area !== THRONE_AREA) {
+        return true
+      }
+      return false
+    },
+
+    /** Track a cast against a monster GID */
+    trackCast(gid: number) {
+      attackCounts.set(gid, (attackCounts.get(gid) ?? 0) + 1)
+    },
+
+    /** Evaluate if we should retreat based on pressure.
+     *  From Ryuk: pressure = attackable + missiles in 10 tiles.
+     *  Retreat when pressure > floor(4 * HP%) + 1 */
+    shouldRetreat(): boolean {
+      const report = getLatestReport()
+      if (!report) return false
+      if (report.action === 'retreat' || report.action === 'chicken') return true
+
+      const hpPct = game.player.hp / game.player.maxHp
+      const maxPressure = Math.floor(4 * hpPct) + 1
+
+      // Count nearby threats
+      let pressure = 0
+      for (const m of game.monsters) {
+        if (!alive(m) || m.distance > 10) continue
+        pressure++
+      }
+      // Count nearby missiles
+      for (const missile of game.missiles) {
+        if (missile.distance <= 10) pressure++
+      }
+
+      return pressure > maxPressure
+    },
+
+    /** Find best pack to attack using clustering + threat scoring.
+     *  Shamans get 1.6x kill range, Fallens deprioritized. */
+    findPack(killRange = 25): PackInfo | null {
+      return findBestPack(game.monsters, game.player.x, game.player.y, killRange)
+    },
+
+    /**
+     * Clear with pressure-based retreat integration.
+     * Monitors threat each cast — retreats if overwhelmed, advances if safe.
+     * Wraps the existing clear() with tactical retreat/advance logic.
+     */
+    *clearWithPressure(opts?: AttackOptions) {
+      resetAttackTracking()
+      const maxCasts = opts?.maxCasts ?? cfg.maxAttacks
+      const killRange = opts?.killRange ?? cfg.killRange
+
+      // Add attack tracking to spatial filter
+      const origFilter = opts?.spatialFilter
+      const trackingFilter = (m: Monster) => {
+        if (this.shouldSkip(m)) return false
+        return origFilter ? origFilter(m) : true
+      }
+
+      for (let cast = 0; cast < maxCasts; cast++) {
+        // Check pressure — retreat if overwhelmed
+        if (this.shouldRetreat()) {
+          game.log(`[atk] pressure retreat!`)
+          // Backtrack: move away from nearest monster
+          const nearest = game.monsters.find(m => alive(m) && m.distance < 15)
+          if (nearest) {
+            const dx = game.player.x - nearest.x
+            const dy = game.player.y - nearest.y
+            const d = Math.max(1, Math.sqrt(dx * dx + dy * dy))
+            const retreatX = Math.round(game.player.x + dx / d * 15)
+            const retreatY = Math.round(game.player.y + dy / d * 15)
+            yield* move.teleportTo(retreatX, retreatY, 5)
+          }
+          yield // one frame cooldown
+          continue
+        }
+
+        // Find best target pack
+        const pack = this.findPack(killRange)
+        if (!pack || pack.members.length === 0) {
+          game.log(`[atk] no packs within range`)
+          return
+        }
+
+        // Use existing clear logic with pack targeting
+        const clearOpts: AttackOptions = {
+          ...opts,
+          spatialFilter: trackingFilter,
+          maxCasts: Math.min(5, maxCasts - cast), // mini-bursts
+          killRange,
+          focusTarget: (monsters) => {
+            // Prioritize shamans, then specials, then closest in pack
+            const shamans = pack.members.filter(m => alive(m) && isShaman(m))
+            if (shamans.length > 0) return shamans[0]
+            const specials = pack.members.filter(m => alive(m) && isSpecial(m))
+            if (specials.length > 0) return specials[0]
+            return pack.members.find(m => alive(m))
+          },
+        }
+
+        yield* this.clear(clearOpts)
+        cast += (clearOpts.maxCasts ?? 5) // account for the burst we just did
+      }
+    },
   }
 })

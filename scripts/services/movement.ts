@@ -7,8 +7,16 @@ function dist(x1: number, y1: number, x2: number, y2: number) {
   return Math.sqrt(dx * dx + dy * dy)
 }
 
+// Maggot Lair areas — use longer teleport distance
+const MAGGOT_LAIR = new Set([62, 63, 64])
+
 export const Movement = createService((game: Game, services) => {
   const cfg = services.get(Config)
+
+  // Stuck detection state
+  let stuckRetries = 0
+  let lastStuckX = 0
+  let lastStuckY = 0
 
   return {
     /** Yield frame-by-frame until position changes or maxFrames exceeded. */
@@ -278,6 +286,177 @@ export const Movement = createService((game: Game, services) => {
 
         if (!ok && game.area !== nextArea) {
           throw new Error(`[move] exit to area ${nextArea} failed (journey to ${targetArea})`)
+        }
+      }
+    },
+
+    // ── Ryuk-ported additions ──────────────────────────────────────
+
+    /** Teleport with stuck detection and angular retry.
+     *  From Ryuk Pather.ts: ±90° angular offset retries, 3x limit,
+     *  5-tile radius clear on 2nd fail. */
+    *teleportWithRetry(targetX: number, targetY: number, threshold = 5) {
+      const startX = game.player.x, startY = game.player.y
+
+      yield* this.teleportTo(targetX, targetY, threshold)
+
+      // Check if we actually moved
+      const d = dist(game.player.x, game.player.y, targetX, targetY)
+      if (d <= threshold) {
+        stuckRetries = 0
+        return true
+      }
+
+      // Stuck! Try angular offsets
+      const moved = dist(game.player.x, game.player.y, startX, startY)
+      if (moved < 3) {
+        stuckRetries++
+        game.log(`[move] stuck! retry ${stuckRetries}/3`)
+
+        if (stuckRetries >= 4) {
+          // Total stuck — give up
+          stuckRetries = 0
+          game.log(`[move] stuck 4x, giving up`)
+          return false
+        }
+
+        // Try ±90° perpendicular offsets at 5-tile distance
+        const dx = targetX - game.player.x
+        const dy = targetY - game.player.y
+        const len = Math.max(1, Math.sqrt(dx * dx + dy * dy))
+        const perpX = -dy / len * 5
+        const perpY = dx / len * 5
+        const sign = stuckRetries % 2 === 0 ? 1 : -1
+
+        const retryX = Math.round(game.player.x + perpX * sign)
+        const retryY = Math.round(game.player.y + perpY * sign)
+
+        game.log(`[move] trying perpendicular: ${retryX},${retryY}`)
+        yield* this.teleportTo(retryX, retryY, 5)
+
+        // On 2nd fail: try to clear the area
+        if (stuckRetries >= 2) {
+          game.log(`[move] clearing 5-tile radius`)
+          // Walk in a small circle to unstick
+          for (let angle = 0; angle < 4; angle++) {
+            const ax = Math.round(game.player.x + Math.cos(angle * Math.PI / 2) * 3)
+            const ay = Math.round(game.player.y + Math.sin(angle * Math.PI / 2) * 3)
+            game.move(ax, ay)
+            yield* game.delay(100)
+          }
+        }
+
+        // Retry the original target
+        yield* this.teleportTo(targetX, targetY, threshold)
+        return dist(game.player.x, game.player.y, targetX, targetY) <= threshold
+      }
+
+      stuckRetries = 0
+      return d <= threshold + 5 // close enough
+    },
+
+    /** Smart move: decide walk vs teleport based on distance ratio.
+     *  From Ryuk Pather.ts: if walk distance > 2x straight-line, teleport.
+     *  Also handles Maggot Lair (30 tele distance). */
+    *smartMoveTo(targetX: number, targetY: number) {
+      if (townAreas.has(game.area)) {
+        yield* this.walkTo(targetX, targetY)
+        return
+      }
+
+      const straightDist = dist(game.player.x, game.player.y, targetX, targetY)
+
+      // Maggot Lair: always teleport
+      if (MAGGOT_LAIR.has(game.area)) {
+        yield* this.teleportWithRetry(targetX, targetY, 5)
+        return
+      }
+
+      // Short distance: walk
+      if (straightDist < 10) {
+        yield* this.walkTo(targetX, targetY)
+        return
+      }
+
+      // Check walk path distance vs straight line
+      const walkPath = game.findPath(targetX, targetY)
+      if (walkPath.length === 0) {
+        // No walk path — must teleport
+        yield* this.teleportWithRetry(targetX, targetY, 5)
+        return
+      }
+
+      // Sum walk path distance
+      let walkDist = 0
+      let px = game.player.x, py = game.player.y
+      for (const wp of walkPath) {
+        walkDist += dist(px, py, wp.x, wp.y)
+        px = wp.x
+        py = wp.y
+      }
+
+      // If walk distance > 2x straight line, teleport instead
+      if (walkDist > straightDist * 2) {
+        yield* this.teleportWithRetry(targetX, targetY, 5)
+      } else {
+        yield* this.walkTo(targetX, targetY)
+      }
+    },
+
+    /** Move along a path with integrated clearing.
+     *  From Ryuk MoveTo.ts: node skipping when no monsters nearby,
+     *  shrine detection hooks (deferred). */
+    *moveWithClearing(
+      targetX: number,
+      targetY: number,
+      clearRange = 25,
+      clearFn?: () => Generator<void>,
+    ) {
+      const path = game.findTelePath(targetX, targetY)
+      if (path.length === 0) {
+        yield* this.teleportTo(targetX, targetY)
+        return
+      }
+
+      game.selectSkill(cfg.teleport)
+      yield
+
+      for (let i = 0; i < path.length; i++) {
+        const wp = path[i]!
+
+        // Node skipping: if no monsters within clearRange of next few nodes, skip ahead
+        if (i + 1 < path.length && !clearFn) {
+          let hasMonsters = false
+          for (const m of game.monsters) {
+            if (!m.isAttackable) continue
+            if (dist(m.x, m.y, wp.x, wp.y) < clearRange) {
+              hasMonsters = true
+              break
+            }
+          }
+          if (!hasMonsters) continue // skip this node
+        }
+
+        // Teleport to node
+        if (game.rightSkill !== cfg.teleport) {
+          game.selectSkill(cfg.teleport)
+          yield
+        }
+        game.castSkillPacket(wp.x, wp.y)
+        yield* this.waitForMove()
+
+        // Clear if there are monsters nearby
+        if (clearFn) {
+          let hasNearby = false
+          for (const m of game.monsters) {
+            if (m.isAttackable && m.distance < clearRange) {
+              hasNearby = true
+              break
+            }
+          }
+          if (hasNearby) {
+            yield* clearFn()
+          }
         }
       }
     },
