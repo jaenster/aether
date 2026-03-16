@@ -131,32 +131,33 @@ export function predictSpawnMonsterPosition(
   for (let radius = 3; radius <= maxRadius; radius += 3) {
     const range = radius * 2
 
-    // RNG step 1: pick axis (coin flip)
+    // RNG step 1: coin flip — checks LOW bit of full seed (not just high)
     seedAdvance(seed)
-    const coin = (seed.high & 1) === 0
+    const coin = (seed.low & 1) === 0
 
-    let startA: number, startB: number
+    // local_1c = X offset, local_14 = Y offset
+    let offX: number, offY: number
     let dx: number, dy: number
     if (coin) {
-      startA = seedRoll(seed, range >> 1)
-      startB = radius
+      offX = seedRoll(seed, range >> 1) // random X offset
+      offY = radius                      // fixed Y = radius
       dx = 1; dy = 0
     } else {
-      startA = radius
-      startB = seedRoll(seed, range >> 1)
+      offX = radius                      // fixed X = radius
+      offY = seedRoll(seed, range >> 1)  // random Y offset
       dx = 0; dy = 1
     }
 
-    // RNG step 2: sign of A
+    // RNG step 2: negate X if odd
     seedAdvance(seed)
-    if (seed.high & 1) startA = -startA
+    if (seed.low & 1) offX = -offX
 
-    // RNG step 3: sign of B
+    // RNG step 3: negate Y if odd
     seedAdvance(seed)
-    if (seed.high & 1) startB = -startB
+    if (seed.low & 1) offY = -offY
 
-    let px = cx + startA
-    let py = cy + startB
+    let px = cx + offX
+    let py = cy + offY
 
     const left = cx - radius
     const right = cx + radius
