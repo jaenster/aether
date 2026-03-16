@@ -27,8 +27,9 @@ fn init() void {
     // Disable fade effects when switching areas
     _ = patch.writeBytes(0x4DC000, &[_]u8{0xC3});
 
-    // Sound cleanup delay — prevent crash on game exit
-    _ = patch.writeBytes(0x515FB1, &[_]u8{0x01});
+    // Sound cleanup — NOP the Sleep(20) in CleanupSoundBuffer's fade loop so
+    // volume ramps down instantly without blocking (PUSH imm8 + CALL EBX = 4 bytes)
+    _ = patch.writeNops(0x515FB0, 4);
 
     // Hyperjoin for TCP/IP games
     _ = patch.writeBytes(0x4781AC, &[_]u8{ 0x6A, 0x05, 0x90, 0x90, 0x90 });
@@ -53,6 +54,13 @@ fn init() void {
     // PLAYERSAVE_ParseHeaderAndCreateUnit so every game gets a fresh layout.
     // JNZ → JMP (0x75 → 0xEB)
     _ = patch.writeBytes(0x56A200, &[_]u8{0xEB});
+
+    // QSERVER_CooperativeThreadMain: reduce inter-tick sleeps (30ms→1ms, 10ms→1ms)
+    _ = patch.writeBytes(0x44CF8A, &[_]u8{0x01});
+    _ = patch.writeBytes(0x44D01C, &[_]u8{0x01});
+
+    // NET_D2GS_SERVER_LeaveServer: reduce LAN/Open exit delay (100ms→1ms)
+    _ = patch.writeBytes(0x530573, &[_]u8{0x01});
 
     // Speed up game — skip D2GFX_EndScene frame-pacing Sleep (JNZ → JMP at 0x4F61CC)
     _ = patch.writeBytes(0x4F61CC, &[_]u8{0xEB});
@@ -84,13 +92,16 @@ fn deinit() void {
     patch.revertRange(0x476D40, 1);
     patch.revertRange(0x4F5621, 0x4F5672 - 0x4F5621);
     patch.revertRange(0x4DC000, 1);
-    patch.revertRange(0x515FB1, 1);
+    patch.revertRange(0x515FB0, 4);
     patch.revertRange(0x4781AC, 5);
     patch.revertRange(0x4666A5, 1);
     patch.revertRange(0x46e46f, 0x46e486 - 0x46e46f);
     patch.revertRange(0x451C42, 8);
     patch.revertRange(0x4FA66F, 1);
     patch.revertRange(0x594179, 2);
+    patch.revertRange(0x44CF8A, 1);
+    patch.revertRange(0x44D01C, 1);
+    patch.revertRange(0x530573, 1);
     patch.revertRange(0x56A200, 1);
     patch.revertRange(0x4F61CC, 1);
     // Restore server tick rate
