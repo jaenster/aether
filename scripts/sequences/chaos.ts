@@ -131,22 +131,8 @@ export const Chaos = createScript(function*(game, svc) {
       yield* openSeal(game, move, atk, seals[i]!, group.dx, group.dy)
     }
 
-    // Move near the last (boss) seal and capture room seed BEFORE opening it
-    const lastSeal = seals[seals.length - 1]!
-    const preset = game.findPreset(2, lastSeal)
-    if (preset) {
-      yield* move.moveTo(preset.x + group.dx, preset.y + group.dy)
-    }
-
-    // Read room seed at glow position NOW — before seal activation consumes it
-    const glowPos = GLOW_POS[name]?.[layouts[name]!]
-    let savedSeed: D2Seed | null = null
-    if (glowPos) {
-      const rs = game.getRoomSeed(glowPos.x, glowPos.y)
-      if (rs) savedSeed = { low: rs.low, high: rs.high }
-    }
-
     // Open the boss seal
+    const lastSeal = seals[seals.length - 1]!
     yield* openSeal(game, move, atk, lastSeal, group.dx, group.dy)
 
     // Find the glow object — its position is the SpawnMonster center
@@ -161,24 +147,34 @@ export const Chaos = createScript(function*(game, svc) {
       yield
     }
 
+    // Read room seed at the ACTUAL glow position (a few RNG calls consumed by glow
+    // creation, but much better than reading at the wrong room)
+    let savedSeed: D2Seed | null = null
+    const seedPos = observedGlow ?? GLOW_POS[name]?.[layouts[name]!]
+    if (seedPos) {
+      const rs = game.getRoomSeed(seedPos.x, seedPos.y)
+      if (rs) savedSeed = { low: rs.low, high: rs.high }
+    }
+
     // Predict: use observed glow as center + saved seed
     let bossPos: Pos | undefined
-    const center = observedGlow ?? glowPos
+    const center = observedGlow ?? GLOW_POS[name]?.[layouts[name]!]
     const bossClassId = BOSS_CLASSID[name]!
     const sizeX = getBaseStat("monstats2", bossClassId, "SizeX") as number
     const spawnCol = getBaseStat("monstats2", bossClassId, "spawnCol") as number
     game.log(`[chaos] ${name} classid=${bossClassId} SizeX=${sizeX} spawnCol=${spawnCol}`)
     if (center && savedSeed) {
-      // Find room bounds containing the glow for PtInRect clipping
-      const rooms = game.getRooms()
-      let roomBounds: import("../lib/collision.js").RoomBounds | undefined
-      for (const r of rooms) {
-        if (center.x >= r.x && center.x < r.x + r.w && center.y >= r.y && center.y < r.y + r.h) {
-          roomBounds = { left: r.x, top: r.y, right: r.x + r.w, bottom: r.y + r.h }
-          break
+      // Check how many tiles around the glow are loaded
+      let loaded = 0, unloaded = 0
+      for (let dy = -5; dy <= 5; dy++) {
+        for (let dx = -5; dx <= 5; dx++) {
+          const c = game.getCollision(center.x + dx, center.y + dy)
+          if (c >= 0) loaded++; else unloaded++
         }
       }
-      const spawn = predictSpawnMonsterPosition(game, { ...savedSeed }, center.x, center.y, 1, spawnCol, sizeX, roomBounds)
+      game.log(`[chaos] collision near glow: ${loaded} loaded, ${unloaded} unloaded`)
+
+      const spawn = predictSpawnMonsterPosition(game, { ...savedSeed }, center.x, center.y, 1, spawnCol, sizeX)
       if (spawn) {
         game.log(`[chaos] predicted ${name} spawn: ${spawn.x},${spawn.y} (from glow ${center.x},${center.y})`)
         bossPos = spawn
