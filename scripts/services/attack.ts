@@ -1,29 +1,12 @@
-import { createService, type Game, type Monster, MonsterMode, MonsterClassId } from "diablo:game"
+import { createService, type Game, type Monster, MonsterClassId } from "diablo:game"
 import { Config } from "../config.js"
 import { Movement } from "./movement.js"
 import { findBestAction, rankActions, skillRange, splashRadius, unitResist, staticFieldEffective, preAttackAdvice, isNova, skillName, skillProjectileType } from "../lib/game-data.js"
 import type { AttackOptions, Pos, CombatSnapshot, MonsterSnapshot, SpawnEvent } from "../lib/attack-types.js"
 import { getUnitHP, getUnitMaxHP, getUnitMP, getDifficulty } from "diablo:native"
 
-const mercClassIds = new Set([MonsterClassId.MercA1Rogue, MonsterClassId.MercA2Guard, MonsterClassId.MercA3IronWolf, MonsterClassId.MercA5Barb])
-// Common summon classids
-const summonClassIds = new Set([
-  363, // Valkyrie
-  417, 418, 419, 420, 421, // Necro skeletons
-  428, // Necro mage
-  357, // Shadow Warrior
-  358, // Shadow Master
-  289, 290, 291, 292, 293, // Druid summons (wolf/bear/spirit)
-])
-
 function alive(m: Monster): boolean {
-  if (!m.valid || m.hp <= 0 || m.mode === MonsterMode.Death || m.mode === MonsterMode.Dead) return false
-  // Filter out mercs and player summons
-  if (mercClassIds.has(m.classid) || summonClassIds.has(m.classid)) {
-    const p = m.parent
-    if (p && p.type === 0) return false
-  }
-  return true
+  return m.isAttackable
 }
 
 let combatTick = 0
@@ -36,9 +19,14 @@ export const Attack = createService((game: Game, services) => {
     return { x: game.player.x, y: game.player.y }
   }
 
-  /** Default filter: alive and within range */
+  /** Default filter: alive, within range, and has line of sight from player */
   function inRange(range: number): (m: Monster) => boolean {
-    return (m: Monster) => alive(m) && m.distance < range
+    return (m: Monster) => {
+      if (!alive(m) || m.distance >= range) return false
+      // Skip LoS check for very close monsters (melee range) — always reachable
+      if (m.distance < 5) return true
+      return game.hasLineOfSight(game.player.x, game.player.y, m.x, m.y)
+    }
   }
 
   /** Compose inRange with spatial filter from options */
@@ -297,6 +285,8 @@ export const Attack = createService((game: Game, services) => {
 
       if (opts?.debuffs) yield* applyDebuffs(opts)
 
+      game.log(`[atk] clear: range=${killRange} maxCasts=${maxCasts} monsters=${[...game.monsters].length}`)
+
       let repoFails = 0 // track consecutive failed repositions
       for (let casts = 0; casts < maxCasts; casts++) {
         if (opts?.shouldContinue && !opts.shouldContinue()) return
@@ -304,7 +294,7 @@ export const Attack = createService((game: Game, services) => {
         const allMonsters = [...game.monsters]
         const filtered = allMonsters.filter(filter)
         if (filtered.length === 0) {
-          if (casts > 0) game.log(`[atk] area clear after ${casts} casts`)
+          game.log(`[atk] area clear after ${casts} casts (${allMonsters.length} total mons, 0 matched filter)`)
           return
         }
 
@@ -322,7 +312,7 @@ export const Attack = createService((game: Game, services) => {
         )
 
         if (!action) {
-          if (casts > 0) game.log(`[atk] area clear after ${casts} casts`)
+          game.log(`[atk] no action found (${filtered.length} mons, cast ${casts}), area clear`)
           return
         }
 

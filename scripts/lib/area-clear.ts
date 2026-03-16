@@ -45,6 +45,10 @@ class ClearedMap {
     return added
   }
 
+  removeWalkable(wx: number, wy: number) {
+    this.walkable.delete(this.cellKey(wx, wy))
+  }
+
   nearestUncleared(wx: number, wy: number): { x: number, y: number } | null {
     let best: { x: number, y: number } | null = null
     let bestDist = Infinity
@@ -140,28 +144,30 @@ export function* clearArea(ctx: ClearContext) {
     }
 
     // Find next uncleared cell
-    const next = map.nearestUncleared(game.player.x, game.player.y)
+    let next = map.nearestUncleared(game.player.x, game.player.y)
+
     if (!next) {
-      game.log(`${tag} all ${map.walkableCount} cells explored`)
-      break
-    }
-
-    consecutiveEmpty++
-    // Only bail if we've visited many cells without finding ANY new territory or monsters
-    if (consecutiveEmpty > 20 && map.unclearedCount === 0) {
-      game.log(`${tag} exhausted — no reachable uncleared cells`)
-      break
-    }
-
-    // Find a walkable position near the target cell center
-    const target = findWalkableNear(game, next.x, next.y)
-    if (!target) {
-      // Cell center unreachable — mark it and skip
-      map.markCleared(next.x, next.y)
+      // All known cells cleared — explore outward to discover more of the dungeon.
+      // Teleport in a spiral pattern to scan new regions beyond the initial radius.
+      consecutiveEmpty++
+      if (consecutiveEmpty > 15) {
+        game.log(`${tag} all ${map.walkableCount} cells explored, no more territory found`)
+        break
+      }
+      const angle = (step * 137.5) * Math.PI / 180
+      const r = 30 + consecutiveEmpty * 8
+      const ex = game.player.x + Math.round(Math.cos(angle) * r)
+      const ey = game.player.y + Math.round(Math.sin(angle) * r)
+      yield* move.moveTo(ex, ey)
       continue
     }
 
-    yield* move.moveTo(target.x, target.y)
+    consecutiveEmpty = 0
+
+    // Find a walkable position near the target cell center
+    // Just teleport there — D2's teleport snaps to nearest walkable tile.
+    // Don't pre-check collision since the room might not be loaded yet.
+    yield* move.moveTo(next.x, next.y)
   }
 
   game.log(`${tag} done (${map.clearedCount}/${map.walkableCount} cells, ~${totalKills} kills)`)

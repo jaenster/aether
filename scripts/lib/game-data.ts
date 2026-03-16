@@ -721,15 +721,17 @@ export function castingFrames(skillId: number, charClass: number): number {
   return Math.ceil(256 * baseCastRate / Math.floor(256 * (100 + effectiveFCR) / 100)) - 1;
 }
 
-/** Channeled skills: per-tick damage, must hold for many frames. */
-const channeledSkills: Record<number, number> = {
-  52: 6,    // Inferno — effective range ~6 tiles (short cone)
-  56: 10,   // Arctic Blast — slightly longer range
+/** Channeled skills: effective range + DPS divisor.
+ *  skillDamage() returns tooltip damage which is comparable to non-channeled skills,
+ *  but channeled skills require holding for many frames AND have short range, making
+ *  them dramatically worse than instant-cast AoE. The divisor accounts for:
+ *  - Must stand still (can't dodge)
+ *  - Short range means more repositioning
+ *  - Can't hit-and-run like FireBall/Nova */
+const channeledSkills: Record<number, { range: number, divisor: number }> = {
+  52: { range: 6, divisor: 5 },   // Inferno — short cone, must hold
+  56: { range: 10, divisor: 4 },  // Arctic Blast — slightly better range
 }
-
-/** How many extra frames a channeled skill needs per "cast" to deal meaningful damage.
- *  Regular skills do all damage in one cast frame. Channeled need ~20 frames of holding. */
-const CHANNEL_FRAME_PENALTY = 20
 
 export function isChanneled(skillId: number): boolean {
   return skillId in channeledSkills
@@ -737,7 +739,7 @@ export function isChanneled(skillId: number): boolean {
 
 export function skillRange(skillId: number): number {
   // Channeled skills have short range despite having missiles
-  if (channeledSkills[skillId]) return channeledSkills[skillId]
+  if (channeledSkills[skillId]) return channeledSkills[skillId].range
 
   // Ranged/AoE: skill has a missile → default 25 (like kolbot)
   const missile = getBaseStat("skills", skillId, "srvmissile") as number
@@ -1021,9 +1023,7 @@ export function evaluateBattlefield(
   }
   // Teleport costs ~9 cast frames + 1 frame per 30 units of travel
   const teleFrames = needsReposition ? 9 + Math.ceil(moveDist / 30) : 0
-  // Channeled skills need many frames of holding to deal their damage
-  const channelPenalty = isChanneled(skillId) ? CHANNEL_FRAME_PENALTY : 0
-  const totalFrames = frames + teleFrames + channelPenalty
+  const totalFrames = frames + teleFrames
 
   // Mana cost — score = totalUsefulDmg / (frameCost * sqrt(manaCost))
   const manaCost = skillManaCost(skillId)
@@ -1040,6 +1040,9 @@ export function evaluateBattlefield(
     else if (manaCost > 0) score *= Math.min(1, currentMp / (manaCost * 3))
     // Primary target takes 0 damage (immune) — score 0 so we pick a skill that works
     if (primaryTarget && primaryDmg <= 0) score = 0
+    // Channeled skills: divide score by penalty (short range + must hold still)
+    const ch = channeledSkills[skillId]
+    if (ch) score /= ch.divisor
   }
 
   return {
