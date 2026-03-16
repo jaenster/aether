@@ -18,10 +18,8 @@ export default createBot('sorc-farmer', function*(game, svc) {
     while (!game.inGame) yield;
 
     yield* game.run(function*() {
-      // Skip town for testing
-      // yield* town.doTownChores()
-      // yield* buffs.refreshAll()
-
+      yield* town.doTownChores()
+      yield* buffs.refreshAll()
       yield* Chaos.factory(game, svc)
       game.exitGame()
     }())
