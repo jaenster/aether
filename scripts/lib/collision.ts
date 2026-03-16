@@ -108,15 +108,16 @@ const SPAWN_COL_MASK: Record<number, number> = {
 }
 
 /**
- * Replicate D2's CreateMonster spawn position search.
- * Uses the room's RNG seed to determine the random starting point on the
- * perimeter, then walks the perimeter checking collision.
+ * Replicate D2's CreateMonster @ 0x005b2a00 spawn position search.
  *
- * @param game - Game instance for collision checks
- * @param seed - Room seed (read via game.getRoomSeed, COPIED — will be mutated)
- * @param cx, cy - Center position (glow/target coords)
- * @param nSpawnRadius - SpawnMonster's radius param (1 for seal bosses → maxRadius=3)
- * @param spawnCol - From MonStats2.txt (determines collision mask)
+ * Algorithm: random perimeter walk at expanding radii (3, 6, 9...).
+ * Room RNG determines starting corner + direction. Walks the full
+ * perimeter checking collision at each tile.
+ *
+ * Matches the exact Ghidra decompilation:
+ * - Corner detection uses == (exact), not <= / >=
+ * - Step order: y += dy THEN x += dx (not x first)
+ * - Corner grouping matches server's if/else structure
  */
 export function predictSpawnMonsterPosition(
   game: Game, seed: D2Seed,
@@ -162,23 +163,33 @@ export function predictSpawnMonsterPosition(
     const top = cy - radius
     const bottom = cy + radius
 
-    const steps = radius * 8
-    for (let i = 0; i < steps; i++) {
-      // Corner detection → direction change
-      if (px <= left  && py <= top)    { dx =  1; dy =  0 }
-      if (px >= right && py <= top)    { dx =  0; dy =  1 }
-      if (px >= right && py >= bottom) { dx = -1; dy =  0 }
-      if (px <= left  && py >= bottom) { dx =  0; dy = -1 }
-
-      px += dx
-      py += dy
-
-      // Collision check (simplified — uses single-tile check, not SizeX-aware)
-      const c = game.getCollision(px, py)
-      if (c < 0) continue // unloaded tile
-      if (mask === 0 || (c & mask) === 0) {
-        return { x: px, y: py }
+    let steps = radius * 8
+    while (steps > 0) {
+      // Corner detection — exact match with server's if/else structure
+      if (px === left && py === top) {
+        dx = 1; dy = 0
       }
+      if (px === right) {
+        if (py === top) { dx = 0; dy = 1 }
+        if (py === bottom) { dx = -1; dy = 0 }
+      }
+      if (px === left) {
+        if (py === bottom) { dx = 0; dy = -1 }
+      }
+
+      // Step: y first, then x (matches server)
+      py += dy
+      px += dx
+
+      // Collision check
+      const c = game.getCollision(px, py)
+      if (c >= 0) {
+        if (mask === 0 || (c & mask) === 0) {
+          return { x: px, y: py }
+        }
+      }
+
+      steps--
     }
   }
 
