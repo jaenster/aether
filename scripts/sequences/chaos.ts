@@ -8,6 +8,7 @@ import { Pickit } from "../services/pickit.js"
 import { Buffs } from "../services/buffs.js"
 import { Supplies } from "../services/supplies.js"
 import { getLocaleString } from "diablo:native"
+import { getBaseStat } from "../lib/txt.js"
 
 const STAR = { x: 7791, y: 5293 }
 const DIABLO_CLASSID = 243
@@ -160,11 +161,15 @@ export const Chaos = createScript(function*(game, svc) {
       yield
     }
 
-    // Predict: use observed glow as center + saved seed (skip=0 proven to work)
+    // Predict: use observed glow as center + saved seed
     let bossPos: Pos | undefined
     const center = observedGlow ?? glowPos
+    const bossClassId = BOSS_CLASSID[name]!
+    const sizeX = getBaseStat("monstats2", bossClassId, "SizeX") as number
+    const spawnCol = 0 // super uniques use default spawnCol
+    game.log(`[chaos] ${name} classid=${bossClassId} SizeX=${sizeX}`)
     if (center && savedSeed) {
-      const spawn = predictSpawnMonsterPosition(game, { ...savedSeed }, center.x, center.y, 1, 0)
+      const spawn = predictSpawnMonsterPosition(game, { ...savedSeed }, center.x, center.y, 1, spawnCol, sizeX)
       if (spawn) {
         game.log(`[chaos] predicted ${name} spawn: ${spawn.x},${spawn.y} (from glow ${center.x},${center.y})`)
         bossPos = spawn
@@ -175,7 +180,7 @@ export const Chaos = createScript(function*(game, svc) {
       game.log(`[chaos] no predicted spawn for ${name}, skipping`)
       continue
     }
-    yield* killSealBoss(game, move, atk, loot, name, bossPos, savedSeed ?? undefined)
+    yield* killSealBoss(game, move, atk, loot, name, bossPos, savedSeed ?? undefined, observedGlow)
 
     // Refresh buffs between wings if any expired
     if (buffs.needsRefresh()) {
@@ -255,7 +260,7 @@ function* openSeal(game: Game, move: any, atk: any, sealClassid: number, dx: num
   game.log(`[chaos] seal ${sealClassid} failed to open`)
 }
 
-function* killSealBoss(game: Game, move: any, atk: any, loot: any, name: string, bossPos: Pos, debugSeed?: D2Seed) {
+function* killSealBoss(game: Game, move: any, atk: any, loot: any, name: string, bossPos: Pos, debugSeed?: D2Seed, observedGlow?: Pos) {
   const localeId = BOSS_LOCALE[name]!
   const bossName = getLocaleString(localeId)
 

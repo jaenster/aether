@@ -97,6 +97,33 @@ export function findMonsterSpawnPoint(game: Game, x: number, y: number): Pos | n
   return findSpawnableLocation(game, x, y, 3, CollisionMask.SPAWN, 100)
 }
 
+/**
+ * Replicate CheckCollision_BlockAll_Width — checks collision for a monster of given SizeX.
+ * Returns true if the tile is CLEAR (no collision).
+ */
+function checkCollisionWidth(game: Game, x: number, y: number, sizeX: number, mask: number): boolean {
+  const c = game.getCollision(x, y)
+  if (c < 0 || (c & mask) !== 0) return false
+
+  if (sizeX >= 2) {
+    // Cross pattern: center + 4 cardinal neighbors
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const cc = game.getCollision(x + dx!, y + dy!)
+      if (cc < 0 || (cc & mask) !== 0) return false
+    }
+  }
+
+  if (sizeX >= 3) {
+    // 3x3 bounding box: add diagonal corners
+    for (const [dx, dy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+      const cc = game.getCollision(x + dx!, y + dy!)
+      if (cc < 0 || (cc & mask) !== 0) return false
+    }
+  }
+
+  return true
+}
+
 // ── SpawnMonster position search ────────────────────────────────────
 
 // Collision masks by spawnCol (from MonStats2.txt)
@@ -124,6 +151,7 @@ export function predictSpawnMonsterPosition(
   cx: number, cy: number,
   nSpawnRadius: number,
   spawnCol: number,
+  sizeX = 1,
 ): Pos | null {
   const maxRadius = nSpawnRadius * 3
   const mask = SPAWN_COL_MASK[spawnCol] ?? 0x3C01
@@ -182,12 +210,10 @@ export function predictSpawnMonsterPosition(
       py += dy
       px += dx
 
-      // Collision check
-      const c = game.getCollision(px, py)
-      if (c >= 0) {
-        if (mask === 0 || (c & mask) === 0) {
-          return { x: px, y: py }
-        }
+      // Collision check — width-aware (matches CheckCollision_BlockAll_Width)
+      // SizeX=1: single tile, SizeX=2: cross (center + 4 cardinal), SizeX=3: 3x3 box
+      if (mask === 0 || checkCollisionWidth(game, px, py, sizeX, mask)) {
+        return { x: px, y: py }
       }
 
       steps--
