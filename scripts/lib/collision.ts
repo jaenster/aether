@@ -146,12 +146,21 @@ const SPAWN_COL_MASK: Record<number, number> = {
  * - Step order: y += dy THEN x += dx (not x first)
  * - Corner grouping matches server's if/else structure
  */
+/**
+ * Optional room bounds for clipping the perimeter walk.
+ * Server uses DRLGROOM_GetRoomCoordinates if no coord list provided.
+ */
+export interface RoomBounds {
+  left: number, top: number, right: number, bottom: number
+}
+
 export function predictSpawnMonsterPosition(
   game: Game, seed: D2Seed,
   cx: number, cy: number,
   nSpawnRadius: number,
   spawnCol: number,
   sizeX = 1,
+  roomBounds?: RoomBounds,
 ): Pos | null {
   const maxRadius = nSpawnRadius * 3
   const mask = SPAWN_COL_MASK[spawnCol] ?? 0x3C01
@@ -210,8 +219,16 @@ export function predictSpawnMonsterPosition(
       py += dy
       px += dx
 
+      // Room bounds clip (PtInRect) — server skips tiles outside the room
+      if (roomBounds) {
+        if (px < roomBounds.left || px >= roomBounds.right ||
+            py < roomBounds.top || py >= roomBounds.bottom) {
+          steps--
+          continue
+        }
+      }
+
       // Collision check — width-aware (matches CheckCollision_BlockAll_Width)
-      // SizeX=1: single tile, SizeX=2: cross (center + 4 cardinal), SizeX=3: 3x3 box
       if (mask === 0 || checkCollisionWidth(game, px, py, sizeX, mask)) {
         return { x: px, y: py }
       }

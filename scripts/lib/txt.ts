@@ -435,6 +435,7 @@ const monStats2Fields: Record<string, [number, number, boolean?]> = {
   Id:         [0, 2, true],     // 0
   SizeX:      [8, 1, true],     // 8
   SizeY:      [9, 1, true],     // 9
+  spawnCol:   [10, 1, true],    // 10
   MeleeRng:   [14, 1, true],    // 14
   BaseW:      [16, 4],          // 16
   TotalPieces:[236, 1, true],   // 236

@@ -166,10 +166,19 @@ export const Chaos = createScript(function*(game, svc) {
     const center = observedGlow ?? glowPos
     const bossClassId = BOSS_CLASSID[name]!
     const sizeX = getBaseStat("monstats2", bossClassId, "SizeX") as number
-    const spawnCol = 0 // super uniques use default spawnCol
-    game.log(`[chaos] ${name} classid=${bossClassId} SizeX=${sizeX}`)
+    const spawnCol = getBaseStat("monstats2", bossClassId, "spawnCol") as number
+    game.log(`[chaos] ${name} classid=${bossClassId} SizeX=${sizeX} spawnCol=${spawnCol}`)
     if (center && savedSeed) {
-      const spawn = predictSpawnMonsterPosition(game, { ...savedSeed }, center.x, center.y, 1, spawnCol, sizeX)
+      // Find room bounds containing the glow for PtInRect clipping
+      const rooms = game.getRooms()
+      let roomBounds: import("../lib/collision.js").RoomBounds | undefined
+      for (const r of rooms) {
+        if (center.x >= r.x && center.x < r.x + r.w && center.y >= r.y && center.y < r.y + r.h) {
+          roomBounds = { left: r.x, top: r.y, right: r.x + r.w, bottom: r.y + r.h }
+          break
+        }
+      }
+      const spawn = predictSpawnMonsterPosition(game, { ...savedSeed }, center.x, center.y, 1, spawnCol, sizeX, roomBounds)
       if (spawn) {
         game.log(`[chaos] predicted ${name} spawn: ${spawn.x},${spawn.y} (from glow ${center.x},${center.y})`)
         bossPos = spawn
