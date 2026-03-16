@@ -94,7 +94,11 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
                 feature.register(&spawn_capture.hooks);
                 log.print("aether: spawn capture enabled");
             }
-            feature.register(&auto_enter.hooks);
+            if (!hasFlag("oog-js")) {
+                feature.register(&auto_enter.hooks);
+            } else {
+                log.print("aether: auto_enter disabled — JS OOG mode");
+            }
             feature.register(&packet_hooks.hooks);
             feature.register(&scripting.hooks);
             feature.register(&resource_monitor.hooks);

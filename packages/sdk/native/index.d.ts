@@ -141,9 +141,13 @@
   export function oogControlSetText(index: number, text: string): boolean;
   /** Click/invoke a control's callback */
   export function oogControlClick(index: number): boolean;
+  /** Simulate a mouse click at screen coordinates (for OOG screens) */
+  export function oogClickScreen(x: number, y: number): void;
   /** Find control by criteria (-1 = wildcard). Returns index or -1. */
   export function oogControlFind(type: number, x: number, y: number, w: number, h: number): number;
   /** Get all controls as JSON array with type/state/x/y/w/h/text */
   export function oogControlGetAll(): string;
+  /** Create a new SP character: sets class, flags, calls ConfirmCreateCharacter */
+  export function oogCreateCharacter(name: string, classId: number, expansion: number, hardcore: number): boolean;
   /** Select a character by name and enter game (single player) */
   export function oogSelectChar(name: string): boolean;

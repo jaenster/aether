@@ -1646,19 +1646,8 @@ fn jsOogControlClick(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c)
     const idx: u32 = @bitCast(argInt32(argc, vp, 0));
     const ctrl = getControl(idx) orelse { retBool(argc, vp, false); return 1; };
 
-    // Try fpOnPress first (0x34), then fpPush (0x24)
-    if (ctrl.fpOnPress) |press_ptr| {
-        const cb: *const fn (*D2Control) callconv(.winapi) i32 = @ptrCast(press_ptr);
-        _ = cb(ctrl);
-        retBool(argc, vp, true);
-        return 1;
-    }
-
-    // For buttons, the click mechanism is D2WINBUTTON_InvokeClickCallback
-    // which reads the callback from the button-specific data. Let's call it directly.
+    // For buttons, use D2WINBUTTON_InvokeClickCallback — safe and correct
     if (ctrl.eD2FormType == 6) {
-        // D2WINBUTTON_InvokeClickCallback at 0x00500ab0 — __fastcall(ppButton)
-        // It reads the OnPress from the button struct and calls it
         const InvokeClick = d2.fastcall(0x00500ab0, fn (*?*D2Control) void);
         var ctrl_ptr: ?*D2Control = ctrl;
         InvokeClick.call(.{&ctrl_ptr});
@@ -1666,8 +1655,52 @@ fn jsOogControlClick(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c)
         return 1;
     }
 
-    retBool(argc, vp, false);
+    // For other controls: simulate a mouse click at their center via the forms
+    // dispatch system. This handles Image clicks (class selection etc.) safely.
+    const cx_coord: i32 = ctrl.dwPosX + @divTrunc(ctrl.dwSizeX, 2);
+    const cy_coord: i32 = ctrl.dwPosY + @divTrunc(ctrl.dwSizeY, 2);
+    simulateOogClick(cx_coord, cy_coord);
+    retBool(argc, vp, true);
     return 1;
+}
+
+/// oogClickScreen(x, y) → simulate a mouse click at screen coordinates
+/// Uses the game's ClickScreen function (0x0043E1E0) to dispatch through the
+/// normal D2 OOG input pipeline — handles form mouse events properly.
+fn jsOogClickScreen(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const x = argInt32(argc, vp, 0);
+    const y = argInt32(argc, vp, 1);
+    simulateOogClick(x, y);
+    retUndefined(argc, vp);
+    return 1;
+}
+
+fn simulateOogClick(x: i32, y: i32) void {
+    // Set mouse position globals (used by INPUT_FormMouseHandler for hit-testing)
+    const MouseX: *i32 = @ptrFromInt(0x007D55A4);
+    const MouseY: *i32 = @ptrFromInt(0x007D55A8);
+    MouseX.* = x;
+    MouseY.* = y;
+
+    // INPUT_FormMouseHandler at 0x004FA860 — __stdcall(D2UnderMouseStrc*)
+    // It switches on pPlayer as Windows message ID:
+    //   0x201 = WM_LBUTTONDOWN → walks controls, calls fpPush on hit
+    //   0x202 = WM_LBUTTONUP   → calls fpMouse on all controls
+    const InputFormMouse: *const fn (*types.D2UnderMouseStrc) callconv(.winapi) void = @ptrFromInt(0x004FA860);
+
+    // Build a fake D2UnderMouseStrc for left-button-down.
+    // The forms handler reinterprets pPlayer as the Windows message ID (0x201/0x202).
+    var under_mouse: types.D2UnderMouseStrc = std.mem.zeroes(types.D2UnderMouseStrc);
+    under_mouse.nX = @bitCast(x);
+    under_mouse.nY = @bitCast(y);
+    // Write 0x201 (WM_LBUTTONDOWN) into pPlayer field via pointer cast
+    const player_slot: *u32 = @ptrCast(&under_mouse.pPlayer);
+    player_slot.* = 0x201;
+    InputFormMouse(&under_mouse);
+
+    // Send button-up too
+    player_slot.* = 0x202; // WM_LBUTTONUP
+    InputFormMouse(&under_mouse);
 }
 
 /// oogControlFind(type, x, y, w, h) → index of matching control, or -1
@@ -1740,6 +1773,76 @@ fn jsOogControlGetAll(cx_ptr: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callco
         pos += 1;
     }
     retString(cx_ptr, argc, vp, buf[0..pos]);
+    return 1;
+}
+
+/// oogCreateCharacter(name, classId, expansion, hardcore) → create a new SP character and enter game
+/// classId: 0=ama, 1=sor, 2=nec, 3=pal, 4=bar, 5=dru, 6=ass
+/// Sets D2IniData_launcher fields directly, then calls UIMENU_ConfirmCreateCharacter.
+fn jsOogCreateCharacter(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    var name_buf: [24]u8 = undefined;
+    const name_len = c.sm_arg_string(cx, argc, vp, 0, &name_buf, name_buf.len - 1);
+    if (name_len <= 0) { retBool(argc, vp, false); return 1; }
+    name_buf[@intCast(name_len)] = 0;
+
+    const class_id: u8 = @intCast(@as(u32, @bitCast(argInt32(argc, vp, 1))) & 0xFF);
+    const expansion: bool = argInt32(argc, vp, 2) != 0;
+    const hardcore: bool = argInt32(argc, vp, 3) != 0;
+
+    // D2IniData_launcher pointer at 0x007795D4
+    const launcher_ptr: *?[*]u8 = @ptrFromInt(0x007795D4);
+    const launcher = launcher_ptr.* orelse { retBool(argc, vp, false); return 1; };
+
+    // Set eCTEMP_eD2PlayerClassID at offset 494
+    launcher[494] = class_id;
+
+    // Set eCTEMP_eD2PlayerStatus at offset 495 (u16, little-endian)
+    // Bit 2 = hardcore, bit 5 = expansion
+    var status: u16 = 0;
+    if (hardcore) status |= (1 << 2);
+    if (expansion) status |= (1 << 5);
+    @as(*align(1) u16, @ptrCast(launcher + 495)).* = status;
+
+    // Set OogCurrentCharSelectionMode to SP (0)
+    const mode_ptr: *u32 = @ptrFromInt(0x007795ec);
+    mode_ptr.* = 0;
+
+    // Write szNAME at offset 189 in D2IniConfigStrc
+    const slen: usize = @intCast(name_len);
+    @memcpy(launcher[189 .. 189 + slen], name_buf[0..slen]);
+    launcher[189 + slen] = 0;
+    // Clear szREALM at offset 213
+    launcher[213] = 0;
+
+    // Call LAUNCHER_InitNewCharacterSaveFile(szName, classId, pCharSelSaveData, playerStatus)
+    // at 0x0043C540 — __fastcall(char*, BYTE, byte*, uint16_t)
+    const InitSave = d2.fastcall(0x0043C540, fn ([*]u8, u8, [*]u8, u16) void);
+    InitSave.call(.{ launcher + 189, class_id, launcher + 237, status });
+
+    // Call LAUNCHER_WriteSaveFileToD2s(szName) at 0x0043C6B0 — __fastcall(char*)
+    const WriteSave = d2.fastcall(0x0043C6B0, fn ([*]u8) u32);
+    _ = WriteSave.call(.{launcher + 189});
+
+    // Set up game entry state (same as UIMENU_ConfirmCreateCharacter does for SP)
+    // nScreenToShow at offset 862
+    launcher[862] = 1;
+    // nGAMETYPE at offset 25 — set to SINGLEPLAYER (0)
+    @as(*align(1) u32, @ptrCast(launcher + 25)).* = 0;
+    // gnSelectedCharGameState at 0x007795E8
+    const game_state: *i32 = @ptrFromInt(0x007795E8);
+    game_state.* = 1;
+    // eArenaFlags at offset 521
+    var arena: u32 = 0x04; // ARENAFLAG_ClientUpdate
+    if (hardcore) arena |= 0x08; // ARENAFLAG_Hardcore
+    if (expansion) arena |= 0x20; // ARENAFLAG_Expansion
+    @as(*align(1) u32, @ptrCast(launcher + 521)).* = arena;
+
+    // Clear message loop to proceed to game
+    const ClearMsgLoop: *const fn () callconv(.winapi) i32 = @ptrFromInt(0x004F9190);
+    _ = ClearMsgLoop();
+
+    log.print("oog: created character");
+    retBool(argc, vp, true);
     return 1;
 }
 
@@ -1889,8 +1992,10 @@ const bindings = [_]Binding{
     .{ .name = "oogControlGetText", .func = &jsOogControlGetText, .nargs = 1 },
     .{ .name = "oogControlSetText", .func = &jsOogControlSetText, .nargs = 2 },
     .{ .name = "oogControlClick", .func = &jsOogControlClick, .nargs = 1 },
+    .{ .name = "oogClickScreen", .func = &jsOogClickScreen, .nargs = 2 },
     .{ .name = "oogControlFind", .func = &jsOogControlFind, .nargs = 5 },
     .{ .name = "oogControlGetAll", .func = &jsOogControlGetAll, .nargs = 0 },
+    .{ .name = "oogCreateCharacter", .func = &jsOogCreateCharacter, .nargs = 4 },
     .{ .name = "oogSelectChar", .func = &jsOogSelectChar, .nargs = 1 },
 };
 
