@@ -100,9 +100,10 @@ fn tickCommon() void {
     ensureInit();
     const eng = &(engine orelse return);
 
-    // GC nudge once per second (~25 ticks), not every frame
+    // GC nudge every 5 ticks (~5/sec). SM60 needs frequent GC to handle
+    // per-frame Unit/array allocations. Less than this causes null deref crashes.
     gc_counter += 1;
-    if (gc_counter >= 25) {
+    if (gc_counter >= 5) {
         gc_counter = 0;
         eng.pumpMicrotasks();
     }

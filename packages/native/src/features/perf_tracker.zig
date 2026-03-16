@@ -30,24 +30,10 @@ fn init() void {
     var freq: i64 = 0;
     _ = QueryPerformanceFrequency(&freq);
     qpc_freq = @intCast(freq);
-
-    // Log server framerate settings
-    const tbf: *const i32 = @ptrFromInt(0x883D60);
-    const lh = log.openLogHandle() orelse return;
-    defer log.closeHandle(lh);
-    log.writeRawHandle(lh, "perf_tracker: tbf=");
-    writeU(lh, @intCast(tbf.*));
-    log.writeRawHandle(lh, "ms\r\n");
 }
 
 fn gameLoop() void {
     total_client_frames += 1;
-
-    const tick = GetTickCount();
-    if (tick -% last_report >= 10_000) {
-        last_report = tick;
-        report();
-    }
 }
 
 fn report() void {

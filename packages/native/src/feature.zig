@@ -115,14 +115,14 @@ fn TimedDispatch(comptime field_name: []const u8) type {
                 perf_dispatch_count += 1;
             }
 
-            // Report every 10s (only from gameLoop to avoid spam)
-            if (comptime std.mem.eql(u8, field_name, "gameLoop")) {
-                const tick = GetTickCount();
-                if (tick -% last_perf_report >= 10_000) {
-                    last_perf_report = tick;
-                    reportPerf();
-                }
-            }
+            // // Report every 10s (only from gameLoop to avoid spam)
+            // if (comptime std.mem.eql(u8, field_name, "gameLoop")) {
+            //     const tick = GetTickCount();
+            //     if (tick -% last_perf_report >= 10_000) {
+            //         last_perf_report = tick;
+            //         reportPerf();
+            //     }
+            // }
         }
     };
 }
