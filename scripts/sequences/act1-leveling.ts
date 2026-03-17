@@ -14,7 +14,6 @@ const townAreas = new Set([Area.RogueEncampment, Area.LutGholein, Area.KurastDoc
 const _townAreas = new Set([Area.RogueEncampment, Area.LutGholein, Area.KurastDocks, Area.PandemoniumFortress, Area.Harrogath])
 
 function* walkAndClear(game: Game, atk: ReturnType<typeof Attack['factory']>, pickit: ReturnType<typeof Pickit['factory']>, targetX: number, targetY: number) {
-  const inTown = _townAreas.has(game.area)
   const path = game.findPath(targetX, targetY)
   if (path.length === 0) {
     game.log('[walk] no path to ' + targetX + ',' + targetY)
@@ -53,7 +52,7 @@ function* walkAndClear(game: Game, atk: ReturnType<typeof Attack['factory']>, pi
       if (game.player.hp <= 0 || game.player.mode === 0 || game.player.mode === 17) return
 
       // Monster nearby? Walk toward it and fight (skip in town)
-      if (!inTown) {
+      if (!_townAreas.has(game.area)) {
         for (const m of game.monsters) {
           if (m.isAttackable && m.distance < 25) {
             if (m.distance > 8) {
@@ -72,7 +71,7 @@ function* walkAndClear(game: Game, atk: ReturnType<typeof Attack['factory']>, pi
     }
 
     // At node: actively seek monsters (skip in town)
-    if (inTown) continue
+    if (_townAreas.has(game.area)) continue
     for (let seek = 0; seek < 3; seek++) {
       let nearest: Monster | null = null
       let nearDist = Infinity
