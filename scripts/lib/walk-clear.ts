@@ -347,16 +347,26 @@ export function* moveToExit(
 
   yield* moveTo(game, atk, pickit, exit.x, exit.y, opts)
 
-  // Interact with exit tile
-  const tile = game.tiles.find(t => t.destArea === targetArea)
-  if (tile) {
-    game.interact(tile)
-  } else {
-    // Walk the last few tiles
+  // Walk the last few tiles toward exit (handles partial path failures)
+  for (let attempt = 0; attempt < 10; attempt++) {
+    if (game.area === targetArea) return true
+
+    // Try interacting with exit tile
+    const tile = game.tiles.find(t => t.destArea === targetArea)
+    if (tile) {
+      if (tile.distance > 5) {
+        game.move(tile.x, tile.y)
+        yield* game.delay(300)
+      }
+      game.interact(tile)
+      if (yield* game.waitForArea(targetArea, 50)) return true
+    }
+
+    // Click toward exit coords
     game.move(exit.x, exit.y)
-    yield* game.delay(500)
+    yield* game.delay(400)
+    if (game.area === targetArea) return true
   }
 
-  if (yield* game.waitForArea(targetArea)) return true
   return game.area === targetArea
 }
