@@ -78,9 +78,19 @@ export class PlayerUnit extends Unit {
 }
 
 const mercClassIds = new Set([MonsterClassId.MercA1Rogue, MonsterClassId.MercA2Guard, MonsterClassId.MercA3IronWolf, MonsterClassId.MercA5Barb])
-// Friendly town monsters (Align=1 in monstats) — rogue scouts, act guards, etc.
-const friendlyClassIds = new Set([152, 155, 156, 200, 201, 256, 352, 353, 354, 355, 356, 366, 367, 514, 515, 516, 517, 518, 519, 520, 521, 522, 523, 524, 525, 526, 527, 528, 529, 530, 531, 532, 533])
 const summonClassIds = new Set([363, 417, 418, 419, 420, 421, 428, 357, 358, 289, 290, 291, 292, 293])
+
+// Cache for Align field from monstats — 0=hostile, 1=neutral/friendly, 2=hostile
+const _alignCache = new Map<number, number>()
+function getMonsterAlign(classid: number): number {
+  let v = _alignCache.get(classid)
+  if (v !== undefined) return v
+  // Read Align from monstats txt: table=0, offset=0x4C, size=1
+  const { txtReadFieldU } = require("diablo:native") as any
+  v = txtReadFieldU(0, classid, 0x4C, 1) as number
+  _alignCache.set(classid, v)
+  return v
+}
 
 export class Monster extends Unit {
   constructor(id: number) { super(1, id) }
@@ -118,12 +128,10 @@ export class Monster extends Unit {
       const p = this.parent
       if (p && p.type === 0) return false
     }
-    // Friendly check: ownerType=0 (player) means pet/summon/merc,
-    // and monsters with Align=1 in monstats are neutral town NPCs.
-    // D2BS approach: check if monster has an owner that is a player unit.
+    // Player-owned units (pets, summons)
     if (this.ownerType === 0 && this.ownerId !== 0xFFFFFFFF) return false
-    // Also filter known friendly classids as fallback
-    if (friendlyClassIds.has(this.classid)) return false
+    // Neutral/friendly alignment from monstats (cows, rogue scouts, town guards, etc.)
+    if (getMonsterAlign(this.classid) === 1) return false
     return true
   }
 }
