@@ -8,6 +8,7 @@ import { Buffs } from "./services/buffs.js"
 import { Movement } from "./services/movement.js"
 import { healInTown } from "./lib/npc.js"
 import { townVisit } from "./lib/town-visit.js"
+import { PotionDrinker } from "./lib/potions.js"
 import { AutoBuild } from "./services/auto-build.js"
 import { BlizzSorc } from "./builds/sorc-blizz.js"
 import { Chaos } from "./sequences/chaos.js"
@@ -119,6 +120,7 @@ export default createBot('aether', function*(game, svc) {
   game.load.inGame(Chicken)
   game.load.inGame(AutoAllocThread)
   game.load.inGame(BuffThread)
+  game.load.inGame(PotionDrinker)
 
   const town = svc.get(Town)
   const move = svc.get(Movement)
