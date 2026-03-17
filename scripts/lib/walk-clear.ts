@@ -7,8 +7,10 @@
  */
 
 import type { Game, Monster } from "diablo:game"
-import { Line, ItemContainer } from "diablo:game"
+import { Line } from "diablo:game"
 import { getUnitStat } from "diablo:native"
+
+const BELT_LOCATION = 2 // ItemContainer.Belt value
 
 const CLEAR_RANGE = 14       // base clear range in tiles
 const BACKTRACK_NODES = 5    // max nodes to backtrack
@@ -188,7 +190,7 @@ export function* walkTo(game: Game, x: number, y: number, maxTicks = 60): Genera
       } else if (pct < 0.20) {
         // Drink stamina pot if available
         for (const item of game.items) {
-          if (item.location === ItemContainer.Belt && item.code === 'vps') {
+          if (item.location === BELT_LOCATION && item.code === 'vps') {
             game.clickItem(0, item.unitId)
             break
           }

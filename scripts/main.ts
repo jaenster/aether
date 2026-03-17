@@ -183,42 +183,26 @@ export default createBot('aether', function*(game, svc) {
       const level = game.charLevel
       game.log('[bot] level ' + level + ' area ' + game.area)
 
-      // Town: corpse pickup + heal + chores
+      // Town: heal if needed (skip complex chores for now)
       if (townAreas.has(game.area)) {
-        // Corpse pickup
-        for (const p of game.players) {
-          if (p.unitId !== game.player.unitId && p.name === game.player.charname && p.mode === 0) {
-            game.log('[bot] picking up corpse')
-            yield* move.walkTo(p.x, p.y)
-            game.interact(p)
-            yield* game.delay(1000)
-            break
-          }
+        try {
+          yield* townVisit(game)
+        } catch (e: any) {
+          game.log('[bot] town error: ' + (e.message || e))
         }
-        // Clean town cycle: heal → buy pots → repair → stash
-        yield* townVisit(game)
       }
 
-      // ── Route via progression decision tree ──
-      const script = progression.evaluate()
-      if (script) {
-        game.log('[bot] decision tree → ' + script)
-        const scriptFn = scriptMap[script]
-        if (scriptFn) {
-          yield* scriptFn(game, svc)
-        } else {
-          game.log('[bot] unknown script: ' + script)
-          yield* game.delay(2000)
-        }
-      } else {
-        // Decision tree exhausted — all quests done for this difficulty
-        // Fall back to farming (Chaos runs for high level, area clear for low level)
-        if (level >= 25) {
+      // Route to appropriate act script
+      try {
+        if (level >= 25 && game.area >= Area.RiverofFlame) {
           yield* buffs.refreshAll()
           yield* Chaos.factory(game, svc)
         } else {
           yield* act1Leveling(game, svc)
         }
+      } catch (e: any) {
+        game.log('[bot] script error: ' + (e.message || e))
+        yield* game.delay(2000)
       }
 
       state.runsCompleted++
