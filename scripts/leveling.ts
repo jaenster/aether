@@ -1,5 +1,4 @@
-import { createBot, FormType, Area } from "diablo:game"
-// Drawing deferred — focus on gameplay first
+import { createBot, createScript, FormType, Area } from "diablo:game"
 import { generateName } from "./lib/name-generator.js"
 import { Town } from "./services/town.js"
 import { Attack } from "./services/attack.js"
@@ -72,6 +71,25 @@ function getBestZone(level: number): typeof levelingZones[0] | null {
   return best
 }
 
+const AutoAllocThread = createScript(function*(game, svc) {
+  const ab = svc.get(AutoBuild)
+  ab.setBuild(BlizzSorc)
+  while (true) {
+    yield* game.delay(2000)
+    if (game.inGame) yield* ab.allocatePoints()
+  }
+})
+
+const BuffThread = createScript(function*(game, svc) {
+  const b = svc.get(Buffs)
+  while (true) {
+    yield* game.delay(5000)
+    if (game.inGame && !townAreas.has(game.area)) {
+      yield* b.refreshAll()
+    }
+  }
+})
+
 export default createBot('leveling', function*(game, svc) {
   // ── State management ──
   let state: BotState = game.readState<BotState>() ?? {
@@ -142,36 +160,9 @@ export default createBot('leveling', function*(game, svc) {
   game.load.inGame(ThreatMonitor)
   game.load.inGame(Guard)
   game.load.inGame(Chicken)
+  game.load.inGame(AutoAllocThread)
+  game.load.inGame(BuffThread)
 
-  // Background thread: auto-allocate skill/stat points every 50 frames
-  game.load.inGame({
-    __brand: 'script' as const,
-    factory: function*(g, s) {
-      const ab = s.get(AutoBuild)
-      while (true) {
-        yield* g.delay(2000)
-        if (g.inGame && g.charLevel > 0) {
-          yield* ab.allocatePoints()
-        }
-      }
-    }
-  })
-
-  // Background thread: refresh buffs (Frozen Armor etc.) every 5s
-  game.load.inGame({
-    __brand: 'script' as const,
-    factory: function*(g, s) {
-      const b = s.get(Buffs)
-      while (true) {
-        yield* g.delay(5000)
-        if (g.inGame && !townAreas.has(g.area)) {
-          yield* b.refreshAll()
-        }
-      }
-    }
-  })
-  const build = svc.get(AutoBuild)
-  build.setBuild(BlizzSorc)
   const town = svc.get(Town)
   const atk = svc.get(Attack)
   const move = svc.get(Movement)
