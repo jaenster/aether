@@ -1,4 +1,5 @@
-import { type Game, type Monster, Area, createScript } from "diablo:game"
+import { type Game, type Monster, Area } from "diablo:game"
+import { closeNPCInteract } from "diablo:native"
 import { Movement } from "../services/movement.js"
 import { Attack } from "../services/attack.js"
 import { Pickit } from "../services/pickit.js"
@@ -108,12 +109,20 @@ function* grabWaypoint(game: Game, move: any, atk: any, pickit: any) {
   // Find and interact with WP unit
   const wpUnit = move.findWaypointUnit(wp.x, wp.y)
   if (wpUnit) {
+    // Walk close to WP first
+    if (wpUnit.distance > 5) {
+      game.move(wpUnit.x, wpUnit.y)
+      yield* game.delay(500)
+    }
     game.interact(wpUnit)
     yield* game.delay(1000)
     // Close WP menu
+    closeNPCInteract()
+    yield* game.delay(300)
     game.log('[walk] waypoint activated')
+    return true
   }
-  return true
+  return false
 }
 
 /**
@@ -128,8 +137,8 @@ export function* act1Leveling(game: Game, svc: any) {
 
   const level = game.charLevel
 
-  // ── Level 1-3: Blood Moor → Cold Plains (grab WP) ──
-  if (level < 4) {
+  // ── Level 1-7: Blood Moor → Cold Plains (grab WP) → Cave grinding ──
+  if (level < 8) {
     if (townAreas.has(game.area)) {
       if (game.player.hp < game.player.maxHp) yield* town.heal()
     }
@@ -137,7 +146,8 @@ export function* act1Leveling(game: Game, svc: any) {
     // Walk to Blood Moor if in town
     if (game.area === Area.RogueEncampment) {
       game.log('[a1] walking to Blood Moor')
-      yield* walkToArea(game, move, atk, pickit, Area.BloodMoor)
+      const ok = yield* walkToArea(game, move, atk, pickit, Area.BloodMoor)
+      if (!ok) return
     }
 
     // Clear Blood Moor toward Cold Plains
@@ -147,47 +157,32 @@ export function* act1Leveling(game: Game, svc: any) {
       if (!ok) return
     }
 
-    // In Cold Plains: grab the waypoint
+    // In Cold Plains: grab WP if needed, then clear toward Cave or Stony Field
     if (game.area === Area.ColdPlains) {
-      game.log('[a1] grabbing Cold Plains waypoint')
-      yield* grabWaypoint(game, move, atk, pickit)
-    }
+      if (!game.hasWaypoint(1)) {
+        game.log('[a1] grabbing Cold Plains waypoint')
+        yield* grabWaypoint(game, move, atk, pickit)
+      }
 
-    return
-  }
-
-  // ── Level 4-7: Cave grinding ──
-  if (level < 8) {
-    // Use Cold Plains WP if we have it, otherwise walk
-    if (townAreas.has(game.area)) {
-      if (game.player.hp < game.player.maxHp) yield* town.heal()
-      yield* move.useWaypoint(Area.ColdPlains)
-    }
-
-    if (game.area === Area.ColdPlains) {
-      // Walk to Cave Level 1
+      // Head to Cave Level 1 for grinding
       game.log('[a1] heading to Cave')
       const ok = yield* walkToArea(game, move, atk, pickit, Area.CaveLvl1)
       if (!ok) {
-        // No cave exit found — just clear Cold Plains
-        game.log('[a1] cave not found, clearing Cold Plains')
-        yield* grabWaypoint(game, move, atk, pickit)
-        return
+        // No cave found — just clear Cold Plains toward Stony Field
+        game.log('[a1] cave not found, clearing toward Stony Field')
+        yield* walkToArea(game, move, atk, pickit, Area.StonyField)
       }
     }
 
     // Clear Cave Level 1
     if (game.area === Area.CaveLvl1) {
       game.log('[a1] clearing Cave Level 1')
-      // Walk toward the Cave Level 2 exit
-      const ok = yield* walkToArea(game, move, atk, pickit, Area.CaveLvl2)
-      if (!ok) return
+      yield* walkToArea(game, move, atk, pickit, Area.CaveLvl2)
     }
 
-    // Clear Cave Level 2
+    // Clear Cave Level 2 — find farthest exit and walk to it
     if (game.area === Area.CaveLvl2) {
       game.log('[a1] clearing Cave Level 2')
-      // Clear the whole area — walk toward farthest corner
       const exits = game.getExits()
       if (exits.length > 0) {
         yield* walkAndClear(game, atk, pickit, exits[0]!.x, exits[0]!.y)
@@ -196,6 +191,8 @@ export function* act1Leveling(game: Game, svc: any) {
 
     return
   }
+
+  // (Level 4-7 merged into the block above)
 
   // ── Level 8+: Stony Field, Dark Wood, etc. ──
   if (level < 15) {

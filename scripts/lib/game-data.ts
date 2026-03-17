@@ -1104,8 +1104,9 @@ function getCandidateSkills(charClass: number): number[] {
     }
   }
 
-  // Only include basic Attack (skill 0) if player has no ranged skills
-  if (!hasRangedSkill) skills.unshift(0)
+  // Include basic Attack (skill 0) as fallback — it's always available
+  // Ranked lower than spells via DPS scoring, but needed when OOM
+  skills.push(0)
 
   _candidateCache = { charClass, level, skills }
   return skills
