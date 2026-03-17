@@ -1,6 +1,7 @@
 import { createBot, FormType } from "diablo:game"
+import { generateName } from "./lib/name-generator.js"
 
-const CHAR_NAME = 'RyukBot'
+let CHAR_NAME = generateName()
 const CHAR_CLASS = 1 // 0=ama,1=sor,2=nec,3=pal,4=bar,5=dru,6=ass
 
 // Screen coords for class portraits on the create char screen (800x600)
@@ -126,10 +127,10 @@ export default createBot('oog-test', function*(game, _svc) {
           game.log('[oog] dismissing popup via CANCEL')
           game.clickControl(cancelBtn.i)
           yield* game.delay(500)
-          // If name was taken, we need to go back and try a new name
-          if (phase === 'wait_game') {
-            phase = 'create_click_class'
-          }
+          // Name was taken — generate a new one and retry
+          CHAR_NAME = generateName(Date.now())
+          game.log('[oog] trying new name: ' + CHAR_NAME)
+          phase = 'create_click_class'
           continue
         }
       }
