@@ -74,6 +74,10 @@ SM_API void     sm_ret_int32array(void* context, unsigned argc, void* vp,
 SM_API void     sm_ret_uint8array(void* context, unsigned argc, void* vp,
                                   const unsigned char* data, int count);
 
+// Shared buffer — return an Int32Array backed by external memory (caller owns the buffer)
+SM_API void     sm_ret_external_int32array(void* context, unsigned argc, void* vp,
+                                            int* data, int count);
+
 // Module system
 SM_API int      sm_module_init(void* context);
 SM_API int      sm_module_compile(void* context,

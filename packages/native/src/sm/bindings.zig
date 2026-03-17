@@ -2148,6 +2148,16 @@ const Binding = struct {
 
 // ── Screenshot ──────────────────────────────────────────────────────
 
+// ── Shared state ────────────────────────────────────────────────────
+
+const shared_state = @import("../shared_state.zig");
+
+/// getSharedState() → Int32Array backed by Zig memory (no copy, direct read/write)
+fn jsGetSharedState(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    c.sm_ret_external_int32array(cx, argc, vp, shared_state.ptr(), @intCast(shared_state.len()));
+    return 1;
+}
+
 // ── Input ───────────────────────────────────────────────────────────
 
 extern "user32" fn GetAsyncKeyState(vKey: c_int) callconv(.winapi) i16;
@@ -2221,20 +2231,17 @@ const screenshot_mem = struct {
     extern "kernel32" fn VirtualFree(lpAddress: [*]u8, dwSize: usize, dwFreeType: u32) callconv(.winapi) i32;
 };
 
-var screenshot_pending: bool = false;
-var screenshot_counter: u32 = 0;
-
 /// takeScreenshot() — requests a screenshot on the next draw hook (where overlay is visible).
 fn jsScreenshot(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
-    screenshot_pending = true;
+    shared_state.set(.screenshot_pending, 1);
     retUndefined(argc, vp);
     return 1;
 }
 
 /// Called from the draw hook dispatch (game_hooks.zig) — captures if pending.
 pub fn flushScreenshot() void {
-    if (!screenshot_pending) return;
-    screenshot_pending = false;
+    if (shared_state.get(.screenshot_pending) == 0) return;
+    shared_state.set(.screenshot_pending, 0);
 
     var width: c_int = 0;
     var height: c_int = 0;
@@ -2429,6 +2436,8 @@ const bindings = [_]Binding{
     // Screen info
     .{ .name = "getScreenWidth", .func = &jsGetScreenWidth, .nargs = 0 },
     .{ .name = "getScreenHeight", .func = &jsGetScreenHeight, .nargs = 0 },
+    // Shared state
+    .{ .name = "getSharedState", .func = &jsGetSharedState, .nargs = 0 },
     // Input
     .{ .name = "getKeyState", .func = &jsGetKeyState, .nargs = 1 },
     // Native draw list

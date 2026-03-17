@@ -218,10 +218,15 @@ int sm_eval(void* context, const char* source, int source_len,
 
 // ── Cached function call (minimal overhead per tick) ─────────────────
 
-// Cache: stores the resolved function value so we skip property lookup each frame.
-// Invalidated on context destroy or module reload.
-static JS::PersistentRootedValue* cached_tick_fn = nullptr;
-static ContextHandle* cached_tick_ctx = nullptr;
+// Multi-entry function cache — keyed by name pointer (caller passes string literals
+// so pointer comparison is valid). Avoids thrashing when calling multiple hooks per frame.
+static constexpr int FN_CACHE_SIZE = 8;
+struct FnCacheEntry {
+    const char* name = nullptr;
+    JS::PersistentRootedValue* fn = nullptr;
+    ContextHandle* ctx = nullptr;
+};
+static FnCacheEntry fn_cache[FN_CACHE_SIZE] = {};
 
 int sm_call_global_function(void* context, const char* name) {
     auto* ch = static_cast<ContextHandle*>(context);
@@ -231,26 +236,25 @@ int sm_call_global_function(void* context, const char* name) {
     JSAutoRequest ar(cx);
     JSAutoCompartment ac(cx, ch->global);
 
-    // Use cached function if available and context matches — minimal overhead path
-    if (cached_tick_fn && cached_tick_ctx == ch) {
-        // Skip JSAutoRequest (no-op with THREADSAFE=OFF) and JSAutoCompartment
-        // (we never leave the compartment). Just root, call, done.
-        JS::RootedValue rval(cx);
-        JS::RootedValue fn(cx, cached_tick_fn->get());
-        JS::RootedValue thisv(cx, JS::ObjectValue(*ch->global));
-        bool ok = JS::Call(cx, thisv, fn, JS::HandleValueArray::empty(), &rval);
-        if (!ok) {
-            JS_ClearPendingException(cx);
-            delete cached_tick_fn;
-            cached_tick_fn = nullptr;
-            cached_tick_ctx = nullptr;
-            return -3;
+    // Check cache — pointer comparison on name (compile-time string literals)
+    for (int i = 0; i < FN_CACHE_SIZE; i++) {
+        if (fn_cache[i].name == name && fn_cache[i].ctx == ch && fn_cache[i].fn) {
+            JS::RootedValue rval(cx);
+            JS::RootedValue fn(cx, fn_cache[i].fn->get());
+            JS::RootedValue thisv(cx, JS::ObjectValue(*ch->global));
+            bool ok = JS::Call(cx, thisv, fn, JS::HandleValueArray::empty(), &rval);
+            if (!ok) {
+                JS_ClearPendingException(cx);
+                delete fn_cache[i].fn;
+                fn_cache[i] = {};
+                return -3;
+            }
+            if (rval.isBoolean() && !rval.toBoolean()) return 1;
+            return 0;
         }
-        if (rval.isBoolean() && !rval.toBoolean()) return 1;
-        return 0;
     }
 
-    // First call or cache miss — look up and cache
+    // Cache miss — look up the function
     JS::RootedValue fn_val(cx);
     if (!JS_GetProperty(cx, ch->global, name, &fn_val)) {
         JS_ClearPendingException(cx);
@@ -260,10 +264,13 @@ int sm_call_global_function(void* context, const char* name) {
         return -2;
     }
 
-    // Cache the function value
-    if (cached_tick_fn) delete cached_tick_fn;
-    cached_tick_fn = new JS::PersistentRootedValue(cx, fn_val);
-    cached_tick_ctx = ch;
+    // Find a free slot or evict the first one
+    int slot = 0;
+    for (int i = 0; i < FN_CACHE_SIZE; i++) {
+        if (!fn_cache[i].name) { slot = i; break; }
+    }
+    if (fn_cache[slot].fn) delete fn_cache[slot].fn;
+    fn_cache[slot] = { name, new JS::PersistentRootedValue(cx, fn_val), ch };
 
     // Call it
     JS::RootedValue rval(cx);
@@ -279,11 +286,10 @@ int sm_call_global_function(void* context, const char* name) {
 
 // Invalidate cache (call on context destroy / hot-reload)
 void sm_invalidate_call_cache(void) {
-    if (cached_tick_fn) {
-        delete cached_tick_fn;
-        cached_tick_fn = nullptr;
+    for (int i = 0; i < FN_CACHE_SIZE; i++) {
+        if (fn_cache[i].fn) delete fn_cache[i].fn;
+        fn_cache[i] = {};
     }
-    cached_tick_ctx = nullptr;
 }
 
 // ── Native function registration ─────────────────────────────────────
@@ -491,6 +497,34 @@ void sm_ret_uint8array(void* context, unsigned argc, void* vp,
         memcpy(buf, data, static_cast<size_t>(count));
     }
     args.rval().setObject(*arr);
+}
+
+void sm_ret_external_int32array(void* context, unsigned argc, void* vp,
+                                int* data, int count) {
+    auto* cx = static_cast<JSContext*>(context);
+    JS::CallArgs args = JS::CallArgsFromVp(argc, static_cast<JS::Value*>(vp));
+
+    if (count <= 0 || !data) {
+        args.rval().setUndefined();
+        return;
+    }
+
+    // Create an ArrayBuffer that points to our external memory (no copy)
+    size_t nbytes = static_cast<size_t>(count) * sizeof(int32_t);
+    JSObject* abuf = JS_NewArrayBufferWithExternalContents(cx, nbytes, data);
+    if (!abuf) {
+        args.rval().setUndefined();
+        return;
+    }
+
+    // Wrap it in an Int32Array view
+    JS::RootedObject rootedBuf(cx, abuf);
+    JSObject* view = JS_NewInt32ArrayWithBuffer(cx, rootedBuf, 0, count);
+    if (!view) {
+        args.rval().setObject(*abuf); // fallback: return raw buffer
+        return;
+    }
+    args.rval().setObject(*view);
 }
 
 // ── Module system ────────────────────────────────────────────────────

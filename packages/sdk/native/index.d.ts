@@ -192,6 +192,10 @@
   export function getScreenWidth(): number;
   export function getScreenHeight(): number;
 
+  // Shared state — Int32Array backed by Zig memory, zero-copy both sides
+  /** Get shared Int32Array. Slots: 0-7=player, 8=screenshot, 9=automap, 10=debugRooms, 13=frame, 14=tick */
+  export function getSharedState(): Int32Array;
+
   // Input
   /** Returns true if virtual key is currently held down. VK codes: 0x41='A', 0x70=F1, etc. */
   export function getKeyState(vk: number): boolean;
