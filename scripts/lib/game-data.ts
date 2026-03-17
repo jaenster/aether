@@ -1078,7 +1078,8 @@ function getCandidateSkills(charClass: number): number[] {
     return _candidateCache.skills
   }
 
-  const skills: number[] = [0] // skill 0 = basic Attack, always available
+  const skills: number[] = []
+  let hasRangedSkill = false
   for (let sk = 1; sk < 360; sk++) {
     if (nonDamage[sk]) continue
     if (ignoreSkill[sk]) continue
@@ -1086,6 +1087,7 @@ function getCandidateSkills(charClass: number): number[] {
     const sl = skillLevel(sk)
     if (sl >= 1) {
       skills.push(sk)
+      if (getBaseStat("skills", sk, "range") > 0) hasRangedSkill = true
       continue
     }
 
@@ -1098,8 +1100,12 @@ function getCandidateSkills(charClass: number): number[] {
     const bd = baseSkillDamage(sk)
     if (bd.pmin > 0 || bd.pmax > 0 || bd.min > 0 || bd.max > 0) {
       skills.push(sk)
+      if (getBaseStat("skills", sk, "range") > 0) hasRangedSkill = true
     }
   }
+
+  // Only include basic Attack (skill 0) if player has no ranged skills
+  if (!hasRangedSkill) skills.unshift(0)
 
   _candidateCache = { charClass, level, skills }
   return skills

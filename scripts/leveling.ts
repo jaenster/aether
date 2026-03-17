@@ -142,6 +142,34 @@ export default createBot('leveling', function*(game, svc) {
   game.load.inGame(ThreatMonitor)
   game.load.inGame(Guard)
   game.load.inGame(Chicken)
+
+  // Background thread: auto-allocate skill/stat points every 50 frames
+  game.load.inGame({
+    __brand: 'script' as const,
+    factory: function*(g, s) {
+      const ab = s.get(AutoBuild)
+      while (true) {
+        yield* g.delay(2000)
+        if (g.inGame && g.charLevel > 0) {
+          yield* ab.allocatePoints()
+        }
+      }
+    }
+  })
+
+  // Background thread: refresh buffs (Frozen Armor etc.) every 5s
+  game.load.inGame({
+    __brand: 'script' as const,
+    factory: function*(g, s) {
+      const b = s.get(Buffs)
+      while (true) {
+        yield* g.delay(5000)
+        if (g.inGame && !townAreas.has(g.area)) {
+          yield* b.refreshAll()
+        }
+      }
+    }
+  })
   const build = svc.get(AutoBuild)
   build.setBuild(BlizzSorc)
   const town = svc.get(Town)
@@ -170,9 +198,6 @@ export default createBot('leveling', function*(game, svc) {
     }
 
     yield* game.run(function*() {
-      // Allocate pending skill/stat points
-      yield* build.allocatePoints()
-
       const level = game.charLevel
       game.log('[bot] level ' + level + ' area ' + game.area)
 
@@ -180,9 +205,6 @@ export default createBot('leveling', function*(game, svc) {
       if (townAreas.has(game.area)) {
         yield* town.doTownChores()
       }
-
-      // Refresh buffs (Frozen Armor if available)
-      yield* buffs.refreshAll()
 
       // Find best leveling zone for our level
       const zone = getBestZone(level)
@@ -354,7 +376,6 @@ export default createBot('leveling', function*(game, svc) {
         if (monstersNearby) {
           yield* atk.clear({ killRange: 25, maxCasts: 10 })
           yield* pickit.lootGround()
-          yield* build.allocatePoints()
         }
 
         // node done
