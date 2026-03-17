@@ -1,4 +1,5 @@
 import { createService, type Game, type NPC, UiFlags, Area, ItemContainer, ObjectClassId } from "diablo:game"
+import { closeNPCInteract } from "diablo:native"
 import { Config, townAreas } from "../config.js"
 import { Movement } from "./movement.js"
 import { ItemGrading } from "../lib/item/evaluator.js"
@@ -222,7 +223,9 @@ export const Town = createService((game: Game, services) => {
       yield* move.walkTo(npc.x, npc.y)
       game.interact(npc)
       yield* game.delay(500)
-      // Interacting with a healer NPC auto-heals. Close the dialog.
+      // Close any NPC menu that opened
+      closeNPCInteract()
+      yield* game.delay(200)
       game.log(`[town:heal] done (hp=${game.player.hp}/${game.player.hpmax})`)
     },
 

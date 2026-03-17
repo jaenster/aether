@@ -11,7 +11,10 @@ const townAreas = new Set([Area.RogueEncampment, Area.LutGholein, Area.KurastDoc
  * Walk node-by-node, killing everything nearby along the way.
  * This is the core walk-clear loop — replaces the old "scenic route".
  */
+const _townAreas = new Set([Area.RogueEncampment, Area.LutGholein, Area.KurastDocks, Area.PandemoniumFortress, Area.Harrogath])
+
 function* walkAndClear(game: Game, atk: ReturnType<typeof Attack['factory']>, pickit: ReturnType<typeof Pickit['factory']>, targetX: number, targetY: number) {
+  const inTown = _townAreas.has(game.area)
   const path = game.findPath(targetX, targetY)
   if (path.length === 0) {
     game.log('[walk] no path to ' + targetX + ',' + targetY)
@@ -49,25 +52,27 @@ function* walkAndClear(game: Game, atk: ReturnType<typeof Attack['factory']>, pi
       // Dead?
       if (game.player.hp <= 0 || game.player.mode === 0 || game.player.mode === 17) return
 
-      // Monster nearby? Walk toward it and fight
-      for (const m of game.monsters) {
-        if (m.isAttackable && m.distance < 25) {
-          // Walk toward the monster first if not in range
-          if (m.distance > 8) {
-            game.move(m.x, m.y)
-            for (let w = 0; w < 10; w++) {
-              yield
-              if (m.distance < 8) break
+      // Monster nearby? Walk toward it and fight (skip in town)
+      if (!inTown) {
+        for (const m of game.monsters) {
+          if (m.isAttackable && m.distance < 25) {
+            if (m.distance > 8) {
+              game.move(m.x, m.y)
+              for (let w = 0; w < 10; w++) {
+                yield
+                if (m.distance < 8) break
+              }
             }
+            yield* atk.clear({ killRange: 25, maxCasts: 8 })
+            yield* pickit.lootGround()
+            break
           }
-          yield* atk.clear({ killRange: 25, maxCasts: 8 })
-          yield* pickit.lootGround()
-          break
         }
       }
     }
 
-    // At node: actively seek monsters — walk toward them, don't just check range
+    // At node: actively seek monsters (skip in town)
+    if (inTown) continue
     for (let seek = 0; seek < 3; seek++) {
       let nearest: Monster | null = null
       let nearDist = Infinity
