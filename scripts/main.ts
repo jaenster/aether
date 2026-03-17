@@ -12,6 +12,7 @@ import { AutoBuild } from "./services/auto-build.js"
 import { BlizzSorc } from "./builds/sorc-blizz.js"
 import { Chaos } from "./sequences/chaos.js"
 import { act1Leveling } from "./sequences/act1-leveling.js"
+import { Progression } from "./services/progression.js"
 
 const CHAR_CLASS = 1 // Sorceress
 const townAreas = new Set([Area.RogueEncampment, Area.LutGholein, Area.KurastDocks, Area.PandemoniumFortress, Area.Harrogath])
@@ -122,6 +123,21 @@ export default createBot('aether', function*(game, svc) {
   const town = svc.get(Town)
   const move = svc.get(Movement)
   const buffs = svc.get(Buffs)
+  const progression = svc.get(Progression)
+
+  // Map decision tree script names → generator functions
+  const scriptMap: Record<string, (game: Game, svc: any) => Generator<void>> = {
+    // Act 1 — all handled by act1Leveling which checks current area
+    'den-of-evil': act1Leveling,
+    'blood-raven': act1Leveling,
+    'tristram': act1Leveling,
+    'countess': act1Leveling,
+    'walk-to-catacombs': act1Leveling,
+    'andy': act1Leveling,
+    // TODO: Act 2-5 scripts
+  }
+
+  type Game = typeof game
 
   // ── Main loop ──
   while (true) {
@@ -158,14 +174,26 @@ export default createBot('aether', function*(game, svc) {
         yield* townVisit(game)
       }
 
-      // ── Route by level ──
-      if (level < 15) {
-        // Act 1 leveling: Blood Moor → Cold Plains → Cave → Stony Field
-        yield* act1Leveling(game, svc)
+      // ── Route via progression decision tree ──
+      const script = progression.evaluate()
+      if (script) {
+        game.log('[bot] decision tree → ' + script)
+        const scriptFn = scriptMap[script]
+        if (scriptFn) {
+          yield* scriptFn(game, svc)
+        } else {
+          game.log('[bot] unknown script: ' + script)
+          yield* game.delay(2000)
+        }
       } else {
-        // High level: chaos runs (existing farmer)
-        yield* buffs.refreshAll()
-        yield* Chaos.factory(game, svc)
+        // Decision tree exhausted — all quests done for this difficulty
+        // Fall back to farming (Chaos runs for high level, area clear for low level)
+        if (level >= 25) {
+          yield* buffs.refreshAll()
+          yield* Chaos.factory(game, svc)
+        } else {
+          yield* act1Leveling(game, svc)
+        }
       }
 
       state.runsCompleted++
