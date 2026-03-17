@@ -216,88 +216,65 @@ export default createBot('leveling', function*(game, svc) {
         return
       }
 
-      // ── Clear-on-path: walk toward the next exit while killing along the way ──
-      game.log('[bot] clearing toward exits in ' + zone.name + ' (level ' + game.charLevel + ')')
-      const hasTeleport = level >= 18
-
-      // Find exits from this area to determine path direction
+      // ── Ryuk-style: walk toward exit, clear after every node ──
       const exits = game.getExits()
-      let targetX = game.player.x
-      let targetY = game.player.y
-
-      if (exits.length > 0) {
-        // Pick the first exit we haven't been to yet, or the closest
-        const exit = exits[0]!
-        targetX = exit.x
-        targetY = exit.y
-        game.log('[bot] pathing toward exit area=' + exit.area + ' at ' + targetX + ',' + targetY)
-      } else {
-        // No exits known — explore outward from current position
-        targetX = game.player.x + 40
-        targetY = game.player.y + 40
-      }
-
-      // Walk/tele toward the target, killing anything nearby along the way
-      const path = hasTeleport ? game.findTelePath(targetX, targetY) : game.findPath(targetX, targetY)
-      if (path.length === 0) {
-        // No path — just walk in a direction
-        game.move(targetX, targetY)
-        yield* game.delay(1000)
+      const exit = exits[0]
+      if (!exit) {
+        game.log('[bot] no exits in ' + zone.name)
+        game.move(game.player.x + 30, game.player.y)
+        yield* game.delay(2000)
         return
       }
 
-      game.log('[bot] path: ' + path.length + ' nodes')
+      game.log('[bot] ' + zone.name + ': walking to exit area=' + exit.area)
 
+      const path = game.findPath(exit.x, exit.y)
+      if (path.length === 0) {
+        game.move(exit.x, exit.y)
+        yield* game.delay(2000)
+        return
+      }
+
+      // Walk node-by-node, fight after each step
       for (let i = 0; i < path.length; i++) {
         if (!game.inGame) break
         const wp = path[i]!
 
-        // Move to this waypoint
-        if (hasTeleport) {
-          game.selectSkill(54) // Teleport
+        // Click to walk toward this node
+        game.move(wp.x, wp.y)
+
+        // Walk until close (click repeatedly, check every 4 frames)
+        for (let t = 0; t < 50; t++) {
           yield
-          game.castSkillPacket(wp.x, wp.y)
-          yield* move.waitForMove()
-        } else {
-          // Walk in small steps, checking for monsters every few ticks
-          for (let t = 0; t < 40; t++) {
-            // Click toward waypoint
-            game.move(wp.x, wp.y)
-            yield* game.delay(200)
+          // Re-click every ~8 frames to keep walking
+          if (t % 8 === 0) game.move(wp.x, wp.y)
 
-            // Check distance
-            const dx = game.player.x - wp.x
-            const dy = game.player.y - wp.y
-            if (dx * dx + dy * dy < 36) break // within 6 tiles
+          const dx = game.player.x - wp.x
+          const dy = game.player.y - wp.y
+          if (dx * dx + dy * dy < 25) break // within 5 tiles
 
-            // Kill anything nearby while walking
-            let hasMonsters = false
-            for (const m of game.monsters) {
-              if (m.isAttackable && m.distance < 25) { hasMonsters = true; break }
-            }
-            if (hasMonsters) {
-              yield* atk.clear({ killRange: 20, maxCasts: 8 })
-              yield* pickit.lootGround()
-              yield* build.allocatePoints()
+          // If a monster is very close, stop walking and fight immediately
+          for (const m of game.monsters) {
+            if (m.isAttackable && m.distance < 8) {
+              yield* atk.clear({ killRange: 15, maxCasts: 5 })
+              break
             }
           }
         }
 
-        // Also clear at each waypoint arrival
-        {
-          let hasMonsters = false
-          for (const m of game.monsters) {
-            if (m.isAttackable && m.distance < 25) { hasMonsters = true; break }
-          }
-          if (hasMonsters) {
-            yield* atk.clear({ killRange: 20, maxCasts: 8 })
-            yield* pickit.lootGround()
-            yield* build.allocatePoints()
-          }
+        // After arriving at node: fight everything in range
+        let monstersNearby = false
+        for (const m of game.monsters) {
+          if (m.isAttackable && m.distance < 20) { monstersNearby = true; break }
+        }
+        if (monstersNearby) {
+          yield* atk.clear({ killRange: 20, maxCasts: 10 })
+          yield* pickit.lootGround()
+          yield* build.allocatePoints()
         }
       }
 
-      game.log('[bot] done pathing ' + zone.name)
+      game.log('[bot] reached exit in ' + zone.name)
 
       // Allocate any new skill/stat points from leveling
       yield* build.allocatePoints()
