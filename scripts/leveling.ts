@@ -290,13 +290,15 @@ export default createBot('leveling', function*(game, svc) {
       }
 
       // Walk node-by-node, fight after each step
+      const startArea = game.area
       for (let i = 0; i < path.length; i++) {
         if (!game.inGame) break
-        // Death check — in SP, dying puts you back in town
-        if (game.player.hp <= 0 || game.player.mode === 0) {
-          game.log('[bot] DIED — respawning')
-          yield* game.delay(3000) // wait for respawn
-          return // go back to main loop (will end up in town)
+        // Death check: mode 0/17 = dying/dead, or suddenly in town (respawned)
+        if (game.player.mode === 0 || game.player.mode === 17 || game.player.hp <= 0
+            || (townAreas.has(game.area) && !townAreas.has(startArea))) {
+          game.log('[bot] DIED (mode=' + game.player.mode + ' hp=' + game.player.hp + ' area=' + game.area + ')')
+          yield* game.delay(2000)
+          return
         }
         const wp = path[i]!
 
@@ -312,6 +314,13 @@ export default createBot('leveling', function*(game, svc) {
           const dx = game.player.x - wp.x
           const dy = game.player.y - wp.y
           if (dx * dx + dy * dy < 25) break // within 5 tiles
+
+          // Death check mid-walk
+          if (game.player.mode === 0 || game.player.mode === 17 || game.player.hp <= 0
+              || (townAreas.has(game.area) && !townAreas.has(startArea))) {
+            game.log('[bot] DIED mid-walk')
+            return
+          }
 
           // If HP low, kite away from monsters
           if (game.player.hp > 0 && game.player.hp < game.player.maxHp * 0.4) {
