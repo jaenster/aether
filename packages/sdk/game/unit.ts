@@ -78,6 +78,8 @@ export class PlayerUnit extends Unit {
 }
 
 const mercClassIds = new Set([MonsterClassId.MercA1Rogue, MonsterClassId.MercA2Guard, MonsterClassId.MercA3IronWolf, MonsterClassId.MercA5Barb])
+// Friendly town monsters (Align=1 in monstats) — rogue scouts, act guards, etc.
+const friendlyClassIds = new Set([152, 155, 156, 200, 201, 256, 352, 353, 354, 355, 356, 366, 367, 514, 515, 516, 517, 518, 519, 520, 521, 522, 523, 524, 525, 526, 527, 528, 529, 530, 531, 532, 533])
 const summonClassIds = new Set([363, 417, 418, 419, 420, 421, 428, 357, 358, 289, 290, 291, 292, 293])
 
 export class Monster extends Unit {
@@ -108,7 +110,7 @@ export class Monster extends Unit {
 
   get isNpc(): boolean { return NPC.npcClassIds.has(this.classid) }
 
-  /** True if this monster is hostile and can be attacked (not a merc, summon, or NPC). */
+  /** True if this monster is hostile and can be attacked (not a merc, summon, NPC, or friendly). */
   get isAttackable(): boolean {
     if (!this.valid || this.hp <= 0 || this.mode === MonsterMode.Death || this.mode === MonsterMode.Dead) return false
     if (this.isNpc) return false
@@ -116,6 +118,8 @@ export class Monster extends Unit {
       const p = this.parent
       if (p && p.type === 0) return false
     }
+    // Check alignment from monstats (1 = neutral/friendly, e.g. rogue scouts in town)
+    if (friendlyClassIds.has(this.classid)) return false
     return true
   }
 }
