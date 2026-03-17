@@ -36,13 +36,16 @@ export const Attack = createService((game: Game, services) => {
     return { x: game.player.x, y: game.player.y }
   }
 
-  /** Default filter: alive, within range, and has line of sight from player */
+  /** Default filter: alive and within range. LoS check only for far targets. */
   function inRange(range: number): (m: Monster) => boolean {
     return (m: Monster) => {
       if (!alive(m) || m.distance >= range) return false
-      // Skip LoS check for close-ish monsters — LoS fails a lot on outdoor terrain
-      if (m.distance < 15) return true
-      return game.hasLineOfSight(game.player.x, game.player.y, m.x, m.y)
+      // Only LoS-check at long range (>20) where terrain walls actually matter.
+      // Short/mid range: if the game shows the monster, we can hit it.
+      if (m.distance > 20) {
+        return game.hasLineOfSight(game.player.x, game.player.y, m.x, m.y)
+      }
+      return true
     }
   }
 

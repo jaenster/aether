@@ -357,11 +357,13 @@ export interface EffortResult {
 
 // Staged damage calc: applies per-level scaling across breakpoint tiers
 function stagedDamage(l: number, a: number, b: number, c: number, d: number, e: number, f: number, hitshift = 0, mult = 1): number {
+  // Level 0 starting skills: treat as level 1 for damage calc (game gives base damage)
+  if (l < 1) l = 1;
   if (l > 28) { a += f * (l - 28); l = 28; }
   if (l > 22) { a += e * (l - 22); l = 22; }
   if (l > 16) { a += d * (l - 16); l = 16; }
   if (l > 8) { a += c * (l - 8); l = 8; }
-  a += b * (Math.max(0, l) - 1);
+  a += b * (l - 1);
   return (mult * a) << hitshift;
 }
 
