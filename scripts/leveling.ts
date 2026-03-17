@@ -232,22 +232,34 @@ export default createBot('leveling', function*(game, svc) {
         return
       }
 
-      // Find the farthest walkable point from the exit to create a detour
+      // Find a detour point: farthest walkable tile that is roughly perpendicular
+      // to the player→exit line. This creates a scenic L-shaped path through the area
+      // instead of going backward toward town.
+      const px = game.player.x, py = game.player.y
+      const exDx = exit.x - px, exDy = exit.y - py
+      const exDist = Math.sqrt(exDx * exDx + exDy * exDy)
+      // Perpendicular direction (rotated 90°)
+      const perpX = -exDy / Math.max(1, exDist)
+      const perpY = exDx / Math.max(1, exDist)
+      // Pick the side with more room — try both ±90° offsets
       const scanR = 40
-      const collGrid = game.getCollisionRect(
-        game.player.x - scanR, game.player.y - scanR, scanR * 2, scanR * 2
-      )
-      let farX = game.player.x, farY = game.player.y, farDist = 0
+      const collGrid = game.getCollisionRect(px - scanR, py - scanR, scanR * 2, scanR * 2)
+      let farX = px, farY = py, bestScore = 0
       if (collGrid.length > 0) {
         for (let dy = 0; dy < scanR * 2; dy += 3) {
           for (let dx = 0; dx < scanR * 2; dx += 3) {
             const flags = collGrid[dy * scanR * 2 + dx]
             if (flags !== undefined && flags !== 0xFFFF && (flags & 1) === 0) {
-              const wx = game.player.x - scanR + dx
-              const wy = game.player.y - scanR + dy
-              const dex = wx - exit.x, dey = wy - exit.y
-              const d = dex * dex + dey * dey
-              if (d > farDist) { farDist = d; farX = wx; farY = wy }
+              const wx = px - scanR + dx
+              const wy = py - scanR + dy
+              // Score: how far perpendicular to the exit direction + some forward bias
+              const relX = wx - px, relY = wy - py
+              const perpDot = Math.abs(relX * perpX + relY * perpY) // perpendicular distance
+              const fwdDot = relX * exDx / exDist + relY * exDy / exDist // forward distance
+              // Prefer perpendicular + slightly forward, reject backward
+              if (fwdDot < -5) continue // don't go backward (toward town)
+              const score = perpDot + fwdDot * 0.3
+              if (score > bestScore) { bestScore = score; farX = wx; farY = wy }
             }
           }
         }
