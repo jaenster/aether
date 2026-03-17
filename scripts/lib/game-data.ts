@@ -1069,6 +1069,39 @@ export function evaluateBattlefield(
  * Rank all viable skill+position combos for a caster against visible monsters.
  * Returns sorted list (best first) so the caller can skip cooldown/unavailable skills.
  */
+// Cached candidate skill list — rebuilt when player level changes
+let _candidateCache: { charClass: number, level: number, skills: number[] } | null = null
+
+function getCandidateSkills(charClass: number): number[] {
+  const level = getUnitStat(12, 0) // current player level
+  if (_candidateCache && _candidateCache.charClass === charClass && _candidateCache.level === level) {
+    return _candidateCache.skills
+  }
+
+  const skills: number[] = [0] // skill 0 = basic Attack, always available
+  for (let sk = 1; sk < 360; sk++) {
+    if (nonDamage[sk]) continue
+    if (ignoreSkill[sk]) continue
+
+    const sl = skillLevel(sk)
+    if (sl >= 1) {
+      skills.push(sk)
+      continue
+    }
+
+    // Level-0 class starting skill — check class + has txt damage
+    const skClass = getBaseStat("skills", sk, "charclass")
+    if (skClass !== charClass) continue
+    const bd = baseSkillDamage(sk)
+    if (bd.pmin > 0 || bd.pmax > 0 || bd.min > 0 || bd.max > 0) {
+      skills.push(sk)
+    }
+  }
+
+  _candidateCache = { charClass, level, skills }
+  return skills
+}
+
 export function rankActions(
   casterPos: Pos,
   monsterFilter: (m: Monster) => boolean,
@@ -1164,20 +1197,21 @@ export function rankActions(
     }
   }
 
-  for (let sk = 0; sk < 360; sk++) {
+  // Build cached candidate skill list (recalculated when level changes)
+  const candidates = getCandidateSkills(charClass)
+
+  const currentMp = getUnitMP()
+
+  for (const sk of candidates) {
     if (sk === 42) continue // Static Field handled above
-    if (nonDamage[sk]) continue
     if (!effectiveFilter(sk)) continue
-    // Skip skills the player doesn't have. For level-0 skills, check if it
-    // belongs to the player's class (starting skills are usable at level 0).
-    if (sk > 0 && skillLevel(sk) < 1) {
-      const skillClass = getBaseStat("skills", sk, "charclass")
-      if (skillClass !== charClass) continue
-      // Class skill at level 0 — only keep if txt defines damage
-      const bd = baseSkillDamage(sk)
-      if (bd.pmin === 0 && bd.pmax === 0 && bd.min === 0 && bd.max === 0) continue
-    }
     if (skillCooldown(sk)) continue
+
+    // Skip if not enough mana (skill 0 = basic attack costs 0)
+    if (sk > 0) {
+      const manaCost = skillManaCost(sk)
+      if (manaCost > currentMp) continue
+    }
 
     const dmg = skillDamage(sk)
     if (dmg.pmin === 0 && dmg.pmax === 0 && dmg.min === 0 && dmg.max === 0) continue
