@@ -115,8 +115,60 @@ function buildNormalTree(): DecisionNode {
   }
 }
 
+function buildNightmareTree(): DecisionNode {
+  return {
+    description: 'Nightmare progression',
+    difficulty: Difficulty.Nightmare,
+    children: [
+      // Rush through acts — higher level requirements
+      { description: 'Act 1 NM', children: [
+        { name: 'andy', skipAfter: Quest.SistersToTheSlaughter, level: { min: 36 } },
+      ]},
+      { description: 'Act 2 NM', depend: Quest.SistersToTheSlaughter, children: [
+        { name: 'duriel', skipAfter: Quest.TheSevenTombs, level: { min: 40 } },
+      ]},
+      { description: 'Act 3 NM', depend: Quest.TheSevenTombs, children: [
+        { name: 'mephisto', skipAfter: Quest.TheGuardian, level: { min: 44 } },
+      ]},
+      { description: 'Act 4 NM', depend: Quest.TheGuardian, children: [
+        { name: 'diablo', skipAfter: Quest.TerrorsEnd, level: { min: 48 } },
+      ]},
+      { description: 'Act 5 NM', depend: Quest.TerrorsEnd, mode: [Mode.Expansion], children: [
+        { name: 'ancients', skipAfter: Quest.RiteOfPassage, level: { min: 50 } },
+        { name: 'baal', skipAfter: Quest.EveOfDestruction, level: { min: 55 } },
+      ]},
+    ],
+  }
+}
+
+function buildHellTree(): DecisionNode {
+  return {
+    description: 'Hell progression',
+    difficulty: Difficulty.Hell,
+    children: [
+      { description: 'Act 1 Hell', children: [
+        { name: 'andy', skipAfter: Quest.SistersToTheSlaughter, level: { min: 60 } },
+      ]},
+      { description: 'Act 2 Hell', depend: Quest.SistersToTheSlaughter, children: [
+        { name: 'duriel', skipAfter: Quest.TheSevenTombs, level: { min: 63 } },
+      ]},
+      { description: 'Act 3 Hell', depend: Quest.TheSevenTombs, children: [
+        { name: 'mephisto', skipAfter: Quest.TheGuardian, level: { min: 66 } },
+      ]},
+      { description: 'Act 4 Hell', depend: Quest.TheGuardian, children: [
+        { name: 'diablo', skipAfter: Quest.TerrorsEnd, level: { min: 70 } },
+      ]},
+      { description: 'Act 5 Hell', depend: Quest.TerrorsEnd, mode: [Mode.Expansion], children: [
+        { name: 'ancients', skipAfter: Quest.RiteOfPassage, level: { min: 75 } },
+        { name: 'baal', skipAfter: Quest.EveOfDestruction, level: { min: 80 } },
+      ]},
+    ],
+  }
+}
+
 export const Progression = createService((game: Game, _svc) => {
-  const tree = buildNormalTree()
+  // Evaluate all difficulty trees in order — Normal → NM → Hell
+  const trees = [buildNormalTree(), buildNightmareTree(), buildHellTree()]
 
   function getModes(): Set<Mode> {
     const modes = new Set<Mode>()
@@ -184,9 +236,13 @@ export const Progression = createService((game: Game, _svc) => {
   }
 
   return {
-    /** Evaluate the full decision tree and return the next script to run, or null if done. */
+    /** Evaluate all difficulty trees and return the next script to run, or null if done. */
     evaluate(): string | null {
-      return evaluateNode(tree)
+      for (const t of trees) {
+        const result = evaluateNode(t)
+        if (result) return result
+      }
+      return null
     },
 
     /** Check if a specific quest is completed */
