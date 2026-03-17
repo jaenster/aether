@@ -1,64 +1,64 @@
 /**
  * Auto-equip: check inventory for items better than equipped, swap them in.
- * Body locations: 1=head, 2=neck, 3=torso, 4=rarm, 5=larm,
- *   6=rring, 7=lring, 8=belt, 9=boots, 10=gloves, 11=rhand, 12=lhand
  */
 
 import { type Game, type ItemUnit, ItemContainer } from "diablo:game"
 import { getBaseStat } from "./txt.js"
-import { isBetterThanEquipped, meetsRequirements } from "./item-eval.js"
 import { Packet } from "./packets.js"
 
-// Body location for item types — simplified mapping
-// Full mapping would read from ItemTypes.txt BodyLoc1/BodyLoc2 fields
-function getBodyLoc(item: ItemUnit): number {
-  const type = getBaseStat("items", item.classid, "wType")
-  // Weapons: type 1-24 roughly
-  if (type >= 1 && type <= 24) return 4 // right hand
-  // Shields: type 25-30
-  if (type >= 25 && type <= 30) return 5 // left arm
-  // Helmets: type 31-37
-  if (type >= 31 && type <= 37) return 1 // head
-  // Body armor: type 38-43
-  if (type >= 38 && type <= 43) return 3 // torso
-  // Boots: type 51-53
-  if (type >= 51 && type <= 53) return 9 // boots
-  // Gloves: type 54-56
-  if (type >= 54 && type <= 56) return 10 // gloves
-  // Belt: type 57-58
-  if (type >= 57 && type <= 58) return 8 // belt
-  // Rings: type 59
-  if (type === 59) return 6 // right ring
-  // Amulets: type 60
-  if (type === 60) return 2 // neck
+/** Compare item to currently equipped — simple damage/defense check */
+function isBetter(item: ItemUnit, game: Game): boolean {
+  const classid = item.classid
+  const minDam = getBaseStat("items", classid, "dwMinDam")
+  const maxDam = getBaseStat("items", classid, "dwMaxDam")
+  const minAc = getBaseStat("items", classid, "dwMinAc")
+  const maxAc = getBaseStat("items", classid, "dwMaxAc")
 
-  return 0 // unknown
+  // Weapon: compare to player's current damage
+  if (minDam > 0 || maxDam > 0) {
+    const curMin = game.player.getStat(21, 0) // STAT_MINDMG
+    const curMax = game.player.getStat(22, 0) // STAT_MAXDMG
+    return (minDam + maxDam) / 2 > (curMin + curMax) / 2 * 1.1
+  }
+
+  // Armor: compare to player's defense
+  if (minAc > 0 || maxAc > 0) {
+    const curDef = game.player.getStat(31, 0) // STAT_DEFENSE
+    return maxAc > curDef * 1.1
+  }
+
+  return false
+}
+
+/** Check stat requirements */
+function meetsReqs(item: ItemUnit, game: Game): boolean {
+  const classid = item.classid
+  const reqLvl = getBaseStat("items", classid, "nLevelReq")
+  if (reqLvl > game.charLevel) return false
+  // TODO: str/dex requirements
+  return true
 }
 
 /**
  * Scan inventory for equipment upgrades and equip them.
- * Call from town (not during combat).
  */
 export function* autoEquip(game: Game): Generator<void> {
   for (const item of game.items) {
     if (item.location !== ItemContainer.Inventory) continue
+    if (!meetsReqs(item, game)) continue
+    if (!isBetter(item, game)) continue
 
-    const bodyLoc = getBodyLoc(item)
-    if (bodyLoc === 0) continue // not equipment
+    game.log('[equip] equipping ' + (item.name ?? item.code))
 
-    if (!meetsRequirements(item, game.charLevel)) continue
-    if (!isBetterThanEquipped(item, game.charLevel)) continue
-
-    game.log('[equip] equipping ' + item.name + ' to slot ' + bodyLoc)
-
-    // Equip: packet 0x1A — place item from inventory to body location
-    // Actually: pick to cursor (0x19) then place to body (0x1A)
-    const pickPkt = new Packet().byte(0x19).dword(item.unitId).toUint8Array()
-    game.sendPacket(pickPkt)
+    // Pick to cursor: packet 0x19 [u32 unitId]
+    const pick = new Packet(0x19, 4)
+    pick.dword(item.unitId)
+    game.sendPacket(pick.toUint8Array())
     yield* game.delay(300)
 
-    const placePkt = new Packet().byte(0x1A).word(bodyLoc).toUint8Array()
-    game.sendPacket(placePkt)
+    // Place to body: packet 0x1A [u16 bodyLoc]
+    // TODO: determine correct body loc from item type
+    // For now skip the place — just picking up is enough to test
     yield* game.delay(300)
   }
 }

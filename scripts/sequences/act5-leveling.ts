@@ -43,7 +43,7 @@ export function* act5Leveling(game: Game, svc: any) {
   for (const [from, to] of outdoorChain) {
     if (game.area === from) {
       // Waypoints
-      if (from === Area.BloodyFoothills && !game.hasWaypoint(31)) yield* activateWaypoint(game, move)
+      // BloodyFoothills has no waypoint — skip
       if (from === Area.FrigidHighlands && !game.hasWaypoint(32)) yield* activateWaypoint(game, move)
       if (from === Area.ArreatPlateau && !game.hasWaypoint(33)) yield* activateWaypoint(game, move)
       if (from === Area.CrystalizedPassage && !game.hasWaypoint(34)) yield* activateWaypoint(game, move)

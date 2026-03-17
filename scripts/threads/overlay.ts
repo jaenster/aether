@@ -11,9 +11,6 @@ export const Overlay = createScript(function*(game, _svc) {
   const objectiveText = new Text({ text: '', x: 10, y: 65, color: 0x04, font: 1 })
   const statsText = new Text({ text: '', x: 10, y: 80, color: 0x05, font: 1 })
 
-  // Read persistent state for run count
-  let runCount = 0
-  let killCount = 0
   let lastLevel = 0
 
   while (true) {
@@ -42,6 +39,9 @@ export const Overlay = createScript(function*(game, _svc) {
     // HP/MP bars as text
     const hpPct = Math.round(game.player.hp / game.player.maxHp * 100)
     const mpPct = game.player.mpmax > 0 ? Math.round(game.player.mp / game.player.mpmax * 100) : 0
-    statsText.text = 'HP ' + hpPct + '% | MP ' + mpPct + '% | Run ' + runCount
+    // Read run count from persisted state
+    const state = game.readState<{ runsCompleted?: number }>()
+    const runs = state?.runsCompleted ?? 0
+    statsText.text = 'HP ' + hpPct + '% | MP ' + mpPct + '% | Run ' + runs
   }
 })

@@ -1,7 +1,4 @@
-import { createScript, ItemContainer } from "diablo:game"
-
-const CHICKEN_HP_PCT = 0.3
-const HP_POT_CODES = new Set(['hp1', 'hp2', 'hp3', 'hp4', 'hp5', 'rvs', 'rvl'])
+import { createScript } from "diablo:game"
 
 function isTown(area: number): boolean {
   return area === 1 || area === 40 || area === 75 || area === 103 || area === 109
@@ -43,19 +40,6 @@ export const Chicken = createScript(function*(game, _svc) {
       lastArea = area
     }
 
-    // ── Potion drinking ──
-    if (area <= 0 || isTown(area) || game.player.hpmax <= 0 || game.player.hp <= 0) continue
-
-    const hpPct = game.player.hp / game.player.hpmax
-    if (hpPct < CHICKEN_HP_PCT && game._frame - lastPotTick > 25) {
-      for (const item of game.items) {
-        if (item.location === ItemContainer.Belt && HP_POT_CODES.has(item.code)) {
-          game.log('[chicken] drinking ' + item.code + ' hp=' + game.player.hp + '/' + game.player.hpmax)
-          game.clickItem(0, item.unitId)
-          lastPotTick = game._frame
-          break
-        }
-      }
-    }
+    // Potion drinking handled by PotionDrinker thread — no duplication
   }
 })

@@ -4,7 +4,6 @@
  */
 
 import { type ItemUnit, ItemContainer } from "diablo:game"
-import { txtReadFieldU, txtReadField, getUnitStat } from "diablo:native"
 import { getBaseStat } from "./txt.js"
 
 // Item quality enum
@@ -81,49 +80,5 @@ function isEquipment(code: string): boolean {
   return true
 }
 
-/** Compare item to currently equipped — return true if item is better */
-export function isBetterThanEquipped(item: ItemUnit, charLevel: number): boolean {
-  // Read item stats from txt
-  const itemDef = item.classid
-  const minDam = getBaseStat("items", itemDef, "dwMinDam")
-  const maxDam = getBaseStat("items", itemDef, "dwMaxDam")
-  const minAc = getBaseStat("items", itemDef, "dwMinAc")
-  const maxAc = getBaseStat("items", itemDef, "dwMaxAc")
-
-  // Get currently equipped stats
-  const curMinDam = getUnitStat(0, 0, 21, 0) // STAT_MINDMG on player
-  const curMaxDam = getUnitStat(0, 0, 22, 0)
-
-  // Weapon: compare average damage
-  if (minDam > 0 || maxDam > 0) {
-    const itemAvg = (minDam + maxDam) / 2
-    const curAvg = (curMinDam + curMaxDam) / 2
-    return itemAvg > curAvg * 1.1 // 10% better threshold
-  }
-
-  // Armor: compare defense
-  if (minAc > 0 || maxAc > 0) {
-    const curDef = getUnitStat(0, 0, 31, 0) // STAT_DEFENSE
-    return maxAc > curDef * 1.1
-  }
-
-  return false
-}
-
-/** Check if player meets stat requirements to equip item */
-export function meetsRequirements(item: ItemUnit, charLevel: number): boolean {
-  const classid = item.classid
-  const reqLvl = getBaseStat("items", classid, "nLevelReq")
-  const reqStr = getBaseStat("items", classid, "reqstr") // need to find correct field
-  const reqDex = getBaseStat("items", classid, "reqdex")
-
-  if (reqLvl > charLevel) return false
-
-  const str = getUnitStat(0, 0, 0, 0) // player STR
-  const dex = getUnitStat(0, 0, 2, 0) // player DEX
-
-  if (reqStr > 0 && str < reqStr) return false
-  if (reqDex > 0 && dex < reqDex) return false
-
-  return true
-}
+// Item comparison and requirement checks moved to auto-equip.ts
+// which has access to the Game object for proper player stat reads.

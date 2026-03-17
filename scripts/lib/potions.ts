@@ -8,8 +8,6 @@ import { getUnitStat } from "diablo:native"
 
 const HP_POTS = new Set(['hp1', 'hp2', 'hp3', 'hp4', 'hp5', 'rvs', 'rvl'])
 const MP_POTS = new Set(['mp1', 'mp2', 'mp3', 'mp4', 'mp5', 'rvs', 'rvl'])
-const STAMINA_POT = 'vps'
-
 // Best HP pot by char level
 function bestHpPot(level: number): string {
   if (level >= 25) return 'hp4'
