@@ -1,4 +1,5 @@
 import { createBot, FormType, Area } from "diablo:game"
+import { drawAutomapLine } from "diablo:native"
 import { generateName } from "./lib/name-generator.js"
 import { Town } from "./services/town.js"
 import { Attack } from "./services/attack.js"
@@ -293,13 +294,12 @@ export default createBot('leveling', function*(game, svc) {
           if (!p || p.length < 2) return
           for (let i = 0; i < p.length - 1; i++) {
             const color = i < idx ? 0x4B : 0x84 // dark grey done, green remaining
-            game.drawAutomapLine(p[i]!.x, p[i]!.y, p[i + 1]!.x, p[i + 1]!.y, color)
+            drawAutomapLine(p[i]!.x, p[i]!.y, p[i + 1]!.x, p[i + 1]!.y, color)
           }
-          // Target cross
           if (idx < p.length) {
             const t = p[idx]!
-            game.drawAutomapLine(t.x - 3, t.y, t.x + 3, t.y, 0x0A)
-            game.drawAutomapLine(t.x, t.y - 3, t.x, t.y + 3, 0x0A)
+            drawAutomapLine(t.x - 3, t.y, t.x + 3, t.y, 0x0A)
+            drawAutomapLine(t.x, t.y - 3, t.x, t.y + 3, 0x0A)
           }
         }
       }
