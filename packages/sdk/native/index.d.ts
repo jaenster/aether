@@ -63,6 +63,8 @@
   export function castSkillPacket(x: number, y: number): void;
   export function getRightSkill(): number;
   export function getUIFlag(flag: number): boolean;
+  /** Set UI flag: mode 0=set, 1=reset, 2=toggle. Flag 10=automap. */
+  export function setUIFlag(flag: number, mode?: number): void;
   export function say(message: string): void;
   export function interact(type: number, unitId: number): void;
   export function runToEntity(type: number, unitId: number): void;
@@ -157,3 +159,53 @@
   export function readFile(filename: string): string;
   /** Write a file to the game directory. Returns true on success. */
   export function writeFile(filename: string, content: string): boolean;
+
+  // Drawing — primitives (call from __onAutomapDraw, __onGameDraw, __onOogDraw, __onDraw)
+  /** Draw a line in screen coordinates. */
+  export function drawLine(x0: number, y0: number, x1: number, y1: number, color: number, alpha?: number): void;
+  /** Draw a filled rectangle in screen coordinates. */
+  export function drawSolidRect(x0: number, y0: number, x1: number, y1: number, color: number, alpha?: number): void;
+  /** Draw text at screen coordinates. Optionally set font. */
+  export function drawText(text: string, x: number, y: number, color?: number, font?: number): void;
+  /** Set the active font. Returns previous font id. */
+  export function setFont(fontId: number): number;
+  /** Get pixel width of text string in current font. */
+  export function getTextWidth(text: string): number;
+  /** Get pixel height of text string in current font. */
+  export function getTextHeight(text: string): number;
+
+  // Drawing — coordinate transforms
+  /** Convert world X,Y to screen X. */
+  export function worldToScreenX(worldX: number, worldY: number): number;
+  /** Convert world X,Y to screen Y. */
+  export function worldToScreenY(worldX: number, worldY: number): number;
+  /** Convert world X,Y to automap screen X. */
+  export function worldToAutomapX(worldX: number, worldY: number): number;
+  /** Convert world X,Y to automap screen Y. */
+  export function worldToAutomapY(worldX: number, worldY: number): number;
+
+  // Drawing — automap
+  /** Draw a line on the automap between two world positions. */
+  export function drawAutomapLine(worldX0: number, worldY0: number, worldX1: number, worldY1: number, color: number, alpha?: number): void;
+
+  // Screen info
+  export function getScreenWidth(): number;
+  export function getScreenHeight(): number;
+
+  // Input
+  /** Returns true if virtual key is currently held down. VK codes: 0x41='A', 0x70=F1, etc. */
+  export function getKeyState(vk: number): boolean;
+
+  // Native draw list
+  /** Allocate a native draw entry. type: 0=line, 1=rect, 2=text. target: 0=screen, 1=automap. Returns slot or -1. */
+  export function drawAlloc(type: number, target: number): number;
+  /** Free a native draw entry by slot. */
+  export function drawFree(slot: number): void;
+  /** Update a native draw entry: x, y, x2, y2, color, alpha, visible(0/1). */
+  export function drawUpdate(slot: number, x: number, y: number, x2: number, y2: number, color: number, alpha: number, visible: number): void;
+  /** Set text content of a native text draw entry. */
+  export function drawSetText(slot: number, text: string): void;
+
+  // Screenshot
+  /** Capture framebuffer to aether_screenshot.bmp in game dir. Returns filename or "" on failure. */
+  export function takeScreenshot(): string;

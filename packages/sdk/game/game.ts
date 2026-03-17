@@ -2,7 +2,7 @@ import {
   getArea, getAct, getDifficulty, inGame, getTickCount, log as nativeLog, logVerbose as nativeLogVerbose,
   meGetUnitId,
   clickMap, move as nativeMove, selectSkill, castSkillAt,
-  getUIFlag as nativeGetUIFlag, say as nativeSay,
+  getUIFlag as nativeGetUIFlag, setUIFlag as nativeSetUIFlag, say as nativeSay,
   getExits as nativeGetExits,
   findPath as nativeFindPath,
   findTelePath as nativeFindTelePath,
@@ -26,7 +26,6 @@ import {
   getMapSeed as nativeGetMapSeed,
   getRoomSeed as nativeGetRoomSeed,
   getMercState as nativeGetMercState,
-  // Phase 1 additions
   getQuest as nativeGetQuest,
   hasWaypoint as nativeHasWaypoint,
   meGetClassId as nativeMeGetClassId,
@@ -49,9 +48,6 @@ import {
   oogSelectClass as nativeOogSelectClass,
   readFile as nativeReadFile,
   writeFile as nativeWriteFile,
-  drawAutomapLine as nativeDrawAutomapLine,
-  drawLine as nativeDrawLine,
-  drawText as nativeDrawText,
   worldToAutomapX,
   worldToAutomapY,
 } from "diablo:native"
@@ -142,6 +138,8 @@ export class Game {
   get rightSkill(): number { return nativeGetRightSkill() }
   say(msg: string) { nativeSay(msg) }
   getUIFlag(flag: number): boolean { return nativeGetUIFlag(flag) }
+  /** Set UI flag: mode 0=set, 1=reset, 2=toggle. Flag 10=automap. */
+  setUIFlag(flag: number, mode: number = 0) { nativeSetUIFlag(flag, mode) }
   interact(unit: { type: number, unitId: number }) { nativeInteract(unit.type, unit.unitId) }
   runToEntity(unit: { type: number, unitId: number }) { nativeRunToEntity(unit.type, unit.unitId) }
 
@@ -366,23 +364,6 @@ export class Game {
   /** Write JSON state to aether_state.json */
   writeState(state: any): boolean {
     return nativeWriteFile('aether_state.json', JSON.stringify(state))
-  }
-
-  // ── Drawing (call from draw hooks only) ────────────────────────────
-
-  /** Draw a line on the automap between two world positions */
-  drawAutomapLine(x0: number, y0: number, x1: number, y1: number, color: number) {
-    nativeDrawAutomapLine(x0, y0, x1, y1, color)
-  }
-
-  /** Draw a line in screen coordinates */
-  drawLine(x0: number, y0: number, x1: number, y1: number, color: number) {
-    nativeDrawLine(x0, y0, x1, y1, color)
-  }
-
-  /** Draw text at screen coordinates */
-  drawText(text: string, x: number, y: number, color = 0) {
-    nativeDrawText(text, x, y, color)
   }
 
   /** Convert world coords to automap screen coords */

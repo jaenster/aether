@@ -1,4 +1,5 @@
-import { createService, type Game, Area } from "diablo:game"
+import { createService, type Game, Area, Line } from "diablo:game"
+import { takeScreenshot } from "diablo:native"
 import { Config, townAreas } from "../config.js"
 import { findBestWaypoint, waypointClassIds } from "../lib/waypoints.js"
 
@@ -41,7 +42,18 @@ export const Movement = createService((game: Game, services) => {
         return
       }
       game.log(`[move] path: ${path.length} hops`)
-      // game.log(`[move] tele ${path.length} hops, dist=${d|0} from=${game.player.x},${game.player.y} to=${targetX},${targetY}`)
+
+      // Draw path on automap
+      const pathLines: Line[] = []
+      let prevX = game.player.x, prevY = game.player.y
+      for (const wp of path) {
+        pathLines.push(new Line({ x: prevX, y: prevY, x2: wp.x, y2: wp.y, color: 0xFF, automap: true }))
+        prevX = wp.x; prevY = wp.y
+      }
+
+      // Let one frame render the path lines, then screenshot
+      yield
+      if (pathLines.length > 5) takeScreenshot()
 
       // Select teleport skill — just switch, do NOT cast
       game.selectSkill(cfg.teleport)
@@ -56,7 +68,7 @@ export const Movement = createService((game: Game, services) => {
         const hopDist = dist(game.player.x, game.player.y, wp.x, wp.y)
 
         if (hopDist < threshold) {
-          // game.log(`[move] hop ${wi}/${path.length} SKIP close (d=${hopDist|0}) wp=${wp.x},${wp.y}`)
+          if (pathLines[wi]) pathLines[wi]!.remove()
           continue
         }
 
@@ -64,7 +76,7 @@ export const Movement = createService((game: Game, services) => {
         if (wi + 1 < path.length) {
           const next = path[wi + 1]!
           if (dist(game.player.x, game.player.y, next.x, next.y) < hopDist) {
-            // game.log(`[move] hop ${wi}/${path.length} SKIP closer-to-next wp=${wp.x},${wp.y}`)
+            if (pathLines[wi]) pathLines[wi]!.remove()
             continue
           }
         }
@@ -75,15 +87,13 @@ export const Movement = createService((game: Game, services) => {
           yield* game.delay(150)
         }
 
-        // game.log(`[move] hop ${wi}/${path.length} d=${hopDist|0} me=${game.player.x},${game.player.y} → ${wp.x},${wp.y}`)
         for (let retries = 0; retries < 3; retries++) {
           totalCasts++
-          // game.log(`[move] CAST #${totalCasts} tele → ${wp.x},${wp.y} (hop ${wi} try ${retries}) me=${game.player.x},${game.player.y}`)
           game.castSkillPacket(wp.x, wp.y)
           const moved: unknown = yield* this.waitForMove()
           if (moved) break
-          // if (retries === 2) game.log(`[move] hop ${wi} FAILED: stuck at ${game.player.x},${game.player.y}`)
         }
+        if (pathLines[wi]) pathLines[wi]!.remove()
       }
 
       // Final approach — cast directly to destination, abort if stuck
@@ -91,17 +101,14 @@ export const Movement = createService((game: Game, services) => {
       for (let i = 0; i < 3; i++) {
         const fd = dist(game.player.x, game.player.y, targetX, targetY)
         if (fd < threshold) break
-        if (fd >= prevFinalDist) {
-          // game.log(`[move] final approach stuck at d=${fd|0}, aborting`)
-          break
-        }
+        if (fd >= prevFinalDist) break
         prevFinalDist = fd
         totalCasts++
-        // game.log(`[move] CAST #${totalCasts} final → ${targetX},${targetY} me=${game.player.x},${game.player.y} d=${fd|0}`)
         game.castSkillPacket(targetX, targetY)
         yield* this.waitForMove()
       }
-      // game.log(`[move] tele done: ${totalCasts} casts for ${path.length} hops`)
+      // Clean up any remaining path lines
+      for (const l of pathLines) l.remove()
     },
 
     *walkTo(targetX: number, targetY: number) {

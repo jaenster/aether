@@ -1,6 +1,7 @@
 const patch = @import("patch.zig");
 const feature = @import("../feature.zig");
 const globals = @import("../d2/globals.zig");
+const draw_list = @import("../draw_list.zig");
 const d2 = struct {
     const functions = @import("../d2/functions.zig");
 };
@@ -70,6 +71,7 @@ fn hookAutomapDraw() callconv(.c) void {
     const drawAutomap: *const fn () callconv(.c) void = @ptrFromInt(ADDR_DRAW_AUTOMAP);
     drawAutomap();
     feature.dispatchGameAutomapPostDraw();
+    draw_list.renderAutomap();
 }
 
 // --- Drawing: game frame ---
@@ -84,7 +86,9 @@ fn hookGamePostDraw() callconv(.c) void {
     const old = d2.functions.SetFont.call(.{1});
     feature.dispatchGamePostDraw();
     feature.dispatchAllPostDraw();
+    draw_list.renderScreen();
     _ = d2.functions.SetFont.call(.{old});
+    @import("../sm/bindings.zig").flushScreenshot();
 }
 
 // --- Drawing: OOG ---

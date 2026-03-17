@@ -11,6 +11,7 @@ const units = @import("units.zig");
 const walk_reducer = @import("../pathing/walk_reducer.zig");
 const teleport_reducer = @import("../pathing/teleport_reducer.zig");
 const act_map = @import("../pathing/act_map.zig");
+const automap = @import("../d2/automap.zig");
 
 // SM arg/ret helpers — argc required for correct JS::CallArgs layout
 fn argInt32(argc: c_uint, vp: ?*anyopaque, idx: c_uint) i32 {
@@ -733,6 +734,15 @@ fn jsRunToEntity(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_i
 fn jsGetUIFlag(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const flag: u32 = @bitCast(argInt32(argc, vp, 0));
     retBool(argc, vp, d2.GetUiFlag.call(.{flag}) != 0);
+    return 1;
+}
+
+/// setUIFlag(flag, mode) — mode: 0=set, 1=reset, 2=toggle
+fn jsSetUIFlag(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const flag: u32 = @bitCast(argInt32(argc, vp, 0));
+    const mode: u32 = if (argc >= 2) @bitCast(argInt32(argc, vp, 1)) else 0;
+    _ = d2.SetUIFlag.call(.{ flag, mode, 0 });
+    retUndefined(argc, vp);
     return 1;
 }
 
@@ -1956,6 +1966,178 @@ fn jsWriteFile(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_in
     return 1;
 }
 
+// ── Drawing bindings ────────────────────────────────────────────────
+
+fn argDouble(argc: c_uint, vp: ?*anyopaque, idx: c_uint) f64 {
+    return c.sm_arg_double(argc, vp, idx);
+}
+
+fn retDouble(argc: c_uint, vp: ?*anyopaque, val: f64) void {
+    c.sm_ret_double(argc, vp, val);
+}
+
+/// drawLine(x0, y0, x1, y1, color, alpha)
+fn jsDrawLine(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const x0 = argInt32(argc, vp, 0);
+    const y0 = argInt32(argc, vp, 1);
+    const x1 = argInt32(argc, vp, 2);
+    const y1 = argInt32(argc, vp, 3);
+    const color: u32 = @bitCast(argInt32(argc, vp, 4));
+    const alpha: u32 = if (argc >= 6) @bitCast(argInt32(argc, vp, 5)) else 0xFF;
+    d2.DrawLine.call(x0, y0, x1, y1, color, alpha);
+    retUndefined(argc, vp);
+    return 1;
+}
+
+/// drawSolidRect(x0, y0, x1, y1, color, alpha)
+fn jsDrawSolidRect(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const x0 = argInt32(argc, vp, 0);
+    const y0 = argInt32(argc, vp, 1);
+    const x1 = argInt32(argc, vp, 2);
+    const y1 = argInt32(argc, vp, 3);
+    const color: u32 = @bitCast(argInt32(argc, vp, 4));
+    const alpha: u32 = if (argc >= 6) @bitCast(argInt32(argc, vp, 5)) else 5;
+    d2.DrawSolidRectAlpha.call(x0, y0, x1, y1, color, alpha);
+    retUndefined(argc, vp);
+    return 1;
+}
+
+/// drawText(text, x, y, color, font) — draws text, optionally sets font first
+fn jsDrawText(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    var buf: [512]u8 = undefined;
+    const len = c.sm_arg_string(cx, argc, vp, 0, &buf, buf.len);
+    if (len <= 0) { retUndefined(argc, vp); return 1; }
+
+    const x = argInt32(argc, vp, 1);
+    const y = argInt32(argc, vp, 2);
+    const color: u32 = if (argc >= 4) @bitCast(argInt32(argc, vp, 3)) else 0;
+    if (argc >= 5) {
+        const font: u32 = @bitCast(argInt32(argc, vp, 4));
+        _ = d2.SetFont.call(.{font});
+    }
+
+    // ASCII → UTF-16
+    var wbuf: [256]u16 = undefined;
+    const slen: usize = @intCast(len);
+    const wlen = @min(slen, wbuf.len - 1);
+    for (0..wlen) |i| wbuf[i] = buf[i];
+    wbuf[wlen] = 0;
+    const wptr: [*:0]const u16 = @ptrCast(&wbuf);
+
+    d2.DrawGameText.call(.{ wptr, x, y, color, 0 });
+    retUndefined(argc, vp);
+    return 1;
+}
+
+/// setFont(fontId) → previous font id
+fn jsSetFont(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const font: u32 = @bitCast(argInt32(argc, vp, 0));
+    const prev = d2.SetFont.call(.{font});
+    retInt32(argc, vp, @bitCast(prev));
+    return 1;
+}
+
+/// getTextSize(text) → {width, height}  (returns width, stores in two retvals)
+fn jsGetTextWidth(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    var buf: [512]u8 = undefined;
+    const len = c.sm_arg_string(cx, argc, vp, 0, &buf, buf.len);
+    if (len <= 0) { retInt32(argc, vp, 0); return 1; }
+
+    var wbuf: [256]u16 = undefined;
+    const slen: usize = @intCast(len);
+    const wlen = @min(slen, wbuf.len - 1);
+    for (0..wlen) |i| wbuf[i] = buf[i];
+    wbuf[wlen] = 0;
+    const wptr: [*:0]const u16 = @ptrCast(&wbuf);
+
+    var w: u32 = 0;
+    var h: u32 = 0;
+    _ = d2.GetTextSize.call(.{ wptr, &w, &h });
+    retInt32(argc, vp, @bitCast(w));
+    return 1;
+}
+
+fn jsGetTextHeight(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    var buf: [512]u8 = undefined;
+    const len = c.sm_arg_string(cx, argc, vp, 0, &buf, buf.len);
+    if (len <= 0) { retInt32(argc, vp, 0); return 1; }
+
+    var wbuf: [256]u16 = undefined;
+    const slen: usize = @intCast(len);
+    const wlen = @min(slen, wbuf.len - 1);
+    for (0..wlen) |i| wbuf[i] = buf[i];
+    wbuf[wlen] = 0;
+    const wptr: [*:0]const u16 = @ptrCast(&wbuf);
+
+    var w: u32 = 0;
+    var h: u32 = 0;
+    _ = d2.GetTextSize.call(.{ wptr, &w, &h });
+    retInt32(argc, vp, @bitCast(h));
+    return 1;
+}
+
+/// worldToScreen(x, y) → screenX (call twice with swapped return for Y)
+fn jsWorldToScreenX(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const x = argDouble(argc, vp, 0);
+    const y = argDouble(argc, vp, 1);
+    const p = automap.toScreen(x, y);
+    retInt32(argc, vp, p.x);
+    return 1;
+}
+
+fn jsWorldToScreenY(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const x = argDouble(argc, vp, 0);
+    const y = argDouble(argc, vp, 1);
+    const p = automap.toScreen(x, y);
+    retInt32(argc, vp, p.y);
+    return 1;
+}
+
+/// worldToAutomap(x, y) → automapX/Y
+fn jsWorldToAutomapX(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const x = argDouble(argc, vp, 0);
+    const y = argDouble(argc, vp, 1);
+    const p = automap.toAutomap(x, y);
+    retInt32(argc, vp, p.x);
+    return 1;
+}
+
+fn jsWorldToAutomapY(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const x = argDouble(argc, vp, 0);
+    const y = argDouble(argc, vp, 1);
+    const p = automap.toAutomap(x, y);
+    retInt32(argc, vp, p.y);
+    return 1;
+}
+
+/// drawAutomapLine(worldX0, worldY0, worldX1, worldY1, color, [alpha])
+fn jsDrawAutomapLine(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const x0 = argDouble(argc, vp, 0);
+    const y0 = argDouble(argc, vp, 1);
+    const x1 = argDouble(argc, vp, 2);
+    const y1 = argDouble(argc, vp, 3);
+    const color: u32 = @bitCast(argInt32(argc, vp, 4));
+    const alpha: u32 = if (argc >= 6) @bitCast(argInt32(argc, vp, 5)) else 0xFF;
+    const p0 = automap.toAutomap(x0, y0);
+    const p1 = automap.toAutomap(x1, y1);
+    d2.DrawLine.call(p0.x, p0.y, p1.x, p1.y, color, alpha);
+    retUndefined(argc, vp);
+    return 1;
+}
+
+/// getScreenSize() → width (800 or 640)
+fn jsGetScreenWidth(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const w = globals.screenWidth().*;
+    retInt32(argc, vp, @bitCast(w));
+    return 1;
+}
+
+fn jsGetScreenHeight(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const h = globals.screenHeight().*;
+    retInt32(argc, vp, @bitCast(h));
+    return 1;
+}
+
 // ── Binding table ───────────────────────────────────────────────────
 
 const Binding = struct {
@@ -1963,6 +2145,153 @@ const Binding = struct {
     func: engine_mod.NativeFn,
     nargs: c_uint,
 };
+
+// ── Screenshot ──────────────────────────────────────────────────────
+
+// ── Input ───────────────────────────────────────────────────────────
+
+extern "user32" fn GetAsyncKeyState(vKey: c_int) callconv(.winapi) i16;
+
+/// getKeyState(vk) → true if key is currently held down
+fn jsGetKeyState(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const vk = argInt32(argc, vp, 0);
+    retBool(argc, vp, (GetAsyncKeyState(vk) & @as(i16, -32768)) != 0); // high bit = held
+    return 1;
+}
+
+// ── Native draw list ────────────────────────────────────────────────
+
+const draw_list = @import("../draw_list.zig");
+
+/// drawAlloc(type, target) → slot index (-1 if full)
+/// type: 0=line, 1=rect, 2=text. target: 0=screen, 1=automap
+fn jsDrawAlloc(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const slot = draw_list.alloc();
+    if (slot < 0) { retInt32(argc, vp, -1); return 1; }
+    const e = draw_list.get(@intCast(slot)) orelse { retInt32(argc, vp, -1); return 1; };
+    const dtype: u32 = @bitCast(argInt32(argc, vp, 0));
+    const target: u32 = @bitCast(argInt32(argc, vp, 1));
+    e.dtype = if (dtype == 1) .rect else if (dtype == 2) .text else .line;
+    e.target = if (target == 1) .automap else .screen;
+    retInt32(argc, vp, slot);
+    return 1;
+}
+
+/// drawFree(slot)
+fn jsDrawFree(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const slot: u32 = @bitCast(argInt32(argc, vp, 0));
+    draw_list.free(slot);
+    retUndefined(argc, vp);
+    return 1;
+}
+
+/// drawUpdate(slot, x, y, x2, y2, color, alpha, visible)
+fn jsDrawUpdate(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const slot: u32 = @bitCast(argInt32(argc, vp, 0));
+    const e = draw_list.get(slot) orelse { retUndefined(argc, vp); return 1; };
+    e.x = argInt32(argc, vp, 1);
+    e.y = argInt32(argc, vp, 2);
+    e.x2 = argInt32(argc, vp, 3);
+    e.y2 = argInt32(argc, vp, 4);
+    e.color = @bitCast(argInt32(argc, vp, 5));
+    e.alpha = if (argc >= 7) @bitCast(argInt32(argc, vp, 6)) else 0xFF;
+    e.visible = if (argc >= 8) argInt32(argc, vp, 7) != 0 else true;
+    retUndefined(argc, vp);
+    return 1;
+}
+
+/// drawSetText(slot, text)
+fn jsDrawSetText(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const slot: u32 = @bitCast(argInt32(argc, vp, 0));
+    const e = draw_list.get(slot) orelse { retUndefined(argc, vp); return 1; };
+    var buf: [128]u8 = undefined;
+    const len = c.sm_arg_string(cx, argc, vp, 1, &buf, buf.len);
+    if (len <= 0) { e.text_len = 0; retUndefined(argc, vp); return 1; }
+    const slen: usize = @intCast(len);
+    const wlen = @min(slen, e.text_buf.len - 1);
+    for (0..wlen) |i| e.text_buf[i] = buf[i];
+    e.text_buf[wlen] = 0;
+    e.text_len = @intCast(wlen);
+    retUndefined(argc, vp);
+    return 1;
+}
+
+const screenshot_mem = struct {
+    extern "kernel32" fn VirtualAlloc(lpAddress: ?*anyopaque, dwSize: usize, flAllocationType: u32, flProtect: u32) callconv(.winapi) ?[*]u8;
+    extern "kernel32" fn VirtualFree(lpAddress: [*]u8, dwSize: usize, dwFreeType: u32) callconv(.winapi) i32;
+};
+
+var screenshot_pending: bool = false;
+var screenshot_counter: u32 = 0;
+
+/// takeScreenshot() — requests a screenshot on the next draw hook (where overlay is visible).
+fn jsScreenshot(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    screenshot_pending = true;
+    retUndefined(argc, vp);
+    return 1;
+}
+
+/// Called from the draw hook dispatch (game_hooks.zig) — captures if pending.
+pub fn flushScreenshot() void {
+    if (!screenshot_pending) return;
+    screenshot_pending = false;
+
+    var width: c_int = 0;
+    var height: c_int = 0;
+    _ = d2.GetScreenSize.call(&width, &height);
+    if (width <= 0 or height <= 0) return;
+
+    const w: u32 = @intCast(width);
+    const h: u32 = @intCast(height);
+    const rgb_size = w * h * 3;
+
+    const buf = screenshot_mem.VirtualAlloc(null, rgb_size, 0x1000, 0x04) orelse return;
+    defer _ = screenshot_mem.VirtualFree(buf, 0, 0x8000);
+
+    if (d2.GetBackBuffer.call(buf) == 0) return;
+
+    const fp: [*:0]const u8 = "aether_screenshot.bmp";
+    const hFile = win32.CreateFileA(fp, 0x40000000, 0, null, 2, 0x80, null) orelse return;
+    defer _ = win32.CloseHandle(hFile);
+
+    const row_stride = (w * 3 + 3) & ~@as(u32, 3);
+    const image_size = row_stride * h;
+    const file_size = 54 + image_size;
+
+    var header: [54]u8 = .{0} ** 54;
+    header[0] = 'B'; header[1] = 'M';
+    header[2] = @truncate(file_size); header[3] = @truncate(file_size >> 8);
+    header[4] = @truncate(file_size >> 16); header[5] = @truncate(file_size >> 24);
+    header[10] = 54;
+    header[14] = 40;
+    header[18] = @truncate(w); header[19] = @truncate(w >> 8);
+    header[22] = @truncate(h); header[23] = @truncate(h >> 8);
+    header[26] = 1; header[28] = 24;
+    header[34] = @truncate(image_size); header[35] = @truncate(image_size >> 8);
+    header[36] = @truncate(image_size >> 16); header[37] = @truncate(image_size >> 24);
+
+    var written: u32 = 0;
+    _ = win32.WriteFile(hFile, &header, 54, &written, null);
+
+    var row_buf: [2400]u8 = undefined;
+    var y: u32 = 0;
+    while (y < h) : (y += 1) {
+        const src_row = (h - 1 - y) * w * 3;
+        var x: u32 = 0;
+        while (x < w) : (x += 1) {
+            const si = src_row + x * 3;
+            const di = x * 3;
+            row_buf[di] = buf[si + 2];
+            row_buf[di + 1] = buf[si + 1];
+            row_buf[di + 2] = buf[si];
+        }
+        var p = w * 3;
+        while (p < row_stride) : (p += 1) row_buf[p] = 0;
+        _ = win32.WriteFile(hFile, &row_buf, row_stride, &written, null);
+    }
+    _ = win32.FlushFileBuffers(hFile);
+    log.print("screenshot saved");
+}
 
 const bindings = [_]Binding{
     // State (existing)
@@ -2022,6 +2351,7 @@ const bindings = [_]Binding{
     .{ .name = "castSkillPacket", .func = &jsCastSkillPacket, .nargs = 2 },
     .{ .name = "getRightSkill", .func = &jsGetRightSkill, .nargs = 0 },
     .{ .name = "getUIFlag", .func = &jsGetUIFlag, .nargs = 1 },
+    .{ .name = "setUIFlag", .func = &jsSetUIFlag, .nargs = 2 },
     .{ .name = "say", .func = &jsSay, .nargs = 1 },
     .{ .name = "interact", .func = &jsInteract, .nargs = 2 },
     .{ .name = "runToEntity", .func = &jsRunToEntity, .nargs = 2 },
@@ -2082,6 +2412,32 @@ const bindings = [_]Binding{
     // File persistence
     .{ .name = "readFile", .func = &jsReadFile, .nargs = 1 },
     .{ .name = "writeFile", .func = &jsWriteFile, .nargs = 2 },
+    // Drawing — primitives
+    .{ .name = "drawLine", .func = &jsDrawLine, .nargs = 5 },
+    .{ .name = "drawSolidRect", .func = &jsDrawSolidRect, .nargs = 5 },
+    .{ .name = "drawText", .func = &jsDrawText, .nargs = 3 },
+    .{ .name = "setFont", .func = &jsSetFont, .nargs = 1 },
+    .{ .name = "getTextWidth", .func = &jsGetTextWidth, .nargs = 1 },
+    .{ .name = "getTextHeight", .func = &jsGetTextHeight, .nargs = 1 },
+    // Drawing — coordinate transforms
+    .{ .name = "worldToScreenX", .func = &jsWorldToScreenX, .nargs = 2 },
+    .{ .name = "worldToScreenY", .func = &jsWorldToScreenY, .nargs = 2 },
+    .{ .name = "worldToAutomapX", .func = &jsWorldToAutomapX, .nargs = 2 },
+    .{ .name = "worldToAutomapY", .func = &jsWorldToAutomapY, .nargs = 2 },
+    // Drawing — automap
+    .{ .name = "drawAutomapLine", .func = &jsDrawAutomapLine, .nargs = 5 },
+    // Screen info
+    .{ .name = "getScreenWidth", .func = &jsGetScreenWidth, .nargs = 0 },
+    .{ .name = "getScreenHeight", .func = &jsGetScreenHeight, .nargs = 0 },
+    // Input
+    .{ .name = "getKeyState", .func = &jsGetKeyState, .nargs = 1 },
+    // Native draw list
+    .{ .name = "drawAlloc", .func = &jsDrawAlloc, .nargs = 2 },
+    .{ .name = "drawFree", .func = &jsDrawFree, .nargs = 1 },
+    .{ .name = "drawUpdate", .func = &jsDrawUpdate, .nargs = 8 },
+    .{ .name = "drawSetText", .func = &jsDrawSetText, .nargs = 2 },
+    // Screenshot
+    .{ .name = "takeScreenshot", .func = &jsScreenshot, .nargs = 0 },
 };
 
 /// Comptime-generated ES module source for "diablo:native".

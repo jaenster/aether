@@ -218,8 +218,35 @@ fn handleDaemonMessage(eng: *Engine, msg: []const u8) void {
     _ = loader.handleMessage(msg, eng, ctx);
 }
 
+fn callDrawHook(comptime name: [*:0]const u8) void {
+    const eng = &(engine orelse return);
+    if (loader.state != .loaded) return;
+    const ctx = eng.oog_context orelse return;
+    _ = eng.callGlobalFn(ctx, name);
+}
+
+fn gameAutomapPostDraw() void {
+    callDrawHook("__onAutomapDraw");
+}
+
+fn gamePostDraw() void {
+    callDrawHook("__onGameDraw");
+}
+
+fn oogPostDraw() void {
+    callDrawHook("__onOogDraw");
+}
+
+fn allPostDraw() void {
+    callDrawHook("__onDraw");
+}
+
 pub const hooks = feature.Hooks{
     .deinit = &deinit,
     .gameLoop = &gameLoop,
     .oogLoop = &oogLoop,
+    .gameAutomapPostDraw = &gameAutomapPostDraw,
+    .gamePostDraw = &gamePostDraw,
+    .oogPostDraw = &oogPostDraw,
+    .allPostDraw = &allPostDraw,
 };

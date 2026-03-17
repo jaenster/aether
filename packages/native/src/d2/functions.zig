@@ -171,6 +171,28 @@ pub const DrawSolidRectAlpha = struct {
     }
 };
 
+pub const TakeScreenshot = struct {
+    const Fn = *const fn () callconv(.winapi) void;
+    const ptr: Fn = funcPtr(0x4FA7A0, Fn);
+    pub inline fn call() void { ptr(); }
+};
+
+pub const GetScreenSize = struct {
+    const Fn = *const fn (*c_int, *c_int) callconv(.winapi) c_int;
+    const ptr: Fn = funcPtr(0x4F59B0, Fn);
+    pub inline fn call(pWidth: *c_int, pHeight: *c_int) c_int {
+        return ptr(pWidth, pHeight);
+    }
+};
+
+pub const GetBackBuffer = struct {
+    const Fn = *const fn ([*]u8) callconv(.winapi) BOOL;
+    const ptr: Fn = funcPtr(0x4F6250, Fn);
+    pub inline fn call(pBuffer: [*]u8) BOOL {
+        return ptr(pBuffer);
+    }
+};
+
 pub const DrawImage = struct {
     const Fn = *const fn (?*anyopaque, c_int, c_int, c_int, DWORD, ?*anyopaque) callconv(.winapi) void;
     const ptr: Fn = funcPtr(0x4F6480, Fn);
@@ -290,6 +312,7 @@ pub const GetScreenModeSize = struct {
 };
 
 pub const GetUiFlag = fastcall(0x4538D0, fn (DWORD) DWORD);
+pub const SetUIFlag = fastcall(0x455F20, fn (DWORD, DWORD, DWORD) DWORD);
 
 pub const EscMenuShowMenu = fastcall(0x47E090, fn (i32, i32) void);
 
@@ -496,9 +519,7 @@ pub fn takeWaypoint(waypoint_id: u32, dest_area: u32) void {
     wp_selected_idx.* = -1;
 
     // 5. Update UI flag: SetUIFlag(0x14=WAYPOINT, 1=CLOSE, 0)
-    //    __fastcall(ECX=eUI, EDX=setType, stack=unknown)
-    const SetUIFlag = fastcall(0x00455f20, fn (u32, u32, u32) void);
-    SetUIFlag.call(.{ 0x14, 1, 0 });
+    _ = SetUIFlag.call(.{ 0x14, 1, 0 });
 }
 
 // ============================================================================

@@ -16,6 +16,7 @@ export default createBot('sorc-farmer', function*(game, svc) {
 
   while (true) {
     while (!game.inGame) yield;
+    if (!game.getUIFlag(10)) game.setUIFlag(10, 0)
 
     yield* game.run(function*() {
       while (true) {

@@ -1,4 +1,5 @@
 export * from './game.js'
+export * from './draw.js'
 export * from './unit.js'
 export * from './service.js'
 export * from './unit.collection.js'
