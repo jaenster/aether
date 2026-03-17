@@ -1,5 +1,5 @@
 import { createBot, FormType, Area } from "diablo:game"
-import { drawAutomapLine } from "diablo:native"
+// Drawing deferred — focus on gameplay first
 import { generateName } from "./lib/name-generator.js"
 import { Town } from "./services/town.js"
 import { Attack } from "./services/attack.js"
@@ -279,31 +279,6 @@ export default createBot('leveling', function*(game, svc) {
       }
       // Re-path to exit will happen after detour (from wherever we end up)
 
-      // Set up automap visualization
-      const __g = Function('return this')() as any
-      const vizPath = path.map(p => ({ x: p.x, y: p.y }))
-      vizPath.push({ x: exit.x, y: exit.y })
-      __g.__levelingPath = vizPath
-      __g.__levelingPathIdx = 0
-
-      if (!__g.__levelingDrawRegistered) {
-        __g.__levelingDrawRegistered = true
-        __g.__onAutomapDraw = function() {
-          const p = __g.__levelingPath as { x: number, y: number }[] | null
-          const idx = (__g.__levelingPathIdx ?? 0) as number
-          if (!p || p.length < 2) return
-          for (let i = 0; i < p.length - 1; i++) {
-            const color = i < idx ? 0x4B : 0x84 // dark grey done, green remaining
-            drawAutomapLine(p[i]!.x, p[i]!.y, p[i + 1]!.x, p[i + 1]!.y, color)
-          }
-          if (idx < p.length) {
-            const t = p[idx]!
-            drawAutomapLine(t.x - 3, t.y, t.x + 3, t.y, 0x0A)
-            drawAutomapLine(t.x, t.y - 3, t.x, t.y + 3, 0x0A)
-          }
-        }
-      }
-
       if (path.length === 0) {
         const directPath = game.findPath(exit.x, exit.y)
         if (directPath.length === 0) {
@@ -373,20 +348,13 @@ export default createBot('leveling', function*(game, svc) {
           yield* build.allocatePoints()
         }
 
-        // Update viz index
-        __g.__levelingPathIdx = i + 1
+        // node done
       }
 
       // After detour, path to exit
       if (detour.length > 3) {
         const exitPath = game.findPath(exit.x, exit.y)
         if (exitPath.length > 0) {
-          // Update viz
-          const newViz = exitPath.map(p => ({ x: p.x, y: p.y }))
-          newViz.push({ x: exit.x, y: exit.y })
-          __g.__levelingPath = newViz
-          __g.__levelingPathIdx = 0
-
           for (let i = 0; i < exitPath.length; i++) {
             if (!game.inGame) break
             if (game.player.hp <= 0) { game.log('[bot] DIED'); yield* game.delay(3000); return }
@@ -405,7 +373,7 @@ export default createBot('leveling', function*(game, svc) {
                 }
               }
             }
-            __g.__levelingPathIdx = i + 1
+            // node done
 
             let monstersNearby = false
             for (const m of game.monsters) {
