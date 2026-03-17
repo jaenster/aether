@@ -7,6 +7,7 @@ import { Town } from "./services/town.js"
 import { Buffs } from "./services/buffs.js"
 import { Movement } from "./services/movement.js"
 import { healInTown } from "./lib/npc.js"
+import { townVisit } from "./lib/town-visit.js"
 import { AutoBuild } from "./services/auto-build.js"
 import { BlizzSorc } from "./builds/sorc-blizz.js"
 import { Chaos } from "./sequences/chaos.js"
@@ -153,10 +154,8 @@ export default createBot('aether', function*(game, svc) {
             break
           }
         }
-        // Heal via NPC (clean interaction with proper dialog close)
-        if (game.player.hp < game.player.maxHp) yield* healInTown(game)
-        // Full town chores only if we have gold
-        if (game.gold > 100) yield* town.doTownChores()
+        // Clean town cycle: heal → buy pots → repair → stash
+        yield* townVisit(game)
       }
 
       // ── Route by level ──
