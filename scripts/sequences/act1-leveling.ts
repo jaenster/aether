@@ -1,167 +1,63 @@
-import { type Game, type Monster, Area, Line } from "diablo:game"
+/**
+ * Act 1 leveling sequence — specific objectives per level range.
+ * Uses walk-clear.ts for all navigation + combat.
+ * This file contains ONLY sequencing logic — no walk/fight/loot mechanics.
+ */
+
+import { type Game, Area } from "diablo:game"
 import { closeNPCInteract } from "diablo:native"
+import { moveTo, moveToExit } from "../lib/walk-clear.js"
 import { Movement } from "../services/movement.js"
 import { Attack } from "../services/attack.js"
 import { Pickit } from "../services/pickit.js"
 import { Town } from "../services/town.js"
 
-const townAreas = new Set([Area.RogueEncampment, Area.LutGholein, Area.KurastDocks, Area.PandemoniumFortress, Area.Harrogath])
+const townAreas = new Set([
+  Area.RogueEncampment, Area.LutGholein, Area.KurastDocks,
+  Area.PandemoniumFortress, Area.Harrogath,
+])
 
-/**
- * Walk node-by-node, killing everything nearby along the way.
- * This is the core walk-clear loop — replaces the old "scenic route".
- */
-const _townAreas = new Set([Area.RogueEncampment, Area.LutGholein, Area.KurastDocks, Area.PandemoniumFortress, Area.Harrogath])
+/** Find a waypoint in current area and activate it */
+function* activateWaypoint(game: Game, move: any) {
+  const preset = move.findWaypointPreset()
+  if (!preset) return false
 
-function* walkAndClear(game: Game, atk: ReturnType<typeof Attack['factory']>, pickit: ReturnType<typeof Pickit['factory']>, targetX: number, targetY: number) {
-  const path = game.findPath(targetX, targetY)
-  if (path.length === 0) {
-    game.log('[walk] no path to ' + targetX + ',' + targetY)
-    game.move(targetX, targetY)
-    yield* game.delay(1000)
-    return
+  game.log('[a1] walking to waypoint')
+  // Use raw walkTo — we're already in the right area, just need to reach it
+  game.move(preset.x, preset.y)
+  for (let t = 0; t < 100; t++) {
+    yield
+    if (t % 10 === 0) game.move(preset.x, preset.y)
+    const dx = game.player.x - preset.x, dy = game.player.y - preset.y
+    if (dx * dx + dy * dy < 49) break
   }
 
-  game.log('[walk] ' + path.length + ' nodes to (' + targetX + ',' + targetY + ')')
-
-  // Draw path on automap
-  const pathLines: Line[] = []
-  let prevX = game.player.x, prevY = game.player.y
-  for (const wp of path) {
-    pathLines.push(new Line({ x: prevX, y: prevY, x2: wp.x, y2: wp.y, color: 0x84, automap: true }))
-    prevX = wp.x; prevY = wp.y
-  }
-
-  for (let i = 0; i < path.length; i++) {
-    if (!game.inGame) return
-    if (game.player.hp <= 0 || game.player.mode === 0 || game.player.mode === 17) return
-    const wp = path[i]!
-
-    // Walk toward this node
-    game.move(wp.x, wp.y)
-
-    for (let t = 0; t < 50; t++) {
-      yield
-      if (t % 8 === 0) game.move(wp.x, wp.y)
-
-      // Arrived?
-      const dx = game.player.x - wp.x, dy = game.player.y - wp.y
-      if (dx * dx + dy * dy < 25) break
-
-      // Dead?
-      if (game.player.hp <= 0 || game.player.mode === 0 || game.player.mode === 17) return
-
-      // Monster nearby? Walk toward it and fight (skip in town)
-      if (!_townAreas.has(game.area)) {
-        for (const m of game.monsters) {
-          if (m.isAttackable && m.distance < 25) {
-            if (m.distance > 8) {
-              game.move(m.x, m.y)
-              for (let w = 0; w < 10; w++) {
-                yield
-                if (m.distance < 8) break
-              }
-            }
-            yield* atk.clear({ killRange: 25, maxCasts: 8 })
-            yield* pickit.lootGround()
-            break
-          }
-        }
-      }
-    }
-
-    // At node: actively seek monsters (skip in town)
-    if (_townAreas.has(game.area)) continue
-    for (let seek = 0; seek < 3; seek++) {
-      let nearest: Monster | null = null
-      let nearDist = Infinity
-      for (const m of game.monsters) {
-        if (m.isAttackable && m.distance < nearDist) { nearDist = m.distance; nearest = m }
-      }
-      if (!nearest || nearDist > 35) break // nothing visible
-
-      // Walk toward the monster
-      if (nearDist > 8) {
-        game.move(nearest.x, nearest.y)
-        for (let w = 0; w < 25; w++) {
-          yield
-          if (w % 6 === 0) game.move(nearest.x, nearest.y)
-          if (nearest.distance < 8) break
-          if (game.player.hp <= 0) return
-        }
-      }
-
-      // Fight everything nearby
-      yield* atk.clear({ killRange: 25, maxCasts: 12 })
-      yield* pickit.lootGround()
-    }
-
-    // Mark this path segment as done
-    if (pathLines[i]) pathLines[i]!.remove()
-  }
-
-  // Clean up remaining lines
-  for (const l of pathLines) l.remove()
-}
-
-/**
- * Walk through an area exit into the target area, clearing along the way.
- */
-function* walkToArea(game: Game, move: any, atk: any, pickit: any, targetArea: number) {
-  const exits = game.getExits()
-  const exit = exits.find(e => e.area === targetArea)
-  if (!exit) {
-    game.log('[walk] no exit to area ' + targetArea)
-    return false
-  }
-  yield* walkAndClear(game, atk, pickit, exit.x, exit.y)
-
-  // Now interact with the exit tile
-  const tile = game.tiles.find(t => t.destArea === targetArea)
-  if (tile) {
-    game.interact(tile)
-  } else {
-    // Walk the last few tiles to trigger area change
-    game.move(exit.x, exit.y)
-    yield* game.delay(500)
-  }
-
-  if (yield* game.waitForArea(targetArea)) return true
-  return game.area === targetArea
-}
-
-/**
- * Walk to waypoint in current area and activate it.
- */
-function* grabWaypoint(game: Game, move: any, atk: any, pickit: any) {
-  const wp = move.findWaypointPreset()
-  if (!wp) return false
-
-  game.log('[walk] heading to waypoint at ' + wp.x + ',' + wp.y)
-  yield* walkAndClear(game, atk, pickit, wp.x, wp.y)
-
-  // Find and interact with WP unit
-  const wpUnit = move.findWaypointUnit(wp.x, wp.y)
+  const wpUnit = move.findWaypointUnit(preset.x, preset.y)
   if (wpUnit) {
-    // Walk close to WP first
     if (wpUnit.distance > 5) {
       game.move(wpUnit.x, wpUnit.y)
-      yield* game.delay(500)
+      yield* game.delay(400)
     }
     game.interact(wpUnit)
-    yield* game.delay(1000)
-    // Close WP menu
+    yield* game.delay(800)
     closeNPCInteract()
-    yield* game.delay(300)
-    game.log('[walk] waypoint activated')
+    yield* game.delay(200)
+    game.log('[a1] waypoint activated')
     return true
   }
   return false
 }
 
+/** Heal in town if needed */
+function* healIfNeeded(game: Game, town: any) {
+  if (townAreas.has(game.area) && game.player.hp < game.player.maxHp) {
+    yield* town.heal()
+  }
+}
+
 /**
- * Act 1 leveling sequence — specific objectives per level range.
- * Returns a generator that walks, kills, and progresses through Act 1.
+ * Main Act 1 leveling entry point.
+ * Called each game loop iteration — handles one "step" then returns.
  */
 export function* act1Leveling(game: Game, svc: any) {
   const move = svc.get(Movement)
@@ -171,94 +67,177 @@ export function* act1Leveling(game: Game, svc: any) {
 
   const level = game.charLevel
 
-  // ── Level 1-7: Clear Blood Moor, progress to Cold Plains when ready ──
-  if (level < 8) {
-    if (townAreas.has(game.area)) {
-      if (game.player.hp < game.player.maxHp) yield* town.heal()
-    }
+  // Always heal first if in town
+  yield* healIfNeeded(game, town)
 
-    // Walk to Blood Moor if in town
-    if (game.area === Area.RogueEncampment) {
-      game.log('[a1] walking to Blood Moor')
-      const ok = yield* walkToArea(game, move, atk, pickit, Area.BloodMoor)
-      if (!ok) return
+  // ── In town: walk to Blood Moor ──
+  if (game.area === Area.RogueEncampment) {
+    game.log('[a1] leaving town → Blood Moor')
+    const ok = yield* moveToExit(game, atk, pickit, Area.BloodMoor, { noClear: true })
+    if (!ok) {
+      game.log('[a1] failed to reach Blood Moor')
+      yield* game.delay(2000)
     }
-
-    // In Blood Moor: STAY and clear — don't rush to Cold Plains
-    if (game.area === Area.BloodMoor) {
-      if (level < 3) {
-        // Wander Blood Moor killing everything — don't leave yet
-        game.log('[a1] clearing Blood Moor (level ' + level + ')')
-        const exits = game.getExits()
-        // Walk toward the farthest exit to cover ground
-        const exit = exits.find(e => e.area === Area.ColdPlains) ?? exits[0]
-        if (exit) {
-          yield* walkAndClear(game, atk, pickit, exit.x, exit.y)
-        }
-        return // loop back to try again
-      }
-      // Level 3+: proceed to Cold Plains
-      game.log('[a1] level ' + level + ', heading to Cold Plains')
-      yield* walkToArea(game, move, atk, pickit, Area.ColdPlains)
-    }
-
-    // In Cold Plains
-    if (game.area === Area.ColdPlains) {
-      if (!game.hasWaypoint(1)) {
-        game.log('[a1] grabbing Cold Plains waypoint')
-        yield* grabWaypoint(game, move, atk, pickit)
-      }
-
-      if (level < 6) {
-        // Clear Cold Plains — head toward Cave
-        game.log('[a1] clearing Cold Plains (level ' + level + ')')
-        const ok = yield* walkToArea(game, move, atk, pickit, Area.CaveLvl1)
-        if (!ok) {
-          // Just wander Cold Plains
-          const exits = game.getExits()
-          if (exits.length > 0) yield* walkAndClear(game, atk, pickit, exits[0]!.x, exits[0]!.y)
-        }
-        return
-      }
-    }
-
-    // Cave grinding
-    if (game.area === Area.CaveLvl1) {
-      game.log('[a1] clearing Cave Level 1')
-      yield* walkToArea(game, move, atk, pickit, Area.CaveLvl2)
-    }
-    if (game.area === Area.CaveLvl2) {
-      game.log('[a1] clearing Cave Level 2')
-      const exits = game.getExits()
-      if (exits.length > 0) yield* walkAndClear(game, atk, pickit, exits[0]!.x, exits[0]!.y)
-    }
-
     return
   }
 
-  // (Level 4-7 merged into the block above)
-
-  // ── Level 8+: Stony Field, Dark Wood, etc. ──
-  if (level < 15) {
-    if (townAreas.has(game.area)) {
-      if (game.player.hp < game.player.maxHp) yield* town.heal()
-    }
-
-    // Walk through Cold Plains → Stony Field
-    if (game.area === Area.RogueEncampment || game.area === Area.ColdPlains) {
-      if (game.area === Area.RogueEncampment) {
-        yield* move.useWaypoint(Area.ColdPlains)
+  // ── Blood Moor (area 2) ──
+  if (game.area === Area.BloodMoor) {
+    if (level < 3) {
+      // Level 1-2: clear Blood Moor toward Cold Plains
+      game.log('[a1] clearing Blood Moor (level ' + level + ')')
+      const exits = game.getExits()
+      const cpExit = exits.find(e => e.area === Area.ColdPlains)
+      if (cpExit) {
+        yield* moveTo(game, atk, pickit, cpExit.x, cpExit.y)
       }
-      game.log('[a1] heading to Stony Field')
-      yield* walkToArea(game, move, atk, pickit, Area.StonyField)
+      return
     }
 
-    // Clear Stony Field and grab WP
-    if (game.area === Area.StonyField) {
-      game.log('[a1] clearing Stony Field')
-      yield* grabWaypoint(game, move, atk, pickit)
-    }
-
+    // Level 3+: proceed to Cold Plains
+    game.log('[a1] heading to Cold Plains')
+    yield* moveToExit(game, atk, pickit, Area.ColdPlains)
     return
+  }
+
+  // ── Cold Plains (area 3) ──
+  if (game.area === Area.ColdPlains) {
+    // Grab waypoint if we don't have it
+    if (!game.hasWaypoint(1)) {
+      yield* activateWaypoint(game, move)
+    }
+
+    if (level < 6) {
+      // Clear toward Cave entrance
+      game.log('[a1] heading to Cave (level ' + level + ')')
+      const ok = yield* moveToExit(game, atk, pickit, Area.CaveLvl1)
+      if (!ok) {
+        // No cave found — clear toward Stony Field instead
+        game.log('[a1] no cave exit, heading to Stony Field')
+        yield* moveToExit(game, atk, pickit, Area.StonyField)
+      }
+      return
+    }
+
+    // Level 6+: head to Stony Field
+    game.log('[a1] heading to Stony Field')
+    yield* moveToExit(game, atk, pickit, Area.StonyField)
+    return
+  }
+
+  // ── Cave Level 1 (area 9) ──
+  if (game.area === Area.CaveLvl1) {
+    game.log('[a1] clearing Cave Level 1')
+    yield* moveToExit(game, atk, pickit, Area.CaveLvl2)
+    return
+  }
+
+  // ── Cave Level 2 (area 13) ──
+  if (game.area === Area.CaveLvl2) {
+    game.log('[a1] clearing Cave Level 2')
+    // Clear toward exit back to L1
+    const exits = game.getExits()
+    if (exits.length > 0) {
+      yield* moveTo(game, atk, pickit, exits[0]!.x, exits[0]!.y)
+    }
+    return
+  }
+
+  // ── Stony Field (area 4) ──
+  if (game.area === Area.StonyField) {
+    if (!game.hasWaypoint(2)) {
+      game.log('[a1] grabbing Stony Field waypoint')
+      yield* activateWaypoint(game, move)
+    }
+    // Clear Stony Field toward Dark Wood
+    game.log('[a1] clearing Stony Field')
+    yield* moveToExit(game, atk, pickit, Area.DarkWood)
+    return
+  }
+
+  // ── Dark Wood (area 5) ──
+  if (game.area === Area.DarkWood) {
+    if (!game.hasWaypoint(3)) {
+      game.log('[a1] grabbing Dark Wood waypoint')
+      yield* activateWaypoint(game, move)
+    }
+    game.log('[a1] clearing Dark Wood')
+    yield* moveToExit(game, atk, pickit, Area.BlackMarsh)
+    return
+  }
+
+  // ── Black Marsh (area 6) ──
+  if (game.area === Area.BlackMarsh) {
+    if (!game.hasWaypoint(4)) {
+      game.log('[a1] grabbing Black Marsh waypoint')
+      yield* activateWaypoint(game, move)
+    }
+    game.log('[a1] clearing Black Marsh')
+    yield* moveToExit(game, atk, pickit, Area.TamoeHighland)
+    return
+  }
+
+  // ── Tamoe Highland → Monastery → Barracks → Jail → Catacombs ──
+  if (game.area === Area.TamoeHighland) {
+    game.log('[a1] clearing Tamoe Highland')
+    yield* moveToExit(game, atk, pickit, Area.MonasteryGate)
+    return
+  }
+
+  if (game.area === Area.MonasteryGate) {
+    yield* moveToExit(game, atk, pickit, Area.OuterCloister, { noClear: true })
+    return
+  }
+
+  if (game.area === Area.OuterCloister) {
+    if (!game.hasWaypoint(5)) {
+      yield* activateWaypoint(game, move)
+    }
+    yield* moveToExit(game, atk, pickit, Area.Barracks)
+    return
+  }
+
+  // Barracks → Jail → Inner Cloister → Cathedral → Catacombs
+  const linearAreas = [
+    [Area.Barracks, Area.JailLvl1],
+    [Area.JailLvl1, Area.JailLvl2],
+    [Area.JailLvl2, Area.JailLvl3],
+    [Area.JailLvl3, Area.InnerCloister],
+    [Area.InnerCloister, Area.Cathedral],
+    [Area.Cathedral, Area.CatacombsLvl1],
+    [Area.CatacombsLvl1, Area.CatacombsLvl2],
+    [Area.CatacombsLvl2, Area.CatacombsLvl3],
+    [Area.CatacombsLvl3, Area.CatacombsLvl4],
+  ] as const
+
+  for (const [from, to] of linearAreas) {
+    if (game.area === from) {
+      // Grab Jail L1 WP (index 6) and Catacombs L2 WP (index 8)
+      if (from === Area.JailLvl1 && !game.hasWaypoint(6)) yield* activateWaypoint(game, move)
+      if (from === Area.CatacombsLvl2 && !game.hasWaypoint(8)) yield* activateWaypoint(game, move)
+      game.log('[a1] clearing ' + from + ' → ' + to)
+      yield* moveToExit(game, atk, pickit, to)
+      return
+    }
+  }
+
+  // ── Catacombs Level 4 (Andy) ──
+  if (game.area === Area.CatacombsLvl4) {
+    game.log('[a1] Andy fight!')
+    // Just clear the area — Andy is somewhere in here
+    const exits = game.getExits()
+    if (exits.length > 0) {
+      yield* moveTo(game, atk, pickit, exits[0]!.x, exits[0]!.y)
+    }
+    // TODO: check quest completion and proceed to Act 2
+    return
+  }
+
+  // ── Fallback: unknown area, try to go back to town ──
+  game.log('[a1] unknown area ' + game.area + ', going to town')
+  try {
+    yield* town.goToTown()
+  } catch {
+    game.exitGame()
   }
 }
