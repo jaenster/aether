@@ -259,26 +259,41 @@ export default createBot('leveling', function*(game, svc) {
           game.castSkillPacket(wp.x, wp.y)
           yield* move.waitForMove()
         } else {
-          // Walk in small steps
-          game.move(wp.x, wp.y)
-          // Wait until we get close or timeout
-          for (let t = 0; t < 30; t++) {
-            yield
+          // Walk in small steps, checking for monsters every few ticks
+          for (let t = 0; t < 40; t++) {
+            // Click toward waypoint
+            game.move(wp.x, wp.y)
+            yield* game.delay(200)
+
+            // Check distance
             const dx = game.player.x - wp.x
             const dy = game.player.y - wp.y
-            if (dx * dx + dy * dy < 25) break // within 5 tiles
+            if (dx * dx + dy * dy < 36) break // within 6 tiles
+
+            // Kill anything that got close while walking
+            let hasMonsters = false
+            for (const m of game.monsters) {
+              if (m.isAttackable && m.distance < 15) { hasMonsters = true; break }
+            }
+            if (hasMonsters) {
+              yield* atk.clear({ killRange: 20, maxCasts: 8 })
+              yield* pickit.lootGround()
+              yield* build.allocatePoints()
+            }
           }
         }
 
-        // Kill anything nearby after each move
-        let hasMonsters = false
-        for (const m of game.monsters) {
-          if (m.isAttackable && m.distance < 20) { hasMonsters = true; break }
-        }
-        if (hasMonsters) {
-          yield* atk.clear({ killRange: 20, maxCasts: 10 })
-          yield* pickit.lootGround()
-          yield* build.allocatePoints()
+        // Also clear at each waypoint arrival
+        {
+          let hasMonsters = false
+          for (const m of game.monsters) {
+            if (m.isAttackable && m.distance < 15) { hasMonsters = true; break }
+          }
+          if (hasMonsters) {
+            yield* atk.clear({ killRange: 20, maxCasts: 8 })
+            yield* pickit.lootGround()
+            yield* build.allocatePoints()
+          }
         }
       }
 
