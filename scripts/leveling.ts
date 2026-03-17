@@ -192,17 +192,12 @@ export default createBot('leveling', function*(game, svc) {
       const level = game.charLevel
       game.log('[bot] level ' + level + ' area ' + game.area)
 
-      // Town chores if needed (heal, buy pots, repair)
+      // Town: heal first, then chores
       if (townAreas.has(game.area)) {
-        yield* town.doTownChores()
-        // Wait for HP to regen if still low after town chores
-        if (game.player.hp < game.player.maxHp * 0.8) {
-          game.log('[bot] waiting to regen HP (' + game.player.hp + '/' + game.player.maxHp + ')')
-          for (let w = 0; w < 100; w++) {
-            yield
-            if (game.player.hp >= game.player.maxHp * 0.95) break
-          }
+        if (game.player.hp < game.player.maxHp) {
+          yield* town.heal()
         }
+        yield* town.doTownChores()
       }
 
       // Find best leveling zone for our level

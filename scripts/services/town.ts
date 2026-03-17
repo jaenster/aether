@@ -195,15 +195,35 @@ export const Town = createService((game: Game, services) => {
     *heal() {
       if (game.player.hp >= game.player.hpmax && game.player.mp >= game.player.mpmax) return
 
-      const npc = game.npcs.find(n => n.canHeal)
+      // Find heal NPC — may need to walk closer to load her
+      let npc = game.npcs.find(n => n.canHeal)
+      if (!npc) {
+        // NPC not loaded — try walking toward known healer presets
+        // Healers: Akara=148(A1), Fara=178(A2), Ormus=255(A3), Jamella=405(A4), Malah=513(A5)
+        const healerClassIds = [148, 178, 255, 405, 513]
+        for (const cid of healerClassIds) {
+          const pos = game.findPreset(1, cid) // type 1 = monster preset
+          if (pos) {
+            game.log(`[town:heal] walking to healer preset cid=${cid} at ${pos.x},${pos.y}`)
+            yield* move.walkTo(pos.x, pos.y)
+            yield* game.delay(500)
+            npc = game.npcs.find(n => n.canHeal)
+            if (npc) break
+          }
+        }
+      }
+
       if (!npc) {
         game.log(`[town] no heal NPC found in area ${game.area}`)
         return
       }
 
-      game.log(`[town] heal at ${npc.name} (hp=${game.player.hp}/${game.player.hpmax} mp=${game.player.mp}/${game.player.mpmax})`)
+      game.log(`[town:heal] healing at ${npc.name} (hp=${game.player.hp}/${game.player.hpmax})`)
       yield* move.walkTo(npc.x, npc.y)
-      yield* npc.heal()
+      game.interact(npc)
+      yield* game.delay(500)
+      // Interacting with a healer NPC auto-heals. Close the dialog.
+      game.log(`[town:heal] done (hp=${game.player.hp}/${game.player.hpmax})`)
     },
 
     /** Repair all items at the nearest repair NPC. */
