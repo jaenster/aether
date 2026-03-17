@@ -36,7 +36,6 @@ export const Chicken = createScript(function*(game, _svc) {
       // Don't exit — just let the main loop handle the town cycle
     }
 
-    const area = game.player.area
     if (area <= 0 || isTown(area) || game.player.hpmax <= 0 || game.player.hp <= 0) continue
 
     const hpPct = game.player.hp / game.player.hpmax
