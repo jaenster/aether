@@ -221,6 +221,7 @@ export default createBot('leveling', function*(game, svc) {
 
       for (let round = 0; round < 50; round++) {
         if (!game.inGame) break
+        yield // always yield at least once per round to prevent freeze
 
         // Find nearest attackable monster
         let nearest: any = null
