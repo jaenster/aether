@@ -155,7 +155,8 @@ export default createBot('aether', function*(game, svc) {
           }
         }
         if (game.player.hp < game.player.maxHp) yield* town.heal()
-        yield* town.doTownChores()
+        // Only do full town chores if we have gold (no point shopping at level 1)
+        if (game.gold > 100) yield* town.doTownChores()
       }
 
       // ── Route by level ──
