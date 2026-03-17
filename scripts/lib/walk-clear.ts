@@ -7,7 +7,8 @@
  */
 
 import type { Game, Monster } from "diablo:game"
-import { Line } from "diablo:game"
+import { Line, ItemContainer } from "diablo:game"
+import { getUnitStat } from "diablo:native"
 
 const CLEAR_RANGE = 14       // base clear range in tiles
 const BACKTRACK_NODES = 5    // max nodes to backtrack
@@ -176,14 +177,32 @@ export function* walkTo(game: Game, x: number, y: number, maxTicks = 60): Genera
   let nFail = 0
 
   while (dist(game.player.x, game.player.y, x, y) > 4) {
+    // Stamina management: stat 80=stamina, stat 81=maxstamina (both shifted by 8)
+    const stamina = getUnitStat(0, game.player.unitId, 80, 0) >> 8
+    const maxStamina = getUnitStat(0, game.player.unitId, 81, 0) >> 8
+    if (maxStamina > 0) {
+      const pct = stamina / maxStamina
+      if (pct < 0.15) {
+        // Very low — switch to walk to recover
+        // TODO: send walk/run toggle packet when available
+      } else if (pct < 0.20) {
+        // Drink stamina pot if available
+        for (const item of game.items) {
+          if (item.location === ItemContainer.Belt && item.code === 'vps') {
+            game.clickItem(0, item.unitId)
+            break
+          }
+        }
+      }
+    }
+
     game.move(x, y)
 
-    // Wait for character to start moving (mode 2=walk, 3=run, 6=other)
     let moved = false
     const startX = game.player.x, startY = game.player.y
     for (let t = 0; t < maxTicks; t++) {
       yield
-      if (t % 10 === 0) game.move(x, y) // re-click periodically
+      if (t % 10 === 0) game.move(x, y)
 
       const dx = game.player.x - x, dy = game.player.y - y
       if (dx * dx + dy * dy < 16) return true // arrived
