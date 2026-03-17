@@ -368,17 +368,27 @@ export default createBot('leveling', function*(game, svc) {
           }
         }
 
-        // After arriving at node: fight everything in range
-        let monstersNearby = false
+        // After arriving at node: find nearest attackable monster and engage
+        let nearest: any = null
+        let nearDist = Infinity
         for (const m of game.monsters) {
-          if (m.isAttackable && m.distance < 25) { monstersNearby = true; break }
+          if (m.isAttackable && m.distance < nearDist) {
+            nearDist = m.distance
+            nearest = m
+          }
         }
-        if (monstersNearby) {
+        if (nearest) {
+          // Walk toward the monster if it's far
+          if (nearDist > 10) {
+            game.move(nearest.x, nearest.y)
+            for (let w = 0; w < 20; w++) {
+              yield
+              if (nearest.distance < 10) break
+            }
+          }
           yield* atk.clear({ killRange: 25, maxCasts: 10 })
           yield* pickit.lootGround()
         }
-
-        // node done
       }
 
       // After detour, path to exit
