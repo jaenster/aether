@@ -171,7 +171,7 @@ export function* act1Leveling(game: Game, svc: any) {
 
   const level = game.charLevel
 
-  // ── Level 1-7: Blood Moor → Cold Plains (grab WP) → Cave grinding ──
+  // ── Level 1-7: Clear Blood Moor, progress to Cold Plains when ready ──
   if (level < 8) {
     if (townAreas.has(game.area)) {
       if (game.player.hp < game.player.maxHp) yield* town.heal()
@@ -184,43 +184,53 @@ export function* act1Leveling(game: Game, svc: any) {
       if (!ok) return
     }
 
-    // Clear Blood Moor toward Cold Plains
+    // In Blood Moor: STAY and clear — don't rush to Cold Plains
     if (game.area === Area.BloodMoor) {
-      game.log('[a1] clearing Blood Moor → Cold Plains')
-      const ok = yield* walkToArea(game, move, atk, pickit, Area.ColdPlains)
-      if (!ok) return
+      if (level < 3) {
+        // Wander Blood Moor killing everything — don't leave yet
+        game.log('[a1] clearing Blood Moor (level ' + level + ')')
+        const exits = game.getExits()
+        // Walk toward the farthest exit to cover ground
+        const exit = exits.find(e => e.area === Area.ColdPlains) ?? exits[0]
+        if (exit) {
+          yield* walkAndClear(game, atk, pickit, exit.x, exit.y)
+        }
+        return // loop back to try again
+      }
+      // Level 3+: proceed to Cold Plains
+      game.log('[a1] level ' + level + ', heading to Cold Plains')
+      yield* walkToArea(game, move, atk, pickit, Area.ColdPlains)
     }
 
-    // In Cold Plains: grab WP if needed, then clear toward Cave or Stony Field
+    // In Cold Plains
     if (game.area === Area.ColdPlains) {
       if (!game.hasWaypoint(1)) {
         game.log('[a1] grabbing Cold Plains waypoint')
         yield* grabWaypoint(game, move, atk, pickit)
       }
 
-      // Head to Cave Level 1 for grinding
-      game.log('[a1] heading to Cave')
-      const ok = yield* walkToArea(game, move, atk, pickit, Area.CaveLvl1)
-      if (!ok) {
-        // No cave found — just clear Cold Plains toward Stony Field
-        game.log('[a1] cave not found, clearing toward Stony Field')
-        yield* walkToArea(game, move, atk, pickit, Area.StonyField)
+      if (level < 6) {
+        // Clear Cold Plains — head toward Cave
+        game.log('[a1] clearing Cold Plains (level ' + level + ')')
+        const ok = yield* walkToArea(game, move, atk, pickit, Area.CaveLvl1)
+        if (!ok) {
+          // Just wander Cold Plains
+          const exits = game.getExits()
+          if (exits.length > 0) yield* walkAndClear(game, atk, pickit, exits[0]!.x, exits[0]!.y)
+        }
+        return
       }
     }
 
-    // Clear Cave Level 1
+    // Cave grinding
     if (game.area === Area.CaveLvl1) {
       game.log('[a1] clearing Cave Level 1')
       yield* walkToArea(game, move, atk, pickit, Area.CaveLvl2)
     }
-
-    // Clear Cave Level 2 — find farthest exit and walk to it
     if (game.area === Area.CaveLvl2) {
       game.log('[a1] clearing Cave Level 2')
       const exits = game.getExits()
-      if (exits.length > 0) {
-        yield* walkAndClear(game, atk, pickit, exits[0]!.x, exits[0]!.y)
-      }
+      if (exits.length > 0) yield* walkAndClear(game, atk, pickit, exits[0]!.x, exits[0]!.y)
     }
 
     return
