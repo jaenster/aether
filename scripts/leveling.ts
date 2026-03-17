@@ -235,17 +235,13 @@ export default createBot('leveling', function*(game, svc) {
         }
 
         if (!nearest) {
-          // No monsters visible — explore
-          game.log('[bot] no monsters, exploring')
+          // No monsters visible — walk outward to explore
           const angle = (round * 137.5) * Math.PI / 180
-          const r = 20 + round * 3
+          const r = 15 + round * 5
           const ex = game.player.x + Math.round(Math.cos(angle) * r)
           const ey = game.player.y + Math.round(Math.sin(angle) * r)
-          if (hasTeleport) {
-            yield* move.teleportTo(ex, ey)
-          } else {
-            yield* move.walkTo(ex, ey)
-          }
+          game.move(ex, ey) // click to walk, don't wait for pathfinding
+          yield* game.delay(500) // walk for 500ms before checking again
           continue
         }
 
@@ -265,11 +261,11 @@ export default createBot('leveling', function*(game, svc) {
           }
         }
 
-        // Debug: log monsters we see
+        // Debug: log monsters we see (first 3 rounds only)
         if (round < 3) {
           for (const m of game.monsters) {
-            if (m.distance < 25) {
-              game.log('[bot] mon: ' + m.name + ' dist=' + (m.distance|0) + ' hp=' + m.hp + ' mode=' + m.mode + ' attackable=' + m.isAttackable)
+            if (m.distance < 30) {
+              game.log('[bot] mon: ' + m.name + ' cid=' + m.classid + ' dist=' + (m.distance|0) + ' hp=' + m.hp + ' mode=' + m.mode + ' attackable=' + m.isAttackable)
             }
           }
         }
