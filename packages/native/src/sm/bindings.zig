@@ -1540,6 +1540,36 @@ const D2Control = extern struct {
     pNext: ?*D2Control,  // 0x3C
 };
 
+// ── Deferred OOG actions ────────────────────────────────────────────
+// Some actions (like clicking OK to create a char) need to run from the game's
+// normal oogLoop context rather than from inside a JS native binding callback.
+// The binding sets the pending action, and scripting.zig's oogLoop calls
+// processPendingOogAction() each frame.
+
+const OogAction = enum { none, click_ok };
+var pending_oog_action: OogAction = .none;
+
+pub fn processPendingOogAction() void {
+    const action = pending_oog_action;
+    pending_oog_action = .none;
+
+    switch (action) {
+        .click_ok => {
+            // Click the create-char OK button through the forms dispatch
+            const ok_btn_ptr: *?*D2Control = @ptrFromInt(0x007795CC);
+            if (ok_btn_ptr.*) |ok_btn| {
+                const cx_coord = ok_btn.dwPosX + @divTrunc(ok_btn.dwSizeX, 2);
+                const cy_coord = ok_btn.dwPosY - @divTrunc(ok_btn.dwSizeY, 2);
+                simulateOogClick(cx_coord, cy_coord);
+                log.print("oog: deferred OK click executed");
+            } else {
+                log.print("oog: deferred OK click — button not found");
+            }
+        },
+        .none => {},
+    }
+}
+
 // Snapshot buffer — walk the list once, store up to 128 control pointers
 const MAX_CONTROLS = 128;
 var ctrl_snapshot: [MAX_CONTROLS]*D2Control = undefined;
@@ -1621,7 +1651,8 @@ fn jsOogControlGetText(cx_ptr: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callc
     return 1;
 }
 
-/// oogControlSetText(index, text) → set text on an editbox
+/// oogControlSetText(index, text) → set text on an editbox via D2WINEDITBOX_SetTextWide
+/// Updates cursor position and fires the validation callback (which enables/disables OK).
 fn jsOogControlSetText(cx_ptr: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const idx: u32 = @bitCast(argInt32(argc, vp, 0));
     const ctrl = getControl(idx) orelse { retBool(argc, vp, false); return 1; };
@@ -1631,19 +1662,19 @@ fn jsOogControlSetText(cx_ptr: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callc
     const text_len = c.sm_arg_string(cx_ptr, argc, vp, 1, &text_buf, text_buf.len);
     if (text_len < 0) { retBool(argc, vp, false); return 1; }
 
-    // Write as WCHAR to offset 0x5C
-    const base: [*]u8 = @ptrCast(ctrl);
-    const wptr: [*]u16 = @ptrCast(@alignCast(base + 0x5C));
+    // Convert ASCII to wide string
     const slen: usize = @intCast(text_len);
-    const wlen = @min(slen, 253); // max 254 WCHAR including null
+    var wbuf: [256]u16 = undefined;
+    const wlen = @min(slen, 254);
     for (0..wlen) |i| {
-        wptr[i] = text_buf[i];
+        wbuf[i] = text_buf[i];
     }
-    wptr[wlen] = 0;
+    wbuf[wlen] = 0;
 
-    // Update cursor position at offset 0x58 (u16)
-    const cursor_ptr: *u16 = @ptrCast(@alignCast(base + 0x58));
-    cursor_ptr.* = @intCast(wlen);
+    // D2WINEDITBOX_SetTextWide at 0x004FF5A0 — __fastcall(editbox*, wchar_t*)
+    // Copies text, updates cursor position, fires validation callback
+    const SetTextWide = d2.fastcall(0x004FF5A0, fn (?[*]u8, [*]const u16) u32);
+    _ = SetTextWide.call(.{ @as(?[*]u8, @ptrCast(ctrl)), &wbuf });
 
     retBool(argc, vp, true);
     return 1;
@@ -1784,97 +1815,32 @@ fn jsOogControlGetAll(cx_ptr: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callco
     return 1;
 }
 
-/// oogCreateCharacter(name, classId, expansion, hardcore) → create a new SP character and enter game
+/// oogSelectClass(classId, expansion) → select class + set expansion flag
 /// classId: 0=ama, 1=sor, 2=nec, 3=pal, 4=bar, 5=dru, 6=ass
-/// Sets D2IniData_launcher fields directly, then calls UIMENU_ConfirmCreateCharacter.
-fn jsOogCreateCharacter(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
-    var name_buf: [24]u8 = undefined;
-    const name_len = c.sm_arg_string(cx, argc, vp, 0, &name_buf, name_buf.len - 1);
-    if (name_len <= 0) { retBool(argc, vp, false); return 1; }
-    name_buf[@intCast(name_len)] = 0;
+fn jsOogSelectClass(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const class_id: u8 = @intCast(@as(u32, @bitCast(argInt32(argc, vp, 0))) & 0xFF);
+    const expansion: bool = if (argc >= 2) argInt32(argc, vp, 1) != 0 else true;
+    if (class_id >= 7) { retBool(argc, vp, false); return 1; }
 
-    const class_id: u8 = @intCast(@as(u32, @bitCast(argInt32(argc, vp, 1))) & 0xFF);
-    const expansion: bool = argInt32(argc, vp, 2) != 0;
-    const hardcore: bool = argInt32(argc, vp, 3) != 0;
+    // AnimImage globals: ama=0x779574, sor=0x779578, nec=0x779570,
+    // pal=0x77957C, bar=0x77956C, dru=0x779584, ass=0x779580
+    const class_to_anim = [_]usize{ 0x779574, 0x779578, 0x779570, 0x77957C, 0x77956C, 0x779584, 0x779580 };
+    const anim_ptr: *?*anyopaque = @ptrFromInt(class_to_anim[class_id]);
+    if (anim_ptr.* == null) { retBool(argc, vp, false); return 1; }
 
-    // D2IniData_launcher pointer at 0x007795D4
-    const launcher_ptr: *?[*]u8 = @ptrFromInt(0x007795D4);
-    const launcher = launcher_ptr.* orelse { retBool(argc, vp, false); return 1; };
+    const ClickOnClass: *const fn (*?*anyopaque) callconv(.winapi) u32 = @ptrFromInt(0x00433BF0);
+    _ = ClickOnClass(anim_ptr);
 
-    // Set eCTEMP_eD2PlayerClassID at offset 494
-    launcher[494] = class_id;
-
-    // Set eCTEMP_eD2PlayerStatus at offset 495 (u16, little-endian)
-    // Bit 2 = hardcore, bit 5 = expansion
-    var status: u16 = 0;
-    if (hardcore) status |= (1 << 2);
-    if (expansion) status |= (1 << 5);
-    @as(*align(1) u16, @ptrCast(launcher + 495)).* = status;
-
-    // Set OogCurrentCharSelectionMode to SP (0)
-    const mode_ptr: *u32 = @ptrFromInt(0x007795ec);
-    mode_ptr.* = 0;
-
-    // Write szNAME at offset 189 in D2IniConfigStrc
-    const slen: usize = @intCast(name_len);
-    @memcpy(launcher[189 .. 189 + slen], name_buf[0..slen]);
-    launcher[189 + slen] = 0;
-    // Clear szREALM at offset 213
-    launcher[213] = 0;
-
-    // Write szNAME at offset 189 in D2IniConfigStrc
-    @memcpy(launcher[189 .. 189 + slen], name_buf[0..slen]);
-    launcher[189 + slen] = 0;
-    // Clear szREALM at offset 213
-    launcher[213] = 0;
-
-    // Write name as wide string into gpaCharNameBuffers editbox at 0x0077934C
-    // This pointer points at the editbox widget whose text buffer is at offset 0x5C
-    const editbox_ptr: *?[*]u8 = @ptrFromInt(0x0077934C);
-    {
-        var dbg: [64]u8 = undefined;
-        const raw_addr: usize = if (editbox_ptr.*) |p| @intFromPtr(p) else 0;
-        const dm = std.fmt.bufPrint(&dbg, "oog: editbox_ptr={x}", .{raw_addr}) catch "?";
-        log.printStr("", dm);
-    }
-    if (editbox_ptr.*) |editbox| {
-        const wptr: [*]u16 = @ptrCast(@alignCast(editbox + 0x5C));
-        for (0..slen) |i| {
-            wptr[i] = name_buf[i];
+    // Set expansion flag on launcher (ClickOnClassCreate only sets it for dru/ass)
+    if (expansion) {
+        const launcher_ptr: *?[*]u8 = @ptrFromInt(0x007795D4);
+        if (launcher_ptr.*) |launcher| {
+            // eCTEMP_eD2PlayerStatus at offset 495 (u16)
+            const status: *align(1) u16 = @ptrCast(launcher + 495);
+            status.* = status.* | 0x20; // PLAYERSTATUS_Expansion
         }
-        wptr[slen] = 0;
-        // Set cursor position at offset 0x58
-        @as(*align(1) u16, @ptrCast(editbox + 0x58)).* = @intCast(slen);
     }
 
-    // Populate global SAVEFILE struct at 0x0077AC10 via InitNewCharacterSaveFile
-    const InitSave = d2.fastcall(0x0043C540, fn ([*]u8, u8, [*]u8, u16) void);
-    InitSave.call(.{ launcher + 189, class_id, launcher + 237, status });
-
-    // Verify the editbox text is readable by FORMS_TextInput_GetValue
-    const GetTextValue = d2.fastcall(0x004FDD90, fn (?[*]u8) ?[*]u16);
-    const editbox_raw = editbox_ptr.*;
-    const text_result = GetTextValue.call(.{editbox_raw});
-    if (text_result) |wtext| {
-        // Convert first few chars to verify
-        var verify_buf: [32]u8 = undefined;
-        var vi: usize = 0;
-        while (vi < 31) {
-            const ch = wtext[vi];
-            if (ch == 0) break;
-            verify_buf[vi] = if (ch < 128) @intCast(ch) else '?';
-            vi += 1;
-        }
-        log.printStr("oog: editbox text=", verify_buf[0..vi]);
-    } else {
-        log.print("oog: editbox text=NULL");
-    }
-
-    // Now call UIMENU_ConfirmCreateCharacter — it does InitSave + WriteSave + game entry
-    const ConfirmCreate: *const fn () callconv(.winapi) void = @ptrFromInt(0x004365B0);
-    ConfirmCreate();
-
-    log.print("oog: created character");
     retBool(argc, vp, true);
     return 1;
 }
@@ -2028,7 +1994,7 @@ const bindings = [_]Binding{
     .{ .name = "oogClickScreen", .func = &jsOogClickScreen, .nargs = 2 },
     .{ .name = "oogControlFind", .func = &jsOogControlFind, .nargs = 5 },
     .{ .name = "oogControlGetAll", .func = &jsOogControlGetAll, .nargs = 0 },
-    .{ .name = "oogCreateCharacter", .func = &jsOogCreateCharacter, .nargs = 4 },
+    .{ .name = "oogSelectClass", .func = &jsOogSelectClass, .nargs = 2 },
     .{ .name = "oogSelectChar", .func = &jsOogSelectChar, .nargs = 1 },
 };
 

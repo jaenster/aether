@@ -177,6 +177,9 @@ fn oogLoop() void {
     }
     tickCommon();
 
+    // Process any deferred OOG actions (e.g. char creation OK click)
+    bindings.processPendingOogAction();
+
     // Tick JS during OOG — same pattern as gameLoop's __onTick
     const eng = &(engine orelse return);
     if (loader.state == .loaded) {

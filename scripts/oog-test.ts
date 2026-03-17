@@ -1,10 +1,23 @@
 import { createBot, FormType } from "diablo:game"
 
 const CHAR_NAME = 'RyukBot'
+const CHAR_CLASS = 1 // 0=ama,1=sor,2=nec,3=pal,4=bar,5=dru,6=ass
+
+// Screen coords for class portraits on the create char screen (800x600)
+// From control dump: images are 88x184, forms Y system is inverted (dwPosY = bottom)
+// Hit test: [dwPosX, dwPosX+dwSizeX) x [dwPosY-dwSizeY, dwPosY)
+const CLASS_CLICK_COORDS: Record<number, {x: number, y: number}> = {
+  0: { x: 144, y: 245 },  // Amazon     img(100,337)  → center (144, 337-92=245)
+  1: { x: 444, y: 238 },  // Sorceress  img(400,330)  → center (444, 330-92=238)
+  2: { x: 276, y: 272 },  // Necromancer img(232,364) → center (276, 364-92=272)
+  3: { x: 565, y: 247 },  // Paladin    img(521,339)  → center (565, 339-92=247)
+  4: { x: 345, y: 241 },  // Barbarian  img(301,333)  → center (345, 333-92=241)
+  5: { x: 670, y: 261 },  // Druid      img(626,353)  → center (670, 353-92=261)
+  6: { x: 764, y: 278 },  // Assassin   img(720,370)  → center (764, 370-92=278)
+}
 
 export default createBot('oog-test', function*(game, _svc) {
   game.log('[oog] starting OOG controller')
-
   let phase = 'splash'
 
   while (true) {
@@ -13,7 +26,6 @@ export default createBot('oog-test', function*(game, _svc) {
     if (game.inGame) {
       game.log('[oog] IN GAME! area=' + game.area + ' level=' + game.charLevel)
       game.log('[oog] class=' + game.classId + ' expansion=' + game.isExpansion)
-      // Stay in game forever
       while (game.inGame) yield
       game.log('[oog] left game')
       phase = 'char_select'
@@ -25,13 +37,10 @@ export default createBot('oog-test', function*(game, _svc) {
 
     // ── SPLASH ──
     if (phase === 'splash') {
-      if (buttons.length > 0) {
-        phase = 'main_menu'
-        continue
-      }
+      if (buttons.length > 0) { phase = 'main_menu'; continue }
       if (controls.length > 0) {
-        const clickable = controls.find(c => c.type === FormType.TextBox || c.type === FormType.Image)
-        if (clickable) game.clickControl(clickable.i)
+        const c = controls.find(c => c.type === FormType.TextBox || c.type === FormType.Image)
+        if (c) game.clickControl(c.i)
       }
       yield* game.delay(500)
       continue
@@ -39,10 +48,10 @@ export default createBot('oog-test', function*(game, _svc) {
 
     // ── MAIN MENU ──
     if (phase === 'main_menu') {
-      const spBtn = buttons.find(b => b.text?.includes('SINGLE'))
-      if (spBtn) {
+      const sp = buttons.find(b => b.text?.includes('SINGLE'))
+      if (sp) {
         game.log('[oog] clicking Single Player')
-        game.clickControl(spBtn.i)
+        game.clickControl(sp.i)
         phase = 'char_select'
         yield* game.delay(1000)
       }
@@ -52,79 +61,91 @@ export default createBot('oog-test', function*(game, _svc) {
 
     // ── CHAR SELECT ──
     if (phase === 'char_select') {
-      // Try existing char first
       if (game.oogSelectChar(CHAR_NAME)) {
-        game.log('[oog] selected ' + CHAR_NAME + ', entering game')
+        game.log('[oog] selected ' + CHAR_NAME)
         phase = 'wait_game'
         yield* game.delay(3000)
         continue
       }
-
-      // Need to create — must be on char select screen first (with CREATE button)
-      const createBtn = buttons.find(b => b.text?.includes('CREATE'))
-      if (createBtn) {
-        // We're on char select — navigate to create screen, then create directly
-        game.log('[oog] no existing char, clicking Create to get to create screen')
-        game.clickControl(createBtn.i)
-        yield* game.delay(1000)
-        phase = 'create_direct'
-        continue
+      const create = buttons.find(b => b.text?.includes('CREATE'))
+      if (create) {
+        game.log('[oog] clicking Create New')
+        game.clickControl(create.i)
+        phase = 'create_click_class'
+        yield* game.delay(1500)
       }
-
       yield* game.delay(500)
       continue
     }
 
-    // ── CREATE DIRECTLY ──
-    if (phase === 'create_direct') {
-      // We're on the create char screen. Set the name in the editbox first.
-      const editboxes = controls.filter(c => c.type === FormType.EditBox)
-      if (editboxes.length > 0) {
-        game.log('[oog] setting name in editbox: ' + CHAR_NAME)
-        game.setControlText(editboxes[0]!.i, CHAR_NAME)
-        yield* game.delay(200)
+    // ── CREATE: SELECT CLASS → TYPE NAME → CLICK OK ──
+    if (phase === 'create_click_class') {
+      // Step 1: Select class + expansion via native (calls ClickOnClassCreate + sets flag)
+      game.log('[oog] selecting class ' + CHAR_CLASS + ' (expansion)')
+      game.oogSelectClass(CHAR_CLASS) // expansion=true by default in native
+      yield* game.delay(500)
+
+      // Step 2: Type name into editbox
+      const fresh1 = game.getControls()
+      const editbox = fresh1.find(c => c.type === FormType.EditBox)
+      if (editbox) {
+        game.log('[oog] typing name: ' + CHAR_NAME)
+        game.setControlText(editbox.i, CHAR_NAME)
       }
+      yield* game.delay(300)
 
-      // Create the save file via native binding (InitSave + Storm WriteSave + EnumSaves)
-      game.log('[oog] creating Expansion Sorceress: ' + CHAR_NAME)
-      const ok = game.oogCreateChar(CHAR_NAME, 1, true, false) // 1 = Sorceress
-      game.log('[oog] oogCreateChar returned: ' + ok)
+      // Step 4: Click OK button
+      const fresh2 = game.getControls()
+      const okBtn = fresh2.find(c => c.type === FormType.Button && c.text?.includes('OK'))
+      if (okBtn) {
+        game.log('[oog] clicking OK (state=' + okBtn.state + ')')
+        game.clickControl(okBtn.i)
+        phase = 'wait_game'
+        yield* game.delay(5000)
+      } else {
+        game.log('[oog] OK button not found')
+        phase = 'char_select'
+        yield* game.delay(2000)
+      }
+      continue
+    }
 
-      // ConfirmCreate was called — check if a popup appeared
-      yield* game.delay(1000)
-      const afterControls = game.getControls()
-      game.log('[oog] after create: ' + afterControls.length + ' controls')
-      for (const c of afterControls) {
-        if (c.type === FormType.Button || c.type === FormType.Popup || c.type === FormType.TextBox) {
-          const tName = c.type === FormType.Button ? 'BTN' : c.type === FormType.Popup ? 'POP' : 'TEXT'
-          game.log('[oog]   [' + c.i + '] ' + tName + ' (' + c.x + ',' + c.y + ' ' + c.w + 'x' + c.h + ') s=' + c.state + ' "' + (c.text || '') + '"')
+    // ── POPUP DETECTION (runs every phase) ──
+    {
+      const popup = controls.find(c => c.type === FormType.Popup)
+      const cancelBtn = buttons.find(b => b.text?.includes('CANCEL'))
+      if (popup || cancelBtn) {
+        // Read popup text if available
+        const popupTexts = controls.filter(c => c.type === FormType.TextBox)
+        for (const t of popupTexts) {
+          const txt = game.getControlText(t.i)
+          if (txt) game.log('[oog] POPUP: ' + txt)
+        }
+
+        if (cancelBtn) {
+          game.log('[oog] dismissing popup via CANCEL')
+          game.clickControl(cancelBtn.i)
+          yield* game.delay(500)
+          // If name was taken, we need to go back and try a new name
+          if (phase === 'wait_game') {
+            phase = 'create_click_class'
+          }
+          continue
         }
       }
-      // If there's a popup "OK" button, click it
-      const popupOk = afterControls.find(c => c.type === FormType.Button && c.text?.includes('OK') && c.state === 5)
-      if (popupOk) {
-        game.log('[oog] clicking popup OK')
-        game.clickControl(popupOk.i)
-        yield* game.delay(500)
-      }
-      phase = 'wait_game'
-      yield* game.delay(3000)
-      continue
     }
 
     // ── WAIT GAME ──
     if (phase === 'wait_game') {
       if (game.inGame) continue
-      game.log('[oog] waiting for game to load...')
-
-      // Check if we're back on char select (maybe create/select worked, game loading)
-      const hasCreate = buttons.find(b => b.text?.includes('CREATE'))
-      if (hasCreate) {
-        game.log('[oog] back on char select, trying select again')
+      // Check if we're back on char select
+      const create = buttons.find(b => b.text?.includes('CREATE'))
+      if (create) {
+        game.log('[oog] back on char select — trying select')
         phase = 'char_select'
         continue
       }
-
+      game.log('[oog] waiting for game...')
       yield* game.delay(1000)
       continue
     }

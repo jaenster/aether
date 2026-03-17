@@ -46,7 +46,7 @@ import {
   oogControlGetAll as nativeOogControlGetAll,
   oogSelectChar as nativeOogSelectChar,
   oogClickScreen as nativeOogClickScreen,
-  oogCreateCharacter as nativeOogCreateCharacter,
+  oogSelectClass as nativeOogSelectClass,
 } from "diablo:native"
 import { UnitCollection } from "./unit.collection.js";
 import { ItemUnit, Missile, Monster, NPC, ObjectUnit, PlayerUnit, Tile } from "./unit.js";
@@ -336,10 +336,8 @@ export class Game {
   /** Simulate a mouse click at screen coordinates (for OOG screens) */
   oogClickScreen(x: number, y: number) { nativeOogClickScreen(x, y) }
 
-  /** Create new SP character and enter game. classId: 0=ama,1=sor,2=nec,3=pal,4=bar,5=dru,6=ass */
-  oogCreateChar(name: string, classId: number, expansion = true, hardcore = false): boolean {
-    return nativeOogCreateCharacter(name, classId, expansion ? 1 : 0, hardcore ? 1 : 0)
-  }
+  /** Select a class on the create char screen (enables OK button + editbox) */
+  oogSelectClass(classId: number): boolean { return nativeOogSelectClass(classId) }
 
   /** Select character by name and enter game (single player) */
   oogSelectChar(name: string): boolean { return nativeOogSelectChar(name) }

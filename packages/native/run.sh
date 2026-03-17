@@ -13,13 +13,25 @@ DLL_WINE_PATH="Z:$(echo "$SCRIPT_DIR/zig-out/bin/Aether.dll" | tr '/' '\\')"
 # Build
 zig build -Doptimize=ReleaseSmall
 
-# Kill previous Wine Game.exe (avoid killing Ghidra workers that also match Game.exe)
-pkill -9 -f "wine.*Game.exe" 2>/dev/null || true
+# Kill ALL wine processes and wait for them to die
+pkill -9 -f "wine" 2>/dev/null || true
 wineserver --kill 2>/dev/null || true
-sleep 2
+sleep 1
+# Double-tap — sometimes wineserver respawns
+pkill -9 -f "wine" 2>/dev/null || true
+wineserver --kill 2>/dev/null || true
+sleep 1
 
 # Clear log
 rm -f "$GAME_DIR/aether_log.txt"
+
+# Pre-create save file placeholder (macOS TCC blocks new file creation from Wine/DLL)
+SAVE_DIR="$HOME/.wine/drive_c/users/$(whoami)/Saved Games/Diablo II"
+if [ -n "$AETHER_CHAR" ] && [ -d "$SAVE_DIR" ]; then
+    if [ ! -f "$SAVE_DIR/$AETHER_CHAR.d2s" ]; then
+        touch "$SAVE_DIR/$AETHER_CHAR.d2s" 2>/dev/null && echo "Pre-created $AETHER_CHAR.d2s placeholder"
+    fi
+fi
 
 # Copy DLLs
 cp "$SCRIPT_DIR/zig-out/bin/dbghelp.dll" "$GAME_DIR/"

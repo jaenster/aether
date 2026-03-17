@@ -147,7 +147,7 @@
   export function oogControlFind(type: number, x: number, y: number, w: number, h: number): number;
   /** Get all controls as JSON array with type/state/x/y/w/h/text */
   export function oogControlGetAll(): string;
-  /** Create a new SP character: sets class, flags, calls ConfirmCreateCharacter */
-  export function oogCreateCharacter(name: string, classId: number, expansion: number, hardcore: number): boolean;
+  /** Select a class on the create char screen (calls ClickOnClassCreate) */
+  export function oogSelectClass(classId: number): boolean;
   /** Select a character by name and enter game (single player) */
   export function oogSelectChar(name: string): boolean;
