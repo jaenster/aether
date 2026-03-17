@@ -7,6 +7,9 @@
 import { type Game, Area } from "diablo:game"
 import { closeNPCInteract } from "diablo:native"
 import { moveTo, moveToExit } from "../lib/walk-clear.js"
+import { killQuestBoss, interactQuestObject, interactMultiplePresets, waitForPortal } from "../lib/quest-interact.js"
+import { activateWaypoint } from "../lib/waypoint-interact.js"
+import { healInTown } from "../lib/npc.js"
 import { Movement } from "../services/movement.js"
 import { Attack } from "../services/attack.js"
 import { Pickit } from "../services/pickit.js"
@@ -17,43 +20,13 @@ const townAreas = new Set([
   Area.PandemoniumFortress, Area.Harrogath,
 ])
 
-/** Find a waypoint in current area and activate it */
-function* activateWaypoint(game: Game, move: any) {
-  const preset = move.findWaypointPreset()
-  if (!preset) return false
-
-  game.log('[a1] walking to waypoint')
-  // Use raw walkTo — we're already in the right area, just need to reach it
-  game.move(preset.x, preset.y)
-  for (let t = 0; t < 100; t++) {
-    yield
-    if (t % 10 === 0) game.move(preset.x, preset.y)
-    const dx = game.player.x - preset.x, dy = game.player.y - preset.y
-    if (dx * dx + dy * dy < 49) break
-  }
-
-  const wpUnit = move.findWaypointUnit(preset.x, preset.y)
-  if (wpUnit) {
-    if (wpUnit.distance > 5) {
-      game.move(wpUnit.x, wpUnit.y)
-      yield* game.delay(400)
-    }
-    game.interact(wpUnit)
-    yield* game.delay(800)
-    closeNPCInteract()
-    yield* game.delay(200)
-    game.log('[a1] waypoint activated')
-    return true
-  }
-  return false
-}
-
-/** Heal in town if needed */
-function* healIfNeeded(game: Game, town: any) {
-  if (townAreas.has(game.area) && game.player.hp < game.player.maxHp) {
-    yield* town.heal()
-  }
-}
+// ── Quest-specific classids (from monstats/objects txt) ──
+const BLOOD_RAVEN = 267    // Monster classid
+const CAIRN_STONES = [17, 18, 19, 20, 21] // Object classids for Tristram portal
+const CAIN_GIBBET = 26     // Object classid
+const INIFUSS_TREE = 738   // Monster classid (clickable tree)
+const COUNTESS = 740       // SuperUnique monster
+const ANDARIEL = 156       // Act boss
 
 /**
  * Main Act 1 leveling entry point.
@@ -68,7 +41,9 @@ export function* act1Leveling(game: Game, svc: any) {
   const level = game.charLevel
 
   // Always heal first if in town
-  yield* healIfNeeded(game, town)
+  if (townAreas.has(game.area) && game.player.hp < game.player.maxHp) {
+    yield* healInTown(game)
+  }
 
   // ── In town: walk to Blood Moor ──
   if (game.area === Area.RogueEncampment) {
@@ -105,6 +80,7 @@ export function* act1Leveling(game: Game, svc: any) {
     // Grab waypoint if we don't have it
     if (!game.hasWaypoint(1)) {
       yield* activateWaypoint(game, move)
+
     }
 
     if (level < 6) {
@@ -148,6 +124,7 @@ export function* act1Leveling(game: Game, svc: any) {
     if (!game.hasWaypoint(2)) {
       game.log('[a1] grabbing Stony Field waypoint')
       yield* activateWaypoint(game, move)
+
     }
     // Clear Stony Field toward Dark Wood
     game.log('[a1] clearing Stony Field')
@@ -160,6 +137,7 @@ export function* act1Leveling(game: Game, svc: any) {
     if (!game.hasWaypoint(3)) {
       game.log('[a1] grabbing Dark Wood waypoint')
       yield* activateWaypoint(game, move)
+
     }
     game.log('[a1] clearing Dark Wood')
     yield* moveToExit(game, atk, pickit, Area.BlackMarsh)
@@ -171,6 +149,7 @@ export function* act1Leveling(game: Game, svc: any) {
     if (!game.hasWaypoint(4)) {
       game.log('[a1] grabbing Black Marsh waypoint')
       yield* activateWaypoint(game, move)
+
     }
     game.log('[a1] clearing Black Marsh')
     yield* moveToExit(game, atk, pickit, Area.TamoeHighland)
@@ -192,6 +171,7 @@ export function* act1Leveling(game: Game, svc: any) {
   if (game.area === Area.OuterCloister) {
     if (!game.hasWaypoint(5)) {
       yield* activateWaypoint(game, move)
+
     }
     yield* moveToExit(game, atk, pickit, Area.Barracks)
     return
@@ -224,12 +204,9 @@ export function* act1Leveling(game: Game, svc: any) {
   // ── Catacombs Level 4 (Andy) ──
   if (game.area === Area.CatacombsLvl4) {
     game.log('[a1] Andy fight!')
-    // Just clear the area — Andy is somewhere in here
-    const exits = game.getExits()
-    if (exits.length > 0) {
-      yield* moveTo(game, atk, pickit, exits[0]!.x, exits[0]!.y)
-    }
-    // TODO: check quest completion and proceed to Act 2
+    yield* killQuestBoss(game, atk, pickit, ANDARIEL)
+    game.log('[a1] Andariel defeated! Act 1 complete.')
+    // TODO: talk to Warriv to travel to Act 2
     return
   }
 
