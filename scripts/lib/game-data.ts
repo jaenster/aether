@@ -1089,9 +1089,12 @@ function getCandidateSkills(charClass: number): number[] {
       continue
     }
 
-    // Level-0 class starting skill — check class + has txt damage
+    // Level-0 class starting skill — check class + required level + has txt damage
     const skClass = getBaseStat("skills", sk, "charclass")
     if (skClass !== charClass) continue
+    // Must meet the skill's required level
+    const reqLvl = getBaseStat("skills", sk, "reqlevel")
+    if (reqLvl > level) continue
     const bd = baseSkillDamage(sk)
     if (bd.pmin > 0 || bd.pmax > 0 || bd.min > 0 || bd.max > 0) {
       skills.push(sk)
