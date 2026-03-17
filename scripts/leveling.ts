@@ -216,9 +216,16 @@ export default createBot('leveling', function*(game, svc) {
         return
       }
 
-      // ── Ryuk-style: walk toward exit, clear after every node ──
+      // ── Ryuk-style: walk toward next area's exit, clear along the way ──
+      // Target: the exit to the NEXT area (e.g. Blood Moor → Cold Plains)
       const exits = game.getExits()
-      const exit = exits[0]
+      // Find the exit that leads to the next zone in the progression (not Den of Evil etc.)
+      // Priority: exits to areas with higher area numbers (forward progress)
+      const progressExits = exits
+        .filter(e => e.area > game.area) // forward exits only
+        .sort((a, b) => a.area - b.area) // lowest area first (next zone)
+      const exit = progressExits[0] ?? exits[0]
+
       if (!exit) {
         game.log('[bot] no exits in ' + zone.name)
         game.move(game.player.x + 30, game.player.y)
@@ -226,7 +233,7 @@ export default createBot('leveling', function*(game, svc) {
         return
       }
 
-      game.log('[bot] ' + zone.name + ': walking to exit area=' + exit.area)
+      game.log('[bot] ' + zone.name + ': walking to exit area=' + exit.area + ' at ' + exit.x + ',' + exit.y)
 
       const path = game.findPath(exit.x, exit.y)
       if (path.length === 0) {
