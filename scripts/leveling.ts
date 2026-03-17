@@ -283,10 +283,10 @@ export default createBot('leveling', function*(game, svc) {
             }
           }
 
-          // If a monster is very close, stop walking and fight immediately
+          // If a monster is in range, stop walking and fight
           for (const m of game.monsters) {
-            if (m.isAttackable && m.distance < 8) {
-              yield* atk.clear({ killRange: 15, maxCasts: 5 })
+            if (m.isAttackable && m.distance < 20) {
+              yield* atk.clear({ killRange: 25, maxCasts: 8 })
               break
             }
           }
@@ -295,10 +295,10 @@ export default createBot('leveling', function*(game, svc) {
         // After arriving at node: fight everything in range
         let monstersNearby = false
         for (const m of game.monsters) {
-          if (m.isAttackable && m.distance < 20) { monstersNearby = true; break }
+          if (m.isAttackable && m.distance < 25) { monstersNearby = true; break }
         }
         if (monstersNearby) {
-          yield* atk.clear({ killRange: 20, maxCasts: 10 })
+          yield* atk.clear({ killRange: 25, maxCasts: 10 })
           yield* pickit.lootGround()
           yield* build.allocatePoints()
         }
