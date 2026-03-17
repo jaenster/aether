@@ -507,7 +507,14 @@ function meleeAttackDamage(): DamageInfo {
 
 export function skillDamage(skillId: number): DamageInfo {
   if (skillId === 0) return meleeAttackDamage();
-  if (skillLevel(skillId) < 1) {
+  const sl = skillLevel(skillId);
+  if (sl < 1) {
+    // Still compute base damage for level-0 starting skills (e.g. Fire Bolt at level 1)
+    // The game lets you use them, they just do base damage from txt
+    const base = baseSkillDamage(skillId);
+    if (base.pmin > 0 || base.pmax > 0 || base.min > 0 || base.max > 0) {
+      return base; // has txt damage even at level 0
+    }
     return { type: damageTypes[getBaseStat("skills", skillId, "EType")] || "Physical", pmin: 0, pmax: 0, min: 0, max: 0 };
   }
 
@@ -1161,7 +1168,15 @@ export function rankActions(
     if (sk === 42) continue // Static Field handled above
     if (nonDamage[sk]) continue
     if (!effectiveFilter(sk)) continue
-    if (skillLevel(sk) < 1) continue
+    // Skip skills the player doesn't have. For level-0 skills, check if it
+    // belongs to the player's class (starting skills are usable at level 0).
+    if (sk > 0 && skillLevel(sk) < 1) {
+      const skillClass = getBaseStat("skills", sk, "charclass")
+      if (skillClass !== charClass) continue
+      // Class skill at level 0 — only keep if txt defines damage
+      const bd = baseSkillDamage(sk)
+      if (bd.pmin === 0 && bd.pmax === 0 && bd.min === 0 && bd.max === 0) continue
+    }
     if (skillCooldown(sk)) continue
 
     const dmg = skillDamage(sk)

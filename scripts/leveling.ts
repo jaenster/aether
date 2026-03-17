@@ -1,0 +1,309 @@
+import { createBot, FormType, Area } from "diablo:game"
+import { generateName } from "./lib/name-generator.js"
+import { Town } from "./services/town.js"
+import { Attack } from "./services/attack.js"
+import { Movement } from "./services/movement.js"
+import { AutoBuild } from "./services/auto-build.js"
+import { BlizzSorc } from "./builds/sorc-blizz.js"
+import { ThreatMonitor } from "./threads/threat-monitor.js"
+import { Guard } from "./services/guard.js"
+// import { clearArea, type ClearContext } from "./lib/area-clear.js"
+import { Buffs } from "./services/buffs.js"
+import { Pickit } from "./services/pickit.js"
+
+const CHAR_CLASS = 1 // Sorceress
+const townAreas = new Set([Area.RogueEncampment, Area.LutGholein, Area.KurastDocks, Area.PandemoniumFortress, Area.Harrogath])
+
+interface BotState {
+  charName: string
+  classId: number
+  runsCompleted: number
+  lastArea: number
+}
+
+// Leveling zones by level range — clear these areas to gain XP
+const levelingZones: { minLevel: number, maxLevel: number, area: number, name: string }[] = [
+  // Act 1
+  { minLevel: 1, maxLevel: 6, area: Area.BloodMoor, name: 'Blood Moor' },
+  { minLevel: 3, maxLevel: 9, area: Area.ColdPlains, name: 'Cold Plains' },
+  { minLevel: 5, maxLevel: 10, area: Area.StonyField, name: 'Stony Field' },
+  { minLevel: 7, maxLevel: 13, area: Area.DarkWood, name: 'Dark Wood' },
+  { minLevel: 8, maxLevel: 14, area: Area.BlackMarsh, name: 'Black Marsh' },
+  { minLevel: 9, maxLevel: 15, area: Area.TamoeHighland, name: 'Tamoe Highland' },
+  { minLevel: 10, maxLevel: 15, area: Area.OuterCloister, name: 'Outer Cloister' },
+  // Act 2
+  { minLevel: 14, maxLevel: 18, area: Area.RockyWaste, name: 'Rocky Waste' },
+  { minLevel: 15, maxLevel: 19, area: Area.DryHills, name: 'Dry Hills' },
+  { minLevel: 16, maxLevel: 20, area: Area.FarOasis, name: 'Far Oasis' },
+  { minLevel: 17, maxLevel: 22, area: Area.LostCity, name: 'Lost City' },
+  // Act 3
+  { minLevel: 22, maxLevel: 26, area: Area.SpiderForest, name: 'Spider Forest' },
+  { minLevel: 23, maxLevel: 27, area: Area.FlayerJungle, name: 'Flayer Jungle' },
+  { minLevel: 24, maxLevel: 28, area: Area.LowerKurast, name: 'Lower Kurast' },
+  { minLevel: 25, maxLevel: 29, area: Area.KurastBazaar, name: 'Kurast Bazaar' },
+  // Act 4
+  { minLevel: 27, maxLevel: 31, area: Area.OuterSteppes, name: 'Outer Steppes' },
+  { minLevel: 28, maxLevel: 33, area: Area.PlainsofDespair, name: 'Plains of Despair' },
+  { minLevel: 29, maxLevel: 34, area: Area.CityoftheDamned, name: 'City of the Damned' },
+  // Act 5
+  { minLevel: 33, maxLevel: 38, area: Area.BloodyFoothills, name: 'Bloody Foothills' },
+  { minLevel: 34, maxLevel: 39, area: Area.FrigidHighlands, name: 'Frigid Highlands' },
+  { minLevel: 35, maxLevel: 40, area: Area.ArreatPlateau, name: 'Arreat Plateau' },
+  { minLevel: 36, maxLevel: 42, area: Area.FrozenTundra, name: 'Frozen Tundra' },
+]
+
+/** Find the best zone for the current level */
+function getBestZone(level: number): typeof levelingZones[0] | null {
+  // Prefer zones where we're in the middle of the range
+  let best: typeof levelingZones[0] | null = null
+  let bestScore = -1
+  for (const zone of levelingZones) {
+    if (level < zone.minLevel || level > zone.maxLevel) continue
+    // Score: how centered we are in the range (higher = better XP)
+    const mid = (zone.minLevel + zone.maxLevel) / 2
+    const score = zone.maxLevel - level // prefer zones where we're below mid
+    if (score > bestScore) {
+      bestScore = score
+      best = zone
+    }
+  }
+  return best
+}
+
+export default createBot('leveling', function*(game, svc) {
+  // ── State management ──
+  let state: BotState = game.readState<BotState>() ?? {
+    charName: generateName(),
+    classId: CHAR_CLASS,
+    runsCompleted: 0,
+    lastArea: 0,
+  }
+  if (!game.readState()) {
+    game.writeState(state)
+    game.log('[bot] new state: ' + state.charName)
+  } else {
+    game.log('[bot] loaded: ' + state.charName + ' (' + state.runsCompleted + ' runs)')
+  }
+
+  // ── OOG: Create/select char ──
+  let phase = 'splash'
+  while (!game.inGame) {
+    yield
+    const controls = game.getControls()
+    const buttons = controls.filter(c => c.type === FormType.Button)
+
+    if (phase === 'splash') {
+      if (buttons.length > 0) { phase = 'main_menu'; continue }
+      if (controls.length > 0) {
+        const c = controls.find(c => c.type === FormType.TextBox || c.type === FormType.Image)
+        if (c) game.clickControl(c.i)
+      }
+      yield* game.delay(500)
+    } else if (phase === 'main_menu') {
+      const sp = buttons.find(b => b.text?.includes('SINGLE'))
+      if (sp) { game.clickControl(sp.i); phase = 'char_select'; yield* game.delay(1000) }
+      yield* game.delay(500)
+    } else if (phase === 'char_select') {
+      if (game.oogSelectChar(state.charName)) {
+        game.log('[bot] selected ' + state.charName)
+        yield* game.delay(3000)
+        continue
+      }
+      const create = buttons.find(b => b.text?.includes('CREATE'))
+      if (create) { game.clickControl(create.i); phase = 'create'; yield* game.delay(1500) }
+      yield* game.delay(500)
+    } else if (phase === 'create') {
+      game.oogSelectClass(CHAR_CLASS)
+      yield* game.delay(500)
+      const edit = controls.find(c => c.type === FormType.EditBox)
+      if (edit) game.setControlText(edit.i, state.charName)
+      yield* game.delay(300)
+      // Handle popup
+      const cancel = buttons.find(b => b.text?.includes('CANCEL'))
+      if (cancel) {
+        game.clickControl(cancel.i)
+        state.charName = generateName(Date.now())
+        game.writeState(state)
+        game.log('[bot] name taken, trying: ' + state.charName)
+        yield* game.delay(500)
+        continue
+      }
+      const ok = buttons.find(b => b.text?.includes('OK') && b.state !== 0)
+      if (ok) { game.clickControl(ok.i); yield* game.delay(5000) }
+      yield* game.delay(500)
+    }
+  }
+
+  game.log('[bot] IN GAME as ' + state.charName + ' level ' + game.charLevel)
+
+  // ── Set up services ──
+  game.load.inGame(ThreatMonitor)
+  game.load.inGame(Guard)
+  const build = svc.get(AutoBuild)
+  build.setBuild(BlizzSorc)
+  const town = svc.get(Town)
+  const atk = svc.get(Attack)
+  const move = svc.get(Movement)
+  const buffs = svc.get(Buffs)
+  const pickit = svc.get(Pickit)
+
+  // ── Main game loop ──
+  while (true) {
+    while (!game.inGame) {
+      yield
+      // Re-enter game on disconnect
+      if (!game.inGame) {
+        const controls = game.getControls()
+        const buttons = controls.filter(c => c.type === FormType.Button)
+        // Try to select char if on char select
+        if (buttons.find(b => b.text?.includes('OK'))) {
+          if (game.oogSelectChar(state.charName)) yield* game.delay(3000)
+        }
+        // Click single player if on main menu
+        const sp = buttons.find(b => b.text?.includes('SINGLE'))
+        if (sp) { game.clickControl(sp.i); yield* game.delay(1000) }
+        yield* game.delay(500)
+      }
+    }
+
+    yield* game.run(function*() {
+      // Allocate pending skill/stat points
+      yield* build.allocatePoints()
+
+      const level = game.charLevel
+      game.log('[bot] level ' + level + ' area ' + game.area)
+
+      // Town chores if needed (heal, buy pots, repair)
+      if (townAreas.has(game.area)) {
+        yield* town.doTownChores()
+      }
+
+      // Refresh buffs (Frozen Armor if available)
+      yield* buffs.refreshAll()
+
+      // Find best leveling zone for our level
+      const zone = getBestZone(level)
+      if (!zone) {
+        game.log('[bot] no suitable zone for level ' + level + ', idle')
+        yield* game.delay(5000)
+        return
+      }
+
+      game.log('[bot] heading to ' + zone.name + ' (area ' + zone.area + ')')
+
+      // Navigate to the zone — walk to exit if in town
+      if (game.area !== zone.area) {
+        game.log('[bot] navigating from area ' + game.area + ' to ' + zone.area)
+        try {
+          yield* move.journeyTo(zone.area)
+        } catch (e: any) {
+          game.log('[bot] navigation failed: ' + (e.message || e))
+          yield* game.delay(2000)
+          return
+        }
+        // Verify we arrived
+        if (game.area !== zone.area) {
+          game.log('[bot] failed to reach ' + zone.name + ' (still in area ' + game.area + ')')
+          yield* game.delay(2000)
+          return
+        }
+      }
+
+      // Don't attack in town
+      if (townAreas.has(game.area)) {
+        game.log('[bot] still in town, skipping combat')
+        yield* game.delay(1000)
+        return
+      }
+
+      game.log('[bot] clearing ' + zone.name + ' (level ' + game.charLevel + ')')
+      const hasTeleport = level >= 18
+
+      for (let round = 0; round < 50; round++) {
+        if (!game.inGame) break
+
+        // Find nearest attackable monster
+        let nearest: any = null
+        let nearestDist = Infinity
+        for (const m of game.monsters) {
+          if (!atk.alive(m)) continue
+          if (m.distance < nearestDist) {
+            nearestDist = m.distance
+            nearest = m
+          }
+        }
+
+        if (!nearest) {
+          // No monsters visible — explore
+          game.log('[bot] no monsters, exploring')
+          const angle = (round * 137.5) * Math.PI / 180
+          const r = 20 + round * 3
+          const ex = game.player.x + Math.round(Math.cos(angle) * r)
+          const ey = game.player.y + Math.round(Math.sin(angle) * r)
+          if (hasTeleport) {
+            yield* move.teleportTo(ex, ey)
+          } else {
+            yield* move.walkTo(ex, ey)
+          }
+          continue
+        }
+
+        // Move closer if far
+        if (nearestDist > 15) {
+          if (hasTeleport) {
+            yield* move.moveNear(nearest.x, nearest.y, 10)
+          } else {
+            // Walk partway toward monster
+            const dx = nearest.x - game.player.x
+            const dy = nearest.y - game.player.y
+            const d = Math.max(1, Math.sqrt(dx * dx + dy * dy))
+            const stepX = Math.round(game.player.x + dx / d * 10)
+            const stepY = Math.round(game.player.y + dy / d * 10)
+            game.move(stepX, stepY)
+            yield* game.delay(400)
+          }
+        }
+
+        // Debug: log monsters we see
+        if (round < 3) {
+          for (const m of game.monsters) {
+            if (m.distance < 25) {
+              game.log('[bot] mon: ' + m.name + ' dist=' + (m.distance|0) + ' hp=' + m.hp + ' mode=' + m.mode + ' attackable=' + m.isAttackable)
+            }
+          }
+        }
+
+        // Attack — use larger kill range for leveling (monsters stay at edge)
+        yield* atk.clear({ killRange: 30, maxCasts: 15 })
+
+        // Pick up drops
+        yield* pickit.lootGround()
+
+        // Allocate points if we leveled
+        yield* build.allocatePoints()
+      }
+
+      game.log('[bot] done clearing ' + zone.name)
+
+      // Allocate any new skill/stat points from leveling
+      yield* build.allocatePoints()
+
+      state.runsCompleted++
+      state.lastArea = zone.area
+      game.writeState(state)
+      game.log('[bot] cleared ' + zone.name + ' (run ' + state.runsCompleted + ', level ' + game.charLevel + ')')
+
+      // Go back to town
+      try {
+        yield* town.goToTown()
+      } catch {
+        // If no TP, try waypoint
+        game.log('[bot] no TP, saving and exiting')
+        game.exitGame()
+      }
+    }())
+
+    // Left game — wait and re-enter
+    yield* game.delay(2000)
+  }
+})

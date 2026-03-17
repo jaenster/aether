@@ -14,13 +14,16 @@ DLL_WINE_PATH="Z:$(echo "$SCRIPT_DIR/zig-out/bin/Aether.dll" | tr '/' '\\')"
 zig build -Doptimize=ReleaseSmall
 
 # Kill ALL wine processes and wait for them to die
-pkill -9 -f "wine" 2>/dev/null || true
-wineserver --kill 2>/dev/null || true
+pkill -9 -f "wine64" 2>/dev/null || true
+pkill -9 -f "wine-preloader" 2>/dev/null || true
+pkill -9 -f "Game.exe" 2>/dev/null || true
+WINEPREFIX="$HOME/.wine" wineserver -k 2>/dev/null || true
 sleep 1
-# Double-tap — sometimes wineserver respawns
-pkill -9 -f "wine" 2>/dev/null || true
-wineserver --kill 2>/dev/null || true
-sleep 1
+# Verify dead
+if pgrep -f "Game.exe" > /dev/null 2>&1; then
+    pkill -9 -f "Game.exe" 2>/dev/null || true
+    sleep 1
+fi
 
 # Clear log
 rm -f "$GAME_DIR/aether_log.txt"

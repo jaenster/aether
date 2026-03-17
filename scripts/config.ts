@@ -1,4 +1,5 @@
 import { createService, Skill, Area } from "diablo:game"
+import { getSkillLevel } from "diablo:native"
 
 export const townAreas = new Set([
   Area.RogueEncampment,
@@ -8,7 +9,7 @@ export const townAreas = new Set([
   Area.Harrogath,
 ])
 
-export const Config = createService(() => ({
+export const Config = createService((game) => ({
   // Combat
   teleport: Skill.Teleport,
   killRange: 25,        // max distance to engage
@@ -19,4 +20,9 @@ export const Config = createService(() => ({
 
   // Movement
   teleRange: 30,        // max teleport distance per hop
+
+  /** Does the player currently have Teleport? */
+  get canTeleport(): boolean {
+    return getSkillLevel(Skill.Teleport, 1) > 0
+  },
 }))

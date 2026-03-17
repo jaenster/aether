@@ -131,21 +131,20 @@ export const Movement = createService((game: Game, services) => {
     },
 
     *moveTo(targetX: number, targetY: number) {
-      if (townAreas.has(game.area)) {
+      if (townAreas.has(game.area) || !cfg.canTeleport) {
         yield* this.walkTo(targetX, targetY)
       } else {
         yield* this.teleportTo(targetX, targetY)
       }
     },
 
-    /** Teleport/walk near a target, stopping at `range` tiles distance. */
+    /** Move near a target, stopping at `range` tiles distance. */
     *moveNear(targetX: number, targetY: number, range: number) {
       for (let attempt = 0; attempt < 5; attempt++) {
         const d = dist(game.player.x, game.player.y, targetX, targetY)
         if (d <= range + 2) return
 
-        if (range <= 5) {
-          // Short range: teleport directly onto the target
+        if (range <= 5 && cfg.canTeleport) {
           yield* this.teleportTo(targetX, targetY, range + 2)
         } else {
           // Long range: approach to within range
@@ -171,10 +170,9 @@ export const Movement = createService((game: Game, services) => {
       for (let attempt = 0; attempt < 5; attempt++) {
         const d = dist(game.player.x, game.player.y, exit.x, exit.y)
 
-        // If far, teleport to exit
+        // Move to exit — teleport if available, walk otherwise
         if (d > 10) {
-          yield* this.teleportTo(exit.x, exit.y, 7)
-          // If still far, re-path next attempt
+          yield* this.moveTo(exit.x, exit.y)
           if (dist(game.player.x, game.player.y, exit.x, exit.y) > 20) continue
         }
 
