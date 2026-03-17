@@ -64,10 +64,24 @@ export const Attack = createService((game: Game, services) => {
   }
 
   function* waitCastDone(maxFrames = 30) {
-    yield
+    yield // let cast start
+    // Wait for casting animation to finish
     for (let f = 0; f < maxFrames; f++) {
       if (game.player.canCast) return
       yield
+    }
+  }
+
+  /** Wait for cast animation + minimum delay between casts.
+   *  At low levels, single bolts kill — no need to spam.
+   *  Wait at least `minFrames` to let projectile travel. */
+  function* waitCastWithDelay(minFrames = 8) {
+    yield
+    for (let f = 0; f < minFrames; f++) {
+      yield
+      if (f >= 4 && game.player.canCast) {
+        // Cast animation done but wait for min delay
+      }
     }
   }
 

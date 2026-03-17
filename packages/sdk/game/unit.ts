@@ -118,7 +118,11 @@ export class Monster extends Unit {
       const p = this.parent
       if (p && p.type === 0) return false
     }
-    // Check alignment from monstats (1 = neutral/friendly, e.g. rogue scouts in town)
+    // Friendly check: ownerType=0 (player) means pet/summon/merc,
+    // and monsters with Align=1 in monstats are neutral town NPCs.
+    // D2BS approach: check if monster has an owner that is a player unit.
+    if (this.ownerType === 0 && this.ownerId !== 0xFFFFFFFF) return false
+    // Also filter known friendly classids as fallback
     if (friendlyClassIds.has(this.classid)) return false
     return true
   }
