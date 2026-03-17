@@ -40,8 +40,8 @@ export const Attack = createService((game: Game, services) => {
   function inRange(range: number): (m: Monster) => boolean {
     return (m: Monster) => {
       if (!alive(m) || m.distance >= range) return false
-      // Skip LoS check for very close monsters (melee range) — always reachable
-      if (m.distance < 5) return true
+      // Skip LoS check for close-ish monsters — LoS fails a lot on outdoor terrain
+      if (m.distance < 15) return true
       return game.hasLineOfSight(game.player.x, game.player.y, m.x, m.y)
     }
   }
