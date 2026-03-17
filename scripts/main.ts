@@ -13,6 +13,10 @@ import { AutoBuild } from "./services/auto-build.js"
 import { BlizzSorc } from "./builds/sorc-blizz.js"
 import { Chaos } from "./sequences/chaos.js"
 import { act1Leveling } from "./sequences/act1-leveling.js"
+import { act2Leveling } from "./sequences/act2-leveling.js"
+import { act3Leveling } from "./sequences/act3-leveling.js"
+import { act4Leveling } from "./sequences/act4-leveling.js"
+import { act5Leveling } from "./sequences/act5-leveling.js"
 import { Progression } from "./services/progression.js"
 
 const CHAR_CLASS = 1 // Sorceress
@@ -128,18 +132,35 @@ export default createBot('aether', function*(game, svc) {
   const progression = svc.get(Progression)
 
   // Map decision tree script names → generator functions
-  const scriptMap: Record<string, (game: Game, svc: any) => Generator<void>> = {
-    // Act 1 — all handled by act1Leveling which checks current area
+  const scriptMap: Record<string, (g: typeof game, s: typeof svc) => Generator<void>> = {
+    // Act 1
     'den-of-evil': act1Leveling,
     'blood-raven': act1Leveling,
     'tristram': act1Leveling,
     'countess': act1Leveling,
     'walk-to-catacombs': act1Leveling,
     'andy': act1Leveling,
-    // TODO: Act 2-5 scripts
+    // Act 2
+    'radament': act2Leveling,
+    'cube': act2Leveling,
+    'staff': act2Leveling,
+    'amulet': act2Leveling,
+    'cube-staff': act2Leveling,
+    'summoner': act2Leveling,
+    'duriel': act2Leveling,
+    // Act 3
+    'lam-essen': act3Leveling,
+    'khalims-will': act3Leveling,
+    'mephisto': act3Leveling,
+    // Act 4
+    'izual': act4Leveling,
+    'diablo': act4Leveling,
+    // Act 5
+    'rescue-barbs': act5Leveling,
+    'anya': act5Leveling,
+    'ancients': act5Leveling,
+    'baal': act5Leveling,
   }
-
-  type Game = typeof game
 
   // ── Main loop ──
   while (true) {
