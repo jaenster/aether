@@ -5,9 +5,8 @@ import { ThreatMonitor } from "./threads/threat-monitor.js"
 import { Guard } from "./services/guard.js"
 import { Town } from "./services/town.js"
 import { Buffs } from "./services/buffs.js"
-import { Attack } from "./services/attack.js"
 import { Movement } from "./services/movement.js"
-import { Pickit } from "./services/pickit.js"
+import { healInTown } from "./lib/npc.js"
 import { AutoBuild } from "./services/auto-build.js"
 import { BlizzSorc } from "./builds/sorc-blizz.js"
 import { Chaos } from "./sequences/chaos.js"
@@ -154,8 +153,9 @@ export default createBot('aether', function*(game, svc) {
             break
           }
         }
-        if (game.player.hp < game.player.maxHp) yield* town.heal()
-        // Only do full town chores if we have gold (no point shopping at level 1)
+        // Heal via NPC (clean interaction with proper dialog close)
+        if (game.player.hp < game.player.maxHp) yield* healInTown(game)
+        // Full town chores only if we have gold
         if (game.gold > 100) yield* town.doTownChores()
       }
 
