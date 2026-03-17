@@ -269,7 +269,7 @@ export default createBot('leveling', function*(game, svc) {
       }
 
       // Build scenic path: detour to far point first, then exit
-      const detour = (farDist > 400) ? game.findPath(farX, farY) : [] // only if > 20 tiles away
+      const detour = (bestScore > 15) ? game.findPath(farX, farY) : [] // only detour if far enough
       const path: { x: number, y: number }[] = []
       if (detour.length > 3) {
         path.push(...detour)
