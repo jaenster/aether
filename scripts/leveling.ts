@@ -270,10 +270,10 @@ export default createBot('leveling', function*(game, svc) {
             const dy = game.player.y - wp.y
             if (dx * dx + dy * dy < 36) break // within 6 tiles
 
-            // Kill anything that got close while walking
+            // Kill anything nearby while walking
             let hasMonsters = false
             for (const m of game.monsters) {
-              if (m.isAttackable && m.distance < 15) { hasMonsters = true; break }
+              if (m.isAttackable && m.distance < 25) { hasMonsters = true; break }
             }
             if (hasMonsters) {
               yield* atk.clear({ killRange: 20, maxCasts: 8 })
@@ -287,7 +287,7 @@ export default createBot('leveling', function*(game, svc) {
         {
           let hasMonsters = false
           for (const m of game.monsters) {
-            if (m.isAttackable && m.distance < 15) { hasMonsters = true; break }
+            if (m.isAttackable && m.distance < 25) { hasMonsters = true; break }
           }
           if (hasMonsters) {
             yield* atk.clear({ killRange: 20, maxCasts: 8 })
