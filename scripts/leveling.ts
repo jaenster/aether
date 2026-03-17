@@ -306,11 +306,15 @@ export default createBot('leveling', function*(game, svc) {
       const startArea = game.area
       for (let i = 0; i < path.length; i++) {
         if (!game.inGame) break
-        // Death check: mode 0/17 = dying/dead, or suddenly in town (respawned)
-        if (game.player.mode === 0 || game.player.mode === 17 || game.player.hp <= 0
-            || (townAreas.has(game.area) && !townAreas.has(startArea))) {
-          game.log('[bot] DIED (mode=' + game.player.mode + ' hp=' + game.player.hp + ' area=' + game.area + ')')
-          yield* game.delay(2000)
+        // Death check: hp=0 or death mode. Don't use area change — town fallback is normal.
+        if (game.player.hp <= 0 || game.player.mode === 0 || game.player.mode === 17) {
+          game.log('[bot] DIED (mode=' + game.player.mode + ' hp=' + game.player.hp + ')')
+          yield* game.delay(3000)
+          return
+        }
+        // Area changed (went to town via waypoint or walked out) — abort this run
+        if (game.area !== startArea) {
+          game.log('[bot] area changed to ' + game.area + ', ending run')
           return
         }
         const wp = path[i]!
@@ -328,12 +332,9 @@ export default createBot('leveling', function*(game, svc) {
           const dy = game.player.y - wp.y
           if (dx * dx + dy * dy < 25) break // within 5 tiles
 
-          // Death check mid-walk
-          if (game.player.mode === 0 || game.player.mode === 17 || game.player.hp <= 0
-              || (townAreas.has(game.area) && !townAreas.has(startArea))) {
-            game.log('[bot] DIED mid-walk')
-            return
-          }
+          // Death/area check mid-walk
+          if (game.player.hp <= 0 || game.player.mode === 0 || game.player.mode === 17) return
+          if (game.area !== startArea) return
 
           // If HP low, kite away from monsters
           if (game.player.hp > 0 && game.player.hp < game.player.maxHp * 0.4) {
