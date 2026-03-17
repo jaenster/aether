@@ -1,8 +1,29 @@
 import { createBot, FormType } from "diablo:game"
 import { generateName } from "./lib/name-generator.js"
 
-let CHAR_NAME = generateName()
 const CHAR_CLASS = 1 // 0=ama,1=sor,2=nec,3=pal,4=bar,5=dru,6=ass
+
+interface BotState {
+  charName: string
+  classId: number
+  runsCompleted: number
+}
+
+function loadOrCreateState(game: any): BotState {
+  const saved = game.readState<BotState>()
+  if (saved?.charName) {
+    game.log('[oog] loaded state: ' + saved.charName + ' (' + saved.runsCompleted + ' runs)')
+    return saved
+  }
+  const state: BotState = {
+    charName: generateName(),
+    classId: CHAR_CLASS,
+    runsCompleted: 0,
+  }
+  game.writeState(state)
+  game.log('[oog] created new state: ' + state.charName)
+  return state
+}
 
 // Screen coords for class portraits on the create char screen (800x600)
 // From control dump: images are 88x184, forms Y system is inverted (dwPosY = bottom)
@@ -18,7 +39,10 @@ const CLASS_CLICK_COORDS: Record<number, {x: number, y: number}> = {
 }
 
 export default createBot('oog-test', function*(game, _svc) {
-  game.log('[oog] starting OOG controller')
+  const state = loadOrCreateState(game)
+  let CHAR_NAME = state.charName
+
+  game.log('[oog] starting — char: ' + CHAR_NAME)
   let phase = 'splash'
 
   while (true) {
@@ -127,8 +151,10 @@ export default createBot('oog-test', function*(game, _svc) {
           game.log('[oog] dismissing popup via CANCEL')
           game.clickControl(cancelBtn.i)
           yield* game.delay(500)
-          // Name was taken — generate a new one and retry
+          // Name was taken — generate a new one, persist, and retry
           CHAR_NAME = generateName(Date.now())
+          state.charName = CHAR_NAME
+          game.writeState(state)
           game.log('[oog] trying new name: ' + CHAR_NAME)
           phase = 'create_click_class'
           continue

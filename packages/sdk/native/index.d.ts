@@ -151,3 +151,9 @@
   export function oogSelectClass(classId: number): boolean;
   /** Select a character by name and enter game (single player) */
   export function oogSelectChar(name: string): boolean;
+
+  // File persistence (reads/writes next to Game.exe)
+  /** Read a file from the game directory. Returns contents or "" if not found. */
+  export function readFile(filename: string): string;
+  /** Write a file to the game directory. Returns true on success. */
+  export function writeFile(filename: string, content: string): boolean;

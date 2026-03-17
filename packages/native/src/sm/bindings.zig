@@ -171,6 +171,7 @@ extern "kernel32" fn GetTickCount() callconv(.winapi) DWORD;
 const win32 = struct {
     extern "kernel32" fn CreateFileA(lpFileName: [*:0]const u8, dwDesiredAccess: u32, dwShareMode: u32, lpSA: ?*anyopaque, dwCreationDisposition: u32, dwFlagsAndAttrs: u32, hTemplate: ?*anyopaque) callconv(.winapi) ?*anyopaque;
     extern "kernel32" fn WriteFile(hFile: *anyopaque, lpBuffer: [*]const u8, nNumberOfBytesToWrite: u32, lpNumberOfBytesWritten: ?*u32, lpOverlapped: ?*anyopaque) callconv(.winapi) i32;
+    extern "kernel32" fn ReadFile(hFile: *anyopaque, lpBuffer: [*]u8, nNumberOfBytesToRead: u32, lpNumberOfBytesRead: ?*u32, lpOverlapped: ?*anyopaque) callconv(.winapi) i32;
     extern "kernel32" fn CloseHandle(hObject: *anyopaque) callconv(.winapi) i32;
     extern "kernel32" fn FlushFileBuffers(hFile: *anyopaque) callconv(.winapi) i32;
     extern "kernel32" fn GetLastError() callconv(.winapi) u32;
@@ -1873,6 +1874,88 @@ fn jsOogSelectChar(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) 
     return 1;
 }
 
+// ── File persistence (aether_state.json) ────────────────────────────
+
+extern "kernel32" fn GetModuleFileNameA(hModule: ?*anyopaque, lpFilename: [*]u8, nSize: u32) callconv(.winapi) u32;
+
+/// Get the directory where Game.exe lives (for storing state files next to it)
+fn getGameDir(buf: []u8) usize {
+    var path: [260]u8 = undefined;
+    const len = GetModuleFileNameA(null, &path, 260);
+    if (len == 0) return 0;
+    // Find last backslash
+    var last_sep: usize = 0;
+    for (0..len) |i| {
+        if (path[i] == '\\') last_sep = i;
+    }
+    if (last_sep == 0 or last_sep >= buf.len) return 0;
+    @memcpy(buf[0 .. last_sep + 1], path[0 .. last_sep + 1]);
+    return last_sep + 1;
+}
+
+/// readFile(filename) → file contents as string, or ""
+fn jsReadFile(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    var name_buf: [64]u8 = undefined;
+    const name_len = c.sm_arg_string(cx, argc, vp, 0, &name_buf, name_buf.len);
+    if (name_len <= 0) { retString(cx, argc, vp, ""); return 1; }
+
+    var filepath: [300]u8 = undefined;
+    const dir_len = getGameDir(&filepath);
+    if (dir_len == 0) { retString(cx, argc, vp, ""); return 1; }
+    const nlen: usize = @intCast(name_len);
+    @memcpy(filepath[dir_len .. dir_len + nlen], name_buf[0..nlen]);
+    filepath[dir_len + nlen] = 0;
+
+    const fp: [*:0]const u8 = @ptrCast(filepath[0 .. dir_len + nlen + 1]);
+    const INVALID: usize = 0xFFFFFFFF;
+    const hFile = win32.CreateFileA(fp, 0x80000000, 1, null, 3, 0x80, null);
+    const hAddr = if (hFile) |h| @intFromPtr(h) else INVALID;
+    if (hAddr == INVALID or hFile == null) { retString(cx, argc, vp, ""); return 1; }
+
+    var data: [8192]u8 = undefined;
+    var bytesRead: u32 = 0;
+    _ = win32.ReadFile(hFile.?, &data, data.len, &bytesRead, null);
+    _ = win32.CloseHandle(hFile.?);
+
+    if (bytesRead > 0) {
+        retString(cx, argc, vp, data[0..bytesRead]);
+    } else {
+        retString(cx, argc, vp, "");
+    }
+    return 1;
+}
+
+/// writeFile(filename, content) → true on success
+fn jsWriteFile(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    var name_buf: [64]u8 = undefined;
+    const name_len = c.sm_arg_string(cx, argc, vp, 0, &name_buf, name_buf.len);
+    if (name_len <= 0) { retBool(argc, vp, false); return 1; }
+
+    var content_buf: [8192]u8 = undefined;
+    const content_len = c.sm_arg_string(cx, argc, vp, 1, &content_buf, content_buf.len);
+    if (content_len < 0) { retBool(argc, vp, false); return 1; }
+
+    var filepath: [300]u8 = undefined;
+    const dir_len = getGameDir(&filepath);
+    if (dir_len == 0) { retBool(argc, vp, false); return 1; }
+    const nlen: usize = @intCast(name_len);
+    @memcpy(filepath[dir_len .. dir_len + nlen], name_buf[0..nlen]);
+    filepath[dir_len + nlen] = 0;
+
+    const fp: [*:0]const u8 = @ptrCast(filepath[0 .. dir_len + nlen + 1]);
+    const INVALID: usize = 0xFFFFFFFF;
+    const hFile = win32.CreateFileA(fp, 0x40000000, 0, null, 2, 0x80, null); // CREATE_ALWAYS, WRITE
+    const hAddr = if (hFile) |h| @intFromPtr(h) else INVALID;
+    if (hAddr == INVALID or hFile == null) { retBool(argc, vp, false); return 1; }
+
+    var written: u32 = 0;
+    _ = win32.WriteFile(hFile.?, &content_buf, @intCast(content_len), &written, null);
+    _ = win32.FlushFileBuffers(hFile.?);
+    _ = win32.CloseHandle(hFile.?);
+    retBool(argc, vp, true);
+    return 1;
+}
+
 // ── Binding table ───────────────────────────────────────────────────
 
 const Binding = struct {
@@ -1996,6 +2079,9 @@ const bindings = [_]Binding{
     .{ .name = "oogControlGetAll", .func = &jsOogControlGetAll, .nargs = 0 },
     .{ .name = "oogSelectClass", .func = &jsOogSelectClass, .nargs = 2 },
     .{ .name = "oogSelectChar", .func = &jsOogSelectChar, .nargs = 1 },
+    // File persistence
+    .{ .name = "readFile", .func = &jsReadFile, .nargs = 1 },
+    .{ .name = "writeFile", .func = &jsWriteFile, .nargs = 2 },
 };
 
 /// Comptime-generated ES module source for "diablo:native".

@@ -47,6 +47,8 @@ import {
   oogSelectChar as nativeOogSelectChar,
   oogClickScreen as nativeOogClickScreen,
   oogSelectClass as nativeOogSelectClass,
+  readFile as nativeReadFile,
+  writeFile as nativeWriteFile,
 } from "diablo:native"
 import { UnitCollection } from "./unit.collection.js";
 import { ItemUnit, Missile, Monster, NPC, ObjectUnit, PlayerUnit, Tile } from "./unit.js";
@@ -341,6 +343,25 @@ export class Game {
 
   /** Select character by name and enter game (single player) */
   oogSelectChar(name: string): boolean { return nativeOogSelectChar(name) }
+
+  // ── File persistence ──────────────────────────────────────────────
+
+  /** Read a file from the game directory. Returns "" if not found. */
+  readFile(filename: string): string { return nativeReadFile(filename) }
+  /** Write a file to the game directory. */
+  writeFile(filename: string, content: string): boolean { return nativeWriteFile(filename, content) }
+
+  /** Read JSON state from aether_state.json */
+  readState<T = any>(): T | null {
+    const raw = nativeReadFile('aether_state.json')
+    if (!raw) return null
+    try { return JSON.parse(raw) as T } catch { return null }
+  }
+
+  /** Write JSON state to aether_state.json */
+  writeState(state: any): boolean {
+    return nativeWriteFile('aether_state.json', JSON.stringify(state))
+  }
 
   // ── Logging ────────────────────────────────────────────────────────
 
