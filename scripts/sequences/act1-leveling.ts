@@ -1,4 +1,4 @@
-import { type Game, type Monster, Area } from "diablo:game"
+import { type Game, type Monster, Area, Line } from "diablo:game"
 import { closeNPCInteract } from "diablo:native"
 import { Movement } from "../services/movement.js"
 import { Attack } from "../services/attack.js"
@@ -22,6 +22,14 @@ function* walkAndClear(game: Game, atk: ReturnType<typeof Attack['factory']>, pi
 
   game.log('[walk] ' + path.length + ' nodes to (' + targetX + ',' + targetY + ')')
 
+  // Draw path on automap
+  const pathLines: Line[] = []
+  let prevX = game.player.x, prevY = game.player.y
+  for (const wp of path) {
+    pathLines.push(new Line({ x: prevX, y: prevY, x2: wp.x, y2: wp.y, color: 0x84, automap: true }))
+    prevX = wp.x; prevY = wp.y
+  }
+
   for (let i = 0; i < path.length; i++) {
     if (!game.inGame) return
     if (game.player.hp <= 0 || game.player.mode === 0 || game.player.mode === 17) return
@@ -41,33 +49,55 @@ function* walkAndClear(game: Game, atk: ReturnType<typeof Attack['factory']>, pi
       // Dead?
       if (game.player.hp <= 0 || game.player.mode === 0 || game.player.mode === 17) return
 
-      // Monster nearby? Fight it
+      // Monster nearby? Walk toward it and fight
       for (const m of game.monsters) {
-        if (m.isAttackable && m.distance < 20) {
+        if (m.isAttackable && m.distance < 25) {
+          // Walk toward the monster first if not in range
+          if (m.distance > 8) {
+            game.move(m.x, m.y)
+            for (let w = 0; w < 10; w++) {
+              yield
+              if (m.distance < 8) break
+            }
+          }
           yield* atk.clear({ killRange: 25, maxCasts: 8 })
+          yield* pickit.lootGround()
           break
         }
       }
     }
 
-    // At node: seek and kill any visible monsters
-    let nearest: Monster | null = null
-    let nearDist = Infinity
-    for (const m of game.monsters) {
-      if (m.isAttackable && m.distance < nearDist) { nearDist = m.distance; nearest = m }
-    }
-    if (nearest && nearDist < 30) {
-      if (nearDist > 10) {
+    // At node: actively seek monsters — walk toward them, don't just check range
+    for (let seek = 0; seek < 3; seek++) {
+      let nearest: Monster | null = null
+      let nearDist = Infinity
+      for (const m of game.monsters) {
+        if (m.isAttackable && m.distance < nearDist) { nearDist = m.distance; nearest = m }
+      }
+      if (!nearest || nearDist > 35) break // nothing visible
+
+      // Walk toward the monster
+      if (nearDist > 8) {
         game.move(nearest.x, nearest.y)
-        for (let w = 0; w < 15; w++) {
+        for (let w = 0; w < 25; w++) {
           yield
-          if (nearest.distance < 10) break
+          if (w % 6 === 0) game.move(nearest.x, nearest.y)
+          if (nearest.distance < 8) break
+          if (game.player.hp <= 0) return
         }
       }
-      yield* atk.clear({ killRange: 25, maxCasts: 10 })
+
+      // Fight everything nearby
+      yield* atk.clear({ killRange: 25, maxCasts: 12 })
       yield* pickit.lootGround()
     }
+
+    // Mark this path segment as done
+    if (pathLines[i]) pathLines[i]!.remove()
   }
+
+  // Clean up remaining lines
+  for (const l of pathLines) l.remove()
 }
 
 /**
