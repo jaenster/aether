@@ -192,8 +192,19 @@ export default createBot('leveling', function*(game, svc) {
       const level = game.charLevel
       game.log('[bot] level ' + level + ' area ' + game.area)
 
-      // Town: heal first, then chores
+      // Town: pick up corpse (if we died), heal, then chores
       if (townAreas.has(game.area)) {
+        // Look for our corpse nearby (player unit type=0 that isn't us)
+        for (const p of game.players) {
+          if (p.unitId !== game.player.unitId && p.name === game.player.charname && p.mode === 0) {
+            game.log('[bot] picking up corpse')
+            yield* move.walkTo(p.x, p.y)
+            game.interact(p)
+            yield* game.delay(1000)
+            break
+          }
+        }
+
         if (game.player.hp < game.player.maxHp) {
           yield* town.heal()
         }
@@ -235,25 +246,40 @@ export default createBot('leveling', function*(game, svc) {
         return
       }
 
-      // ── Scenic route: detour through far side of area, then walk to exit ──
-      const exits = game.getExits()
-      const progressExits = exits
-        .filter(e => e.area > game.area)
-        .sort((a, b) => a.area - b.area)
-      const exit = progressExits[0] ?? exits[0]
+      // ── Target: the area's waypoint (if not yet activated) or next area exit ──
+      // First check for a waypoint in this area we haven't activated yet
+      const wpPreset = move.findWaypointPreset()
+      let targetX: number, targetY: number, targetName: string
 
-      if (!exit) {
-        game.log('[bot] no exits in ' + zone.name)
-        game.move(game.player.x + 30, game.player.y)
-        yield* game.delay(2000)
-        return
+      if (wpPreset) {
+        targetX = wpPreset.x
+        targetY = wpPreset.y
+        targetName = 'waypoint'
+        game.log('[bot] targeting waypoint at ' + targetX + ',' + targetY)
+      } else {
+        // No waypoint in this area (or already found) — head to next area exit
+        const exits = game.getExits()
+        const progressExits = exits
+          .filter(e => e.area > game.area)
+          .sort((a, b) => a.area - b.area)
+        const exit = progressExits[0] ?? exits[0]
+        if (!exit) {
+          game.log('[bot] no target in ' + zone.name)
+          game.move(game.player.x + 30, game.player.y)
+          yield* game.delay(2000)
+          return
+        }
+        targetX = exit.x
+        targetY = exit.y
+        targetName = 'exit area=' + exit.area
+        game.log('[bot] targeting ' + targetName + ' at ' + targetX + ',' + targetY)
       }
 
       // Find a detour point: farthest walkable tile that is roughly perpendicular
       // to the player→exit line. This creates a scenic L-shaped path through the area
       // instead of going backward toward town.
       const px = game.player.x, py = game.player.y
-      const exDx = exit.x - px, exDy = exit.y - py
+      const exDx = targetX - px, exDy = targetY - py
       const exDist = Math.sqrt(exDx * exDx + exDy * exDy)
       // Perpendicular direction (rotated 90°)
       const perpX = -exDy / Math.max(1, exDist)
@@ -289,16 +315,16 @@ export default createBot('leveling', function*(game, svc) {
       const path: { x: number, y: number }[] = []
       if (detour.length > 3) {
         path.push(...detour)
-        game.log('[bot] ' + zone.name + ': scenic detour (' + detour.length + ' nodes) then exit area=' + exit.area)
+        game.log('[bot] ' + zone.name + ': scenic detour (' + detour.length + ' nodes) then ' + targetName)
       } else {
-        game.log('[bot] ' + zone.name + ': straight to exit area=' + exit.area)
+        game.log('[bot] ' + zone.name + ': straight to ' + targetName)
       }
       // Re-path to exit will happen after detour (from wherever we end up)
 
       if (path.length === 0) {
-        const directPath = game.findPath(exit.x, exit.y)
+        const directPath = game.findPath(targetX, targetY)
         if (directPath.length === 0) {
-          game.move(exit.x, exit.y)
+          game.move(targetX, targetY)
           yield* game.delay(2000)
           return
         }
@@ -391,9 +417,9 @@ export default createBot('leveling', function*(game, svc) {
         }
       }
 
-      // After detour, path to exit
+      // After detour, path to target (waypoint or exit)
       if (detour.length > 3) {
-        const exitPath = game.findPath(exit.x, exit.y)
+        const exitPath = game.findPath(targetX, targetY)
         if (exitPath.length > 0) {
           for (let i = 0; i < exitPath.length; i++) {
             if (!game.inGame) break
