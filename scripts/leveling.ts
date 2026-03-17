@@ -218,14 +218,11 @@ export default createBot('leveling', function*(game, svc) {
         return
       }
 
-      // ── Ryuk-style: walk toward next area's exit, clear along the way ──
-      // Target: the exit to the NEXT area (e.g. Blood Moor → Cold Plains)
+      // ── Scenic route: detour through far side of area, then walk to exit ──
       const exits = game.getExits()
-      // Find the exit that leads to the next zone in the progression (not Den of Evil etc.)
-      // Priority: exits to areas with higher area numbers (forward progress)
       const progressExits = exits
-        .filter(e => e.area > game.area) // forward exits only
-        .sort((a, b) => a.area - b.area) // lowest area first (next zone)
+        .filter(e => e.area > game.area)
+        .sort((a, b) => a.area - b.area)
       const exit = progressExits[0] ?? exits[0]
 
       if (!exit) {
@@ -235,13 +232,72 @@ export default createBot('leveling', function*(game, svc) {
         return
       }
 
-      game.log('[bot] ' + zone.name + ': walking to exit area=' + exit.area + ' at ' + exit.x + ',' + exit.y)
+      // Find the farthest walkable point from the exit to create a detour
+      const scanR = 40
+      const collGrid = game.getCollisionRect(
+        game.player.x - scanR, game.player.y - scanR, scanR * 2, scanR * 2
+      )
+      let farX = game.player.x, farY = game.player.y, farDist = 0
+      if (collGrid.length > 0) {
+        for (let dy = 0; dy < scanR * 2; dy += 3) {
+          for (let dx = 0; dx < scanR * 2; dx += 3) {
+            const flags = collGrid[dy * scanR * 2 + dx]
+            if (flags !== undefined && flags !== 0xFFFF && (flags & 1) === 0) {
+              const wx = game.player.x - scanR + dx
+              const wy = game.player.y - scanR + dy
+              const dex = wx - exit.x, dey = wy - exit.y
+              const d = dex * dex + dey * dey
+              if (d > farDist) { farDist = d; farX = wx; farY = wy }
+            }
+          }
+        }
+      }
 
-      const path = game.findPath(exit.x, exit.y)
+      // Build scenic path: detour to far point first, then exit
+      const detour = (farDist > 400) ? game.findPath(farX, farY) : [] // only if > 20 tiles away
+      const path: { x: number, y: number }[] = []
+      if (detour.length > 3) {
+        path.push(...detour)
+        game.log('[bot] ' + zone.name + ': scenic detour (' + detour.length + ' nodes) then exit area=' + exit.area)
+      } else {
+        game.log('[bot] ' + zone.name + ': straight to exit area=' + exit.area)
+      }
+      // Re-path to exit will happen after detour (from wherever we end up)
+
+      // Set up automap visualization
+      const __g = Function('return this')() as any
+      const vizPath = path.map(p => ({ x: p.x, y: p.y }))
+      vizPath.push({ x: exit.x, y: exit.y })
+      __g.__levelingPath = vizPath
+      __g.__levelingPathIdx = 0
+
+      if (!__g.__levelingDrawRegistered) {
+        __g.__levelingDrawRegistered = true
+        __g.__onAutomapDraw = function() {
+          const p = __g.__levelingPath as { x: number, y: number }[] | null
+          const idx = (__g.__levelingPathIdx ?? 0) as number
+          if (!p || p.length < 2) return
+          for (let i = 0; i < p.length - 1; i++) {
+            const color = i < idx ? 0x4B : 0x84 // dark grey done, green remaining
+            game.drawAutomapLine(p[i]!.x, p[i]!.y, p[i + 1]!.x, p[i + 1]!.y, color)
+          }
+          // Target cross
+          if (idx < p.length) {
+            const t = p[idx]!
+            game.drawAutomapLine(t.x - 3, t.y, t.x + 3, t.y, 0x0A)
+            game.drawAutomapLine(t.x, t.y - 3, t.x, t.y + 3, 0x0A)
+          }
+        }
+      }
+
       if (path.length === 0) {
-        game.move(exit.x, exit.y)
-        yield* game.delay(2000)
-        return
+        const directPath = game.findPath(exit.x, exit.y)
+        if (directPath.length === 0) {
+          game.move(exit.x, exit.y)
+          yield* game.delay(2000)
+          return
+        }
+        path.push(...directPath)
       }
 
       // Walk node-by-node, fight after each step
@@ -301,6 +357,52 @@ export default createBot('leveling', function*(game, svc) {
           yield* atk.clear({ killRange: 25, maxCasts: 10 })
           yield* pickit.lootGround()
           yield* build.allocatePoints()
+        }
+
+        // Update viz index
+        __g.__levelingPathIdx = i + 1
+      }
+
+      // After detour, path to exit
+      if (detour.length > 3) {
+        const exitPath = game.findPath(exit.x, exit.y)
+        if (exitPath.length > 0) {
+          // Update viz
+          const newViz = exitPath.map(p => ({ x: p.x, y: p.y }))
+          newViz.push({ x: exit.x, y: exit.y })
+          __g.__levelingPath = newViz
+          __g.__levelingPathIdx = 0
+
+          for (let i = 0; i < exitPath.length; i++) {
+            if (!game.inGame) break
+            if (game.player.hp <= 0) { game.log('[bot] DIED'); yield* game.delay(3000); return }
+            const wp = exitPath[i]!
+
+            game.move(wp.x, wp.y)
+            for (let t = 0; t < 50; t++) {
+              yield
+              if (t % 8 === 0) game.move(wp.x, wp.y)
+              const dx = game.player.x - wp.x, dy = game.player.y - wp.y
+              if (dx * dx + dy * dy < 25) break
+              for (const m of game.monsters) {
+                if (m.isAttackable && m.distance < 20) {
+                  yield* atk.clear({ killRange: 25, maxCasts: 8 })
+                  break
+                }
+              }
+            }
+            __g.__levelingPathIdx = i + 1
+
+            let monstersNearby = false
+            for (const m of game.monsters) {
+              if (m.isAttackable && m.distance < 25) { monstersNearby = true; break }
+            }
+            if (monstersNearby) {
+              yield* atk.clear({ killRange: 25, maxCasts: 10 })
+              yield* pickit.lootGround()
+              yield* build.allocatePoints()
+            }
+          }
         }
       }
 

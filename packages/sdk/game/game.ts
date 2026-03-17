@@ -49,6 +49,11 @@ import {
   oogSelectClass as nativeOogSelectClass,
   readFile as nativeReadFile,
   writeFile as nativeWriteFile,
+  drawAutomapLine as nativeDrawAutomapLine,
+  drawLine as nativeDrawLine,
+  drawText as nativeDrawText,
+  worldToAutomapX,
+  worldToAutomapY,
 } from "diablo:native"
 import { UnitCollection } from "./unit.collection.js";
 import { ItemUnit, Missile, Monster, NPC, ObjectUnit, PlayerUnit, Tile } from "./unit.js";
@@ -361,6 +366,28 @@ export class Game {
   /** Write JSON state to aether_state.json */
   writeState(state: any): boolean {
     return nativeWriteFile('aether_state.json', JSON.stringify(state))
+  }
+
+  // ── Drawing (call from draw hooks only) ────────────────────────────
+
+  /** Draw a line on the automap between two world positions */
+  drawAutomapLine(x0: number, y0: number, x1: number, y1: number, color: number) {
+    nativeDrawAutomapLine(x0, y0, x1, y1, color)
+  }
+
+  /** Draw a line in screen coordinates */
+  drawLine(x0: number, y0: number, x1: number, y1: number, color: number) {
+    nativeDrawLine(x0, y0, x1, y1, color)
+  }
+
+  /** Draw text at screen coordinates */
+  drawText(text: string, x: number, y: number, color = 0) {
+    nativeDrawText(text, x, y, color)
+  }
+
+  /** Convert world coords to automap screen coords */
+  worldToAutomap(wx: number, wy: number): { x: number, y: number } {
+    return { x: worldToAutomapX(wx, wy), y: worldToAutomapY(wx, wy) }
   }
 
   // ── Logging ────────────────────────────────────────────────────────
