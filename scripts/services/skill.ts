@@ -1,6 +1,7 @@
 import { createService } from "diablo:game"
 import { getBaseStat } from "../lib/txt.js"
 import { Skill } from "diablo:constants"
+import { unitGetX, unitGetY } from "diablo:native"
 
 /** Mana shift lookup: effectiveShift[manashift] / 256 */
 const MANA_SHIFT = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
@@ -86,7 +87,6 @@ export const SkillService = createService(function (game, _svc) {
     yield
 
     // Right-click on unit via clickMap (type 3 = right click)
-    const { unitGetX, unitGetY } = require("diablo:native") as any
     const x = unitGetX(unitType, unitId)
     const y = unitGetY(unitType, unitId)
     game.castSkill(x, y)

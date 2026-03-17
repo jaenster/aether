@@ -81,13 +81,13 @@ const mercClassIds = new Set([MonsterClassId.MercA1Rogue, MonsterClassId.MercA2G
 const summonClassIds = new Set([363, 417, 418, 419, 420, 421, 428, 357, 358, 289, 290, 291, 292, 293])
 
 // Cache for Align field from monstats — 0=hostile, 1=neutral/friendly, 2=hostile
+import { txtReadFieldU as _txtReadFieldU } from "diablo:native"
 const _alignCache = new Map<number, number>()
 function getMonsterAlign(classid: number): number {
   let v = _alignCache.get(classid)
   if (v !== undefined) return v
   // Read Align from monstats txt: table=0, offset=0x4C, size=1
-  const { txtReadFieldU } = require("diablo:native") as any
-  v = txtReadFieldU(0, classid, 0x4C, 1) as number
+  v = _txtReadFieldU(0, classid, 0x4C, 1)
   _alignCache.set(classid, v)
   return v
 }

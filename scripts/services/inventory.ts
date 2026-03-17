@@ -1,5 +1,6 @@
 import { createService, type Game, type ItemUnit, ItemContainer } from "diablo:game"
 import { itemToBuffer, bufferToStorage, Packet } from "../lib/packets.js"
+import { txtReadFieldU } from "diablo:native"
 
 /** 4x10 inventory grid tracking + item management.
  *  Absorbs Ryuk's Storage.CanFit/MoveTo and inventory sorting logic. */
@@ -170,13 +171,11 @@ export const Inventory = createService((game: Game, _svc) => {
 // Item dimension helpers — read from ItemStatCost txt
 function getItemWidth(item: ItemUnit): number {
   // invwidth from items.txt
-  const { txtReadFieldU } = require("diablo:native") as any
   const w = txtReadFieldU(4, item.classid, 0x114, 1) // offset 0x114 = invwidth
   return w > 0 ? w : 1
 }
 
 function getItemHeight(item: ItemUnit): number {
-  const { txtReadFieldU } = require("diablo:native") as any
   const h = txtReadFieldU(4, item.classid, 0x115, 1) // offset 0x115 = invheight
   return h > 0 ? h : 1
 }
