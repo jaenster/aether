@@ -7,6 +7,7 @@ import { AutoBuild } from "./services/auto-build.js"
 import { BlizzSorc } from "./builds/sorc-blizz.js"
 import { ThreatMonitor } from "./threads/threat-monitor.js"
 import { Guard } from "./services/guard.js"
+import { Chicken } from "./threads/chicken.js"
 // import { clearArea, type ClearContext } from "./lib/area-clear.js"
 import { Buffs } from "./services/buffs.js"
 import { Pickit } from "./services/pickit.js"
@@ -139,6 +140,7 @@ export default createBot('leveling', function*(game, svc) {
   // ── Set up services ──
   game.load.inGame(ThreatMonitor)
   game.load.inGame(Guard)
+  game.load.inGame(Chicken)
   const build = svc.get(AutoBuild)
   build.setBuild(BlizzSorc)
   const town = svc.get(Town)
@@ -245,6 +247,12 @@ export default createBot('leveling', function*(game, svc) {
       // Walk node-by-node, fight after each step
       for (let i = 0; i < path.length; i++) {
         if (!game.inGame) break
+        // Death check — in SP, dying puts you back in town
+        if (game.player.hp <= 0 || game.player.mode === 0) {
+          game.log('[bot] DIED — respawning')
+          yield* game.delay(3000) // wait for respawn
+          return // go back to main loop (will end up in town)
+        }
         const wp = path[i]!
 
         // Click to walk toward this node
@@ -259,6 +267,21 @@ export default createBot('leveling', function*(game, svc) {
           const dx = game.player.x - wp.x
           const dy = game.player.y - wp.y
           if (dx * dx + dy * dy < 25) break // within 5 tiles
+
+          // If HP low, kite away from monsters
+          if (game.player.hp > 0 && game.player.hp < game.player.maxHp * 0.4) {
+            // Run away from nearest monster
+            for (const m of game.monsters) {
+              if (m.isAttackable && m.distance < 10) {
+                const dx = game.player.x - m.x
+                const dy = game.player.y - m.y
+                const d = Math.max(1, Math.sqrt(dx * dx + dy * dy))
+                game.move(Math.round(game.player.x + dx / d * 10), Math.round(game.player.y + dy / d * 10))
+                yield* game.delay(300)
+                break
+              }
+            }
+          }
 
           // If a monster is very close, stop walking and fight immediately
           for (const m of game.monsters) {
