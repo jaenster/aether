@@ -6,6 +6,7 @@
 
 import { type Game, ItemContainer } from "diablo:game"
 import { healInTown, getAct, Healers, Repairers, openTrade, dismissNPC } from "./npc.js"
+import { autoEquip } from "./auto-equip.js"
 
 const HP_POT_COSTS: Record<string, number> = { hp1: 30, hp2: 90, hp3: 250, hp4: 600, hp5: 1400 }
 const MP_POT_COSTS: Record<string, number> = { mp1: 30, mp2: 90, mp3: 250, mp4: 600, mp5: 1400 }
@@ -40,7 +41,10 @@ export function* townVisit(game: Game): Generator<void> {
   // 5. Identify rares at Cain
   // TODO: check for unidentified items, visit Cain
 
-  // 6. Stash gold if over threshold
+  // 6. Auto-equip inventory upgrades
+  yield* autoEquip(game)
+
+  // 7. Stash gold if over threshold
   const goldThreshold = game.charLevel * 1125
   if (game.gold > goldThreshold) {
     game.log('[town] should stash ' + (game.gold - goldThreshold) + ' gold')
