@@ -11,10 +11,10 @@ const ClosedDoor: u16 = 0x0800;
 const NPCCollision: u16 = 0x1000;
 const WALK_COLLISION: u16 = BlockWalk | BlockPlayer | Object | NPCCollision; // matches SpaceIsWalkable
 
-// range = _range * 10, default _range = 20
-const range: i32 = 200;
+// Max distance (in tiles) between consecutive walk waypoints.
+const MAX_WALK_DIST: i32 = 5;
 
-pub const MAX_WAYPOINTS: u32 = 256;
+pub const MAX_WAYPOINTS: u32 = 512;
 pub var waypoints: [MAX_WAYPOINTS]Point = undefined;
 pub var waypoint_count: u32 = 0;
 
@@ -22,17 +22,40 @@ fn checkFlag(flag: u16) bool {
     return (WALK_COLLISION & flag) > 0;
 }
 
-fn slope(start: Point, end: Point) i32 {
-    const dx: f64 = @floatFromInt(end.x - start.x);
-    const dy: f64 = @floatFromInt(end.y - start.y);
-    if (dx == 0) return std.math.maxInt(i32);
-    return @intFromFloat(dy / dx);
+fn euclideanDist(ax: i32, ay: i32, bx: i32, by: i32) f64 {
+    const dx: f64 = @floatFromInt(bx - ax);
+    const dy: f64 = @floatFromInt(by - ay);
+    return @sqrt(dx * dx + dy * dy);
 }
 
-fn euclidean(start: Point, end: Point) i32 {
-    const dx: f64 = @floatFromInt(end.x - start.x);
-    const dy: f64 = @floatFromInt(end.y - start.y);
-    return @intFromFloat(@sqrt(dx * dx + dy * dy) * 10);
+/// Bresenham line-of-sight check: walk every tile from (x0,y0) to (x1,y1).
+/// Returns true if ALL tiles along the line are walkable (no collision).
+fn lineIsWalkable(x0: i32, y0: i32, x1: i32, y1: i32) bool {
+    var x = x0;
+    var y = y0;
+    const dx = absInt(x1 - x0);
+    const dy = -absInt(y1 - y0);
+    const sx: i32 = if (x0 < x1) 1 else -1;
+    const sy: i32 = if (y0 < y1) 1 else -1;
+    var err = dx + dy;
+
+    while (true) {
+        // Check this tile (5-point cross, same as reject)
+        if (checkFlag(act_map.spaceGetData(x, y))) return false;
+
+        if (x == x1 and y == y1) break;
+
+        const e2 = 2 * err;
+        if (e2 >= dy) {
+            err += dy;
+            x += sx;
+        }
+        if (e2 <= dx) {
+            err += dx;
+            y += sy;
+        }
+    }
+    return true;
 }
 
 pub fn getOpenNodes(cx: i32, cy: i32, _: i32, _: i32, buf: []Point) u32 {
@@ -117,43 +140,72 @@ pub fn mutatePoint(x: *i32, y: *i32) void {
     }
 }
 
+/// Line-of-sight path reduction for walking.
+///
+/// Greedily skips ahead along the A* path as long as:
+///   1. Every tile on the Bresenham line from the last emitted waypoint
+///      to the candidate point is walkable.
+///   2. The distance doesn't exceed MAX_WALK_DIST tiles.
+///
+/// When either condition fails, emit the last valid point as a waypoint
+/// and start a new segment from there.
 pub fn reduce(path: []const Point, out: []Point) u32 {
-    if (path.len < 2) {
-        const count: u32 = @intCast(path.len);
-        for (path, 0..) |p, idx| {
-            out[idx] = p;
-        }
-        return count;
+    if (path.len == 0) return 0;
+    if (path.len == 1) {
+        out[0] = path[0];
+        return 1;
     }
 
     var out_count: u32 = 0;
 
-    var init = true;
-    var s: i32 = 0;
-    var first = path[0];
-    var last: Point = undefined;
+    // Always emit the start point
+    out[out_count] = path[0];
+    out_count += 1;
 
-    // for each point in in (except last)
-    for (path[0 .. path.len - 1]) |pt| {
-        const next = pt;
-        const slope_next = slope(first, next);
-        if (init or slope_next != s) {
-            init = false;
-            out[out_count] = first;
-            out_count += 1;
-            last = first;
-            s = slope_next;
-        } else if (euclidean(last, next) >= range) {
-            out[out_count] = first;
-            out_count += 1;
-            last = first;
+    var anchor: usize = 0; // index of last emitted waypoint in path
+
+    while (anchor < path.len - 1) {
+        const ax = path[anchor].x;
+        const ay = path[anchor].y;
+
+        // Scan forward: find the furthest point we can walk to in a straight line
+        var best: usize = anchor + 1;
+        var probe: usize = anchor + 1;
+        while (probe < path.len) : (probe += 1) {
+            const px = path[probe].x;
+            const py = path[probe].y;
+
+            // Too far? Stop scanning.
+            if (euclideanDist(ax, ay, px, py) > MAX_WALK_DIST) break;
+
+            // Line of sight clear?
+            if (lineIsWalkable(ax, ay, px, py)) {
+                best = probe;
+            } else {
+                // LOS blocked — can't go further
+                break;
+            }
         }
-        first = next;
+
+        // Emit the best reachable point
+        if (out_count < out.len) {
+            out[out_count] = path[best];
+            out_count += 1;
+        }
+        anchor = best;
     }
 
-    // push in.back()
-    out[out_count] = path[path.len - 1];
-    out_count += 1;
+    // Ensure the final destination is always the last waypoint
+    if (out_count > 0) {
+        const last_out = out[out_count - 1];
+        const last_path = path[path.len - 1];
+        if (last_out.x != last_path.x or last_out.y != last_path.y) {
+            if (out_count < out.len) {
+                out[out_count] = last_path;
+                out_count += 1;
+            }
+        }
+    }
 
     return out_count;
 }

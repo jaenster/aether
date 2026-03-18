@@ -717,30 +717,135 @@ fn distSq(wx: i32, wy: i32, px: i32, py: i32) i32 {
 // ============================================================================
 
 fn walkSequence() void {
+    var repath_count: u32 = 0;
+    const max_repaths: u32 = 3;
+
     while (current_wp < walk_reducer.waypoint_count) {
         const wp = walk_reducer.waypoints[current_wp];
 
+        // Skip waypoints we're already past (close to next one)
+        if (current_wp + 1 < walk_reducer.waypoint_count) {
+            const pos = getPlayerPos() orelse return;
+            const px: i32 = @intCast(pos[0]);
+            const py: i32 = @intCast(pos[1]);
+            const next_wp = walk_reducer.waypoints[current_wp + 1];
+            const ds_next = distSq(next_wp.x, next_wp.y, px, py);
+            const ds_cur = distSq(wp.x, wp.y, px, py);
+            if (ds_next < ds_cur and ds_next < 5 * 5) {
+                current_wp += 1;
+                continue;
+            }
+        }
+
         d2.functions.clickAtWorld(1, wp.x, wp.y);
 
-        var wait_ticks: u32 = 0;
-        while (wait_ticks < 300) : (wait_ticks += 1) {
-            async_.yield();
-            const player = d2.globals.playerUnit().* orelse return;
-            const path = player.dynamicPath() orelse break;
-            const dx = wp.x - @as(i32, @intCast(path.xPos));
-            const dy = wp.y - @as(i32, @intCast(path.yPos));
-            if (dx * dx + dy * dy < 10 * 10) break;
+        var stuck_count: u32 = 0;
+        var last_pos: [2]u32 = getPlayerPos() orelse return;
+        var frames_since_check: u32 = 0;
 
-            if (wait_ticks % 30 == 0 and wait_ticks > 0) {
+        var wait_ticks: u32 = 0;
+        while (wait_ticks < 200) : (wait_ticks += 1) {
+            async_.yield();
+            const cur_pos = getPlayerPos() orelse return;
+            const path_ptr = blk: {
+                const player = d2.globals.playerUnit().* orelse return;
+                break :blk player.dynamicPath() orelse break;
+            };
+            const dx = wp.x - @as(i32, @intCast(path_ptr.xPos));
+            const dy = wp.y - @as(i32, @intCast(path_ptr.yPos));
+            if (dx * dx + dy * dy < 3 * 3) break;
+
+            frames_since_check += 1;
+
+            // Stuck detection: check every 25 frames if we've moved
+            if (frames_since_check >= 25) {
+                frames_since_check = 0;
+                const moved_dx = @as(i32, @intCast(cur_pos[0])) - @as(i32, @intCast(last_pos[0]));
+                const moved_dy = @as(i32, @intCast(cur_pos[1])) - @as(i32, @intCast(last_pos[1]));
+                const moved_dist_sq = moved_dx * moved_dx + moved_dy * moved_dy;
+
+                if (moved_dist_sq < 3 * 3) {
+                    // Haven't moved much — we're stuck
+                    stuck_count += 1;
+
+                    if (stuck_count >= 3) {
+                        // Try perpendicular sidestep (kolbot technique)
+                        const px: i32 = @intCast(cur_pos[0]);
+                        const py: i32 = @intCast(cur_pos[1]);
+                        if (trySidestep(px, py, wp.x, wp.y)) {
+                            // Wait for sidestep movement
+                            async_.waitFrames(15);
+                            stuck_count = 1; // reset partially
+                        } else if (stuck_count >= 5) {
+                            // Sidestep failed too — re-path from current position
+                            if (repath_count < max_repaths) {
+                                repath_count += 1;
+                                log.print("walk: re-pathing from current position");
+                                const new_pos = getPlayerPos() orelse return;
+                                const new_count = walk_reducer.findPath(
+                                    @intCast(new_pos[0]),
+                                    @intCast(new_pos[1]),
+                                    dest_x,
+                                    dest_y,
+                                );
+                                if (new_count == 0) {
+                                    log.print("walk: re-path failed, giving up");
+                                    return;
+                                }
+                                current_wp = 0;
+                                snapshotPath();
+                                break; // restart outer loop with new path
+                            } else {
+                                log.print("walk: max re-paths exhausted, giving up");
+                                return;
+                            }
+                        }
+                    }
+                } else {
+                    stuck_count = 0;
+                }
+                last_pos = cur_pos;
+            }
+
+            // Re-click periodically (like a player holding down the mouse)
+            if (wait_ticks % 15 == 0 and wait_ticks > 0) {
                 d2.functions.clickAtWorld(1, wp.x, wp.y);
             }
         }
 
-        current_wp += 1;
+        if (wait_ticks >= 200 and stuck_count < 5) {
+            // Timed out but not stuck enough to re-path — just advance
+            current_wp += 1;
+        } else if (stuck_count < 5) {
+            current_wp += 1;
+        }
+        // else: re-pathed, outer loop restarts
     }
 
     // Final click to actual destination
     d2.functions.clickAtWorld(1, dest_x, dest_y);
+    async_.waitFrames(15);
+}
+
+/// Perpendicular sidestep: when stuck, click 5 tiles at ±90° to the path direction.
+/// Returns true if a valid walkable sidestep target was found and clicked.
+fn trySidestep(px: i32, py: i32, target_x: i32, target_y: i32) bool {
+    const fdx: f64 = @floatFromInt(target_x - px);
+    const fdy: f64 = @floatFromInt(target_y - py);
+    const angle = std.math.atan2(fdy, fdx);
+    const sidestep_dist: f64 = 5.0;
+
+    // Try +90° first, then -90°
+    const offsets = [_]f64{ std.math.pi / 2.0, -std.math.pi / 2.0 };
+    for (offsets) |off| {
+        const sx: i32 = @as(i32, @intFromFloat(@round(@cos(angle + off) * sidestep_dist))) + px;
+        const sy: i32 = @as(i32, @intFromFloat(@round(@sin(angle + off) * sidestep_dist))) + py;
+        if (!act_map.isBlocked(sx, sy)) {
+            d2.functions.clickAtWorld(1, sx, sy);
+            return true;
+        }
+    }
+    return false;
 }
 
 // ============================================================================
