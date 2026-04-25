@@ -50,6 +50,7 @@ import {
   writeFile as nativeWriteFile,
   worldToAutomapX,
   worldToAutomapY,
+  getSkillLevel as nativeGetSkillLevel,
 } from "diablo:native"
 import { UnitCollection } from "./unit.collection.js";
 import { ItemUnit, Missile, Monster, NPC, ObjectUnit, PlayerUnit, Tile } from "./unit.js";
@@ -134,6 +135,8 @@ export class Game {
   }
   /** Cast right skill at world coords via packet — works off-screen (for teleport). */
   castSkillPacket(x: number, y: number) { nativeCastSkillPacket(x, y) }
+  /** Get skill level. mode 0 = hard points only, mode 1 = effective (with +skills gear) */
+  getSkillLevel(skillId: number, mode: number): number { return nativeGetSkillLevel(skillId, mode) }
   /** Get the currently selected right-hand skill ID */
   get rightSkill(): number { return nativeGetRightSkill() }
   say(msg: string) { nativeSay(msg) }

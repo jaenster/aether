@@ -12,11 +12,12 @@ import { getUnitStat } from "diablo:native"
 
 const BELT_LOCATION = 2 // ItemContainer.Belt value
 
-const CLEAR_RANGE = 14       // base clear range in tiles
+const CLEAR_RANGE = 25       // base clear range in tiles (monsters visible at ~30, need margin)
 const BACKTRACK_NODES = 5    // max nodes to backtrack
 const FORWARD_TRACK_DIST = 15 // forward-track if closest monster > this
 const JUKE_CHANCE = 0.07     // 7% random juke after each attack
-const MAX_CASTS_PER_MON = 50 // skip monster after this many casts
+const MAX_CASTS_PER_NODE = 200 // max total casts per node clearing round
+const CASTS_PER_BURST = 50   // casts per atk.clear burst (fight until dead)
 const SHAMAN_RANGE_MULT = 1.6 // shamans detected at 1.6x range
 
 // Shaman classids (Fallen Shamans + Greater Mummies)
@@ -122,23 +123,30 @@ export function* clear(
   opts: ClearOpts = {},
 ): Generator<void> {
   const range = opts.range ?? CLEAR_RANGE
-  const maxCasts = opts.maxCasts ?? MAX_CASTS_PER_MON
+  const maxCasts = opts.maxCasts ?? MAX_CASTS_PER_NODE
 
+  game.log('[clear] getAttackable...')
   let targets = getAttackableMonsters(game, range, opts.nodes, opts.nodeIndex)
+  game.log('[clear] targets=' + targets.length)
   if (targets.length === 0) return
 
   sortMonsters(targets, game.player.x, game.player.y)
 
-  // Fight loop
-  let castCount = 0
-  while (targets.length > 0 && castCount < maxCasts) {
-    // Backtrack check
+  // Fight loop — keep attacking until no targets or cast budget exhausted
+  let totalCasts = 0
+  while (targets.length > 0 && totalCasts < maxCasts) {
+    // Backtrack check — run away when overwhelmed
     if (shouldBacktrack(game) && opts.nodes && opts.nodeIndex !== undefined) {
       const btIdx = Math.max(0, opts.nodeIndex - BACKTRACK_NODES)
       const btNode = opts.nodes[btIdx]!
       game.log(`[clear] backtracking to node ${btIdx}`)
-      game.move(btNode.x, btNode.y)
-      yield* game.delay(500)
+      // Actually walk back, not just a single click
+      for (let t = 0; t < 30; t++) {
+        game.move(btNode.x, btNode.y)
+        yield
+        if (dist(game.player.x, game.player.y, btNode.x, btNode.y) < 5) break
+      }
+      yield* game.delay(200)
     }
 
     // Forward track: if closest monster > 15 tiles, advance toward it
@@ -151,9 +159,10 @@ export function* clear(
       }
     }
 
-    // Attack
-    yield* atk.clear({ killRange: range + 5, maxCasts: Math.min(8, maxCasts - castCount) })
-    castCount += 8
+    // Attack — give enough casts to kill a pack, not just 8
+    const burst = Math.min(CASTS_PER_BURST, maxCasts - totalCasts)
+    yield* atk.clear({ killRange: range + 5, maxCasts: burst })
+    totalCasts += burst
 
     // Random juke (7% chance) — small dodge movement
     if (Math.random() < JUKE_CHANCE) {
@@ -175,68 +184,76 @@ export function* clear(
  * Walk to a single point with stuck detection and perpendicular juke.
  * Ported from Ryuk's Pather.ts walkTo override.
  */
-export function* walkTo(game: Game, x: number, y: number, maxTicks = 60): Generator<void, boolean> {
+/**
+ * Walk to a single point. Ported from Ryuk/kolbot Pather.walkTo.
+ * 1. Click toward target
+ * 2. Wait for walk/run mode to start (500ms timeout → stuck)
+ * 3. On stuck: perpendicular juke ±90° at 5 tiles
+ * 4. Wait for walk to finish (idle mode)
+ * 5. Max 3 failures → give up
+ *
+ * Player modes: 0=Death, 1=Neutral, 2=Walk, 3=Run, 4=GetHit,
+ *   5=TownNeutral, 6=TownWalk, 17=Dead
+ */
+export function* walkTo(game: Game, x: number, y: number, minDist = 4): Generator<void, boolean> {
+  const WALK_MODES = new Set([2, 3, 6]) // Walk, Run, TownWalk
+  const IDLE_MODES = new Set([1, 5])     // Neutral, TownNeutral
   let nFail = 0
+  let attemptCount = 0
 
-  while (dist(game.player.x, game.player.y, x, y) > 4) {
-    // Stamina management: stat 80=stamina, stat 81=maxstamina (both shifted by 8)
-    const stamina = getUnitStat(0, game.player.unitId, 80, 0) >> 8
-    const maxStamina = getUnitStat(0, game.player.unitId, 81, 0) >> 8
-    if (maxStamina > 0) {
-      const pct = stamina / maxStamina
-      if (pct < 0.15) {
-        // Very low — switch to walk to recover
-        // TODO: send walk/run toggle packet when available
-      } else if (pct < 0.20) {
-        // Drink stamina pot if available
-        for (const item of game.items) {
-          if (item.location === BELT_LOCATION && item.code === 'vps') {
-            game.clickItem(0, item.unitId)
-            break
-          }
-        }
-      }
-    }
+  while (dist(game.player.x, game.player.y, x, y) > minDist) {
+    if (game.player.mode === 0 || game.player.mode === 17) return false // dead
 
+    // Click toward target
     game.move(x, y)
+    attemptCount++
 
-    let moved = false
-    const startX = game.player.x, startY = game.player.y
-    for (let t = 0; t < maxTicks; t++) {
+    // Wait for walk mode to start (timeout = ~500ms = 20 frames at 25fps)
+    let walkStarted = false
+    for (let t = 0; t < 20; t++) {
       yield
-      if (t % 10 === 0) game.move(x, y)
-
-      const dx = game.player.x - x, dy = game.player.y - y
-      if (dx * dx + dy * dy < 16) return true // arrived
-
-      // Check if we actually moved
-      if (dist(game.player.x, game.player.y, startX, startY) > 2) {
-        moved = true
-      }
+      if (game.player.mode === 0 || game.player.mode === 17) return false
+      if (WALK_MODES.has(game.player.mode)) { walkStarted = true; break }
     }
 
-    if (!moved) {
+    if (!walkStarted) {
+      // Didn't enter walk mode — stuck
       nFail++
       if (nFail >= 3) {
-        game.log('[walk] stuck after 3 attempts')
+        game.log(`[walk] stuck 3x at (${game.player.x},${game.player.y}) target=(${x},${y})`)
         return false
       }
 
-      // Perpendicular juke: try ±90° at distance 5
+      // Perpendicular juke (Ryuk/kolbot pattern)
       const angle = Math.atan2(game.player.y - y, game.player.x - x)
-      const offsets = [Math.PI / 2, -Math.PI / 2]
-      const offset = offsets[nFail % 2]!
-      const jx = Math.round(Math.cos(angle + offset) * 5 + game.player.x)
-      const jy = Math.round(Math.sin(angle + offset) * 5 + game.player.y)
-
-      game.log(`[walk] juke attempt ${nFail}: (${jx},${jy})`)
-      game.move(jx, jy)
-      yield* game.delay(400)
-    } else {
-      nFail = 0
+      const angles = [Math.PI / 2, -Math.PI / 2]
+      for (const off of angles) {
+        const jx = Math.round(Math.cos(angle + off) * 5 + game.player.x)
+        const jy = Math.round(Math.sin(angle + off) * 5 + game.player.y)
+        // TODO: validSpot check when available
+        game.move(jx, jy)
+        // Wait for juke to complete (up to ~1s)
+        for (let t = 0; t < 25; t++) {
+          yield
+          if (dist(game.player.x, game.player.y, jx, jy) <= 2) break
+        }
+        break // only try one direction per fail
+      }
+      continue
     }
+
+    // Walk started — wait for it to finish (idle or close enough)
+    for (let t = 0; t < 120; t++) { // ~5s max
+      yield
+      if (game.player.mode === 0 || game.player.mode === 17) return false
+      if (dist(game.player.x, game.player.y, x, y) <= minDist) return true
+      if (IDLE_MODES.has(game.player.mode)) break // stopped walking
+    }
+
+    if (attemptCount >= 3) return false
   }
-  return true
+
+  return !IDLE_MODES.has(0) && dist(game.player.x, game.player.y, x, y) <= minDist
 }
 
 // ── moveTo — walk a full path with clear at each node ──────────────
@@ -273,24 +290,23 @@ export function* moveTo(
   const clearRange = opts.clearRange ?? CLEAR_RANGE
   game.log('[moveTo] ' + path.length + ' nodes to (' + targetX + ',' + targetY + ')')
 
-  // Draw path on automap
+  // Path drawing disabled for stability — native Line alloc/free triggers SM60 GC crashes
   const lines: Line[] = []
-  if (opts.drawPath !== false) {
-    let px = game.player.x, py = game.player.y
-    for (const wp of path) {
-      lines.push(new Line({ x: px, y: py, x2: wp.x, y2: wp.y, color: 0x84, automap: true }))
-      px = wp.x; py = wp.y
-    }
-  }
 
   for (let i = 0; i < path.length; i++) {
-    if (!game.inGame) break
-    if (game.player.hp <= 0 || game.player.mode === 0 || game.player.mode === 17) break
+    if (!game.inGame) { game.log('[moveTo] abort: not in game'); break }
+    // mode 0 = death, mode 17 = dead — only check mode, not hp (hp can read as 0 before stats load)
+    if (game.player.mode === 0 || game.player.mode === 17) {
+      game.log(`[moveTo] abort: dead (mode=${game.player.mode})`)
+      break
+    }
 
     const wp = path[i]!
 
     // Walk to this node
+    game.log('[moveTo] walkTo node ' + i + '...')
     const ok = yield* walkTo(game, wp.x, wp.y)
+    game.log('[moveTo] walkTo ' + (ok ? 'ok' : 'stuck'))
     if (lines[i]) lines[i]!.remove()
 
     if (!ok) {
@@ -349,7 +365,7 @@ export function* moveToExit(
 
   // Walk the last few tiles toward exit (handles partial path failures)
   for (let attempt = 0; attempt < 10; attempt++) {
-    if (game.area === targetArea) return true
+    if (game.area === targetArea) break
 
     // Try interacting with exit tile
     const tile = game.tiles.find(t => t.destArea === targetArea)
@@ -359,13 +375,13 @@ export function* moveToExit(
         yield* game.delay(300)
       }
       game.interact(tile)
-      if (yield* game.waitForArea(targetArea, 50)) return true
+      if (yield* game.waitForArea(targetArea, 50)) break
     }
 
     // Click toward exit coords
     game.move(exit.x, exit.y)
     yield* game.delay(400)
-    if (game.area === targetArea) return true
+    if (game.area === targetArea) break
   }
 
   return game.area === targetArea

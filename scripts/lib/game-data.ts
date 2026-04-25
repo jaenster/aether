@@ -364,7 +364,9 @@ function stagedDamage(l: number, a: number, b: number, c: number, d: number, e: 
   if (l > 16) { a += d * (l - 16); l = 16; }
   if (l > 8) { a += c * (l - 8); l = 8; }
   a += b * (l - 1);
-  return (mult * a) << hitshift;
+  // Clamp hitshift to prevent integer overflow that crashes SM60 JIT
+  const raw = mult * a;
+  return hitshift > 0 ? Math.floor(raw * (1 << Math.min(hitshift, 8))) : raw;
 }
 
 function skillLevel(skillId: number): number {
@@ -1030,9 +1032,11 @@ export function evaluateBattlefield(
   } else {
     needsReposition = distXY(actualCasterPos.x, actualCasterPos.y, targetPos.x, targetPos.y) > range
   }
-  // Teleport costs ~9 cast frames + 1 frame per 30 units of travel
-  const teleFrames = needsReposition ? 9 + Math.ceil(moveDist / 30) : 0
-  const totalFrames = frames + teleFrames
+  // Movement cost: teleport = ~9 + dist/30 frames, walk = ~dist*2 frames
+  const repoFrames = needsReposition
+    ? _canTeleport ? 9 + Math.ceil(moveDist / 30) : Math.ceil(moveDist * 0.7)
+    : 0
+  const totalFrames = frames + repoFrames
 
   // Mana cost — score = totalUsefulDmg / (frameCost * sqrt(manaCost))
   const manaCost = skillManaCost(skillId)
@@ -1166,6 +1170,9 @@ export function rankActions(
   }
 
   // Check for Static Field (skill 42) as a special case
+  // Cache teleport availability (avoid calling getSkillLevel in hot loop)
+  const _canTeleport = _getSkillLevel(54, 1) > 0
+
   const staticLevel = skillLevel(42)
   if (staticLevel > 0 && effectiveFilter(42)) {
     const diff = getDifficulty()
@@ -1214,27 +1221,45 @@ export function rankActions(
 
   const currentMp = getUnitMP()
 
+  // Pre-compute skill damage for all candidates
+  const skillDmgCache = new Map<number, DamageInfo>()
   for (const sk of candidates) {
-    if (sk === 42) continue // Static Field handled above
+    if (sk === 42) continue
+    try {
+      const dmg = skillDamage(sk)
+      if (dmg.pmin > 0 || dmg.pmax > 0 || dmg.min > 0 || dmg.max > 0) {
+        skillDmgCache.set(sk, dmg)
+      }
+    } catch (e) { /* skip */ }
+  }
+
+  for (const sk of candidates) {
+    if (sk === 42) continue
     if (!effectiveFilter(sk)) continue
     if (skillCooldown(sk)) continue
 
-    // Skip if not enough mana (skill 0 = basic attack costs 0)
     if (sk > 0) {
       const manaCost = skillManaCost(sk)
       if (manaCost > currentMp) continue
     }
 
-    const dmg = skillDamage(sk)
-    if (dmg.pmin === 0 && dmg.pmax === 0 && dmg.min === 0 && dmg.max === 0) continue
+    const dmg = skillDmgCache.get(sk)
+    if (!dmg) continue
 
     const nova = isNova(sk)
 
+    const skRange = skillRange(sk)
+
     for (const targetPos of monsterPositions) {
-      // For novas: cast from the target position (we teleport there).
-      // For targeted: cast from actual caster position, aim at monster.
+      // Skip targets absurdly far away (>50 tiles — not worth walking to)
+      const targetDist = distXY(casterPos.x, casterPos.y, targetPos.x, targetPos.y)
+      if (targetDist > 50) continue
+
       const castFromPos = nova ? targetPos : casterPos
-      const score = evaluateBattlefield(sk, casterPos, castFromPos, targetPos, monsters, charClass, primaryTarget, groupModifier)
+      let score: ActionScore
+      try {
+        score = evaluateBattlefield(sk, casterPos, castFromPos, targetPos, monsters, charClass, primaryTarget, groupModifier)
+      } catch (e) { continue }
       if (score.monstersHit === 0) continue
 
       const prev = bestPerSkill.get(sk)

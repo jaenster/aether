@@ -1,0 +1,16 @@
+---------------------------------------------------------------
+MAC Realm startup at 2026-03-10 11:15:00.719
+---------------------------------------------------------------
+11:15:00.720  ------------------------------------------------------
+11:15:00.720  2026-03-10 11:15:00
+11:15:00.720  Diablo II running under Windows .Net (Version 6.002)
+11:15:00.720  Vendor:  Intel
+11:15:00.720  Version: Pentium III (no brand) (Type 0, Family 6, Model C, Stepping 0, Brand 0)
+11:15:00.742  Speed: Approx. 999 MHz
+11:15:00.742  Total Physical Memory: 2048.00MB
+11:15:00.742  Application Path: Z:\Users\jaenster\code\claude\ghidra-mcp\114Clean
+11:15:00.749  Local IP: 10.24.1.93
+11:15:00.749  Computer name: MAC
+11:15:00.749  ------------------------------------------------------
+11:15:00.749  
+11:15:01.104  Missing functions in imagehlp.dll.  Can't generate better stack crawls!

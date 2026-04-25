@@ -19,8 +19,20 @@ export function* interactNPC(game: Game, classid: number): Generator<void, NPC |
     const preset = game.findPreset(1, classid)
     if (preset) {
       yield* walkTo(game, preset.x, preset.y)
-      yield* game.delay(300)
+      yield* game.delay(500)
       npc = game.npcs.find(n => n.classid === classid)
+    }
+  }
+
+  if (!npc) {
+    // Last resort: scan all monsters (NPCs are type 1 units)
+    for (const m of game.monsters) {
+      if (m.classid === classid) {
+        yield* walkTo(game, m.x, m.y)
+        yield* game.delay(300)
+        npc = game.npcs.find(n => n.classid === classid)
+        break
+      }
     }
   }
 
@@ -130,5 +142,14 @@ export function getAct(area: number): number {
 export function* healInTown(game: Game): Generator<void> {
   const act = getAct(game.area)
   const classid = Healers[act]
-  if (classid) yield* healAtNPC(game, classid)
+  if (!classid) return
+
+  // Walk toward healer area first to load rooms (NPCs aren't visible until nearby)
+  if (act === 1) {
+    // Akara is near the center-east of Rogue Encampment
+    yield* walkTo(game, game.player.x + 10, game.player.y - 5, 8)
+    yield* game.delay(200)
+  }
+
+  yield* healAtNPC(game, classid)
 }

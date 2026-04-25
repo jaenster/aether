@@ -11,14 +11,22 @@ import { townVisit } from "./lib/town-visit.js"
 import { PotionDrinker } from "./lib/potions.js"
 import { Overlay } from "./threads/overlay.js"
 import { AutoBuild } from "./services/auto-build.js"
-import { BlizzSorc } from "./builds/sorc-blizz.js"
+import { FireSorc } from "./builds/sorc-fire.js"
 import { Chaos } from "./sequences/chaos.js"
-import { act1Leveling } from "./sequences/act1-leveling.js"
+import { denOfEvil } from "./sequences/act1/DenOfEvil.js"
+import { cave } from "./sequences/act1/Cave.js"
+import { bloodRaven } from "./sequences/act1/BloodRaven.js"
+import { tristram } from "./sequences/act1/Tristram.js"
+import { underground } from "./sequences/act1/Underground.js"
+import { countess } from "./sequences/act1/Countess.js"
+import { walkToCatacombs } from "./sequences/act1/WalkToCatacombs.js"
+import { andy } from "./sequences/act1/Andy.js"
 import { act2Leveling } from "./sequences/act2-leveling.js"
 import { act3Leveling } from "./sequences/act3-leveling.js"
 import { act4Leveling } from "./sequences/act4-leveling.js"
 import { act5Leveling } from "./sequences/act5-leveling.js"
 import { Progression } from "./services/progression.js"
+import { pickScript, markDone, resetDone } from "./decisions/index.js"
 
 const CHAR_CLASS = 1 // Sorceress
 const townAreas = new Set([Area.RogueEncampment, Area.LutGholein, Area.KurastDocks, Area.PandemoniumFortress, Area.Harrogath])
@@ -29,15 +37,7 @@ interface BotState {
   runsCompleted: number
 }
 
-// Background thread: allocate skill/stat points
-const AutoAllocThread = createScript(function*(game, svc) {
-  const ab = svc.get(AutoBuild)
-  ab.setBuild(BlizzSorc)
-  while (true) {
-    yield* game.delay(2000)
-    if (game.inGame) yield* ab.allocatePoints()
-  }
-})
+// REMOVED: AutoAllocThread — skill/stat allocation done in main run loop instead
 
 // Background thread: refresh buffs
 const BuffThread = createScript(function*(game, svc) {
@@ -63,6 +63,12 @@ export default createBot('aether', function*(game, svc) {
   } else {
     game.log('[bot] loaded: ' + state.charName + ' (' + state.runsCompleted + ' runs)')
   }
+
+  // ── Register background threads (before first game so they run immediately) ──
+  // Minimal threads for stability — ThreatMonitor + Overlay disabled (GC pressure)
+  game.load.inGame(Guard)
+  game.load.inGame(Chicken)
+  game.load.inGame(PotionDrinker)
 
   // ── OOG: create/select char ──
   while (!game.inGame) {
@@ -119,15 +125,6 @@ export default createBot('aether', function*(game, svc) {
 
   game.log('[bot] IN GAME level ' + game.charLevel + ' area ' + game.area)
 
-  // ── Register threads ──
-  game.load.inGame(ThreatMonitor)
-  game.load.inGame(Guard)
-  game.load.inGame(Chicken)
-  game.load.inGame(AutoAllocThread)
-  game.load.inGame(BuffThread)
-  game.load.inGame(PotionDrinker)
-  game.load.inGame(Overlay)
-
   const town = svc.get(Town)
   const move = svc.get(Movement)
   const buffs = svc.get(Buffs)
@@ -136,12 +133,14 @@ export default createBot('aether', function*(game, svc) {
   // Map decision tree script names → generator functions
   const scriptMap: Record<string, (g: typeof game, s: typeof svc) => Generator<void>> = {
     // Act 1
-    'den-of-evil': act1Leveling,
-    'blood-raven': act1Leveling,
-    'tristram': act1Leveling,
-    'countess': act1Leveling,
-    'walk-to-catacombs': act1Leveling,
-    'andy': act1Leveling,
+    'den-of-evil': denOfEvil,
+    'cave': cave,
+    'blood-raven': bloodRaven,
+    'tristram': tristram,
+    'underground': underground,
+    'countess': countess,
+    'walk-to-catacombs': walkToCatacombs,
+    'andy': andy,
     // Act 2
     'radament': act2Leveling,
     'cube': act2Leveling,
@@ -183,8 +182,25 @@ export default createBot('aether', function*(game, svc) {
       const level = game.charLevel
       game.log('[bot] level ' + level + ' area ' + game.area)
 
-      // Town: heal if needed (skip complex chores for now)
+      // Death check — exit game immediately
+      if (game.player.mode === 0 || game.player.mode === 17) {
+        game.log('[bot] DEAD — exiting game')
+        game.exitGame()
+        return
+      }
+
+      // Allocate skill/stat points
+      try {
+        const ab = svc.get(AutoBuild)
+        ab.setBuild(FireSorc)
+        yield* ab.allocatePoints()
+      } catch (e: any) {
+        game.log('[bot] alloc error: ' + (e.message || e))
+      }
+
+      // Town: heal → sell junk → buy pots → equip upgrades
       if (townAreas.has(game.area)) {
+        game.log('[bot] in town, gold=' + game.gold)
         try {
           yield* townVisit(game)
         } catch (e: any) {
@@ -192,13 +208,22 @@ export default createBot('aether', function*(game, svc) {
         }
       }
 
-      // Route to appropriate act script
+      // Route to appropriate act script via decision tree (mirrors Ryuk)
       try {
-        if (level >= 25 && game.area >= Area.RiverofFlame) {
-          yield* buffs.refreshAll()
-          yield* Chaos.factory(game, svc)
+        game.log('[bot] picking script...')
+        const script = pickScript(game)
+        if (script) {
+          const fn = scriptMap[script]
+          if (fn) {
+            game.log('[bot] running: ' + script)
+            yield* fn(game, svc)
+            markDone(script)
+          } else {
+            game.log('[bot] unknown script: ' + script)
+          }
         } else {
-          yield* act1Leveling(game, svc)
+          game.log('[bot] no script picked, exiting')
+          game.exitGame()
         }
       } catch (e: any) {
         game.log('[bot] script error: ' + (e.message || e))
@@ -210,7 +235,8 @@ export default createBot('aether', function*(game, svc) {
       game.log('[bot] run ' + state.runsCompleted + ' done, level ' + game.charLevel)
     }())
 
-    // Left game
+    // Left game — reset per-game state
+    resetDone()
     yield* game.delay(2000)
   }
 })

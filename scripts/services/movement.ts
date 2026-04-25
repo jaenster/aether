@@ -112,18 +112,30 @@ export const Movement = createService((game: Game, services) => {
     },
 
     *walkTo(targetX: number, targetY: number) {
-      const path = game.findPath(targetX, targetY)
-      if (path.length === 0) {
-        // game.log(`[move] walkTo: no path to ${targetX},${targetY} from ${game.player.x},${game.player.y}`)
-        return
-      }
+      let path = game.findPath(targetX, targetY)
+      if (path.length === 0) return
 
-      for (const wp of path) {
-        for (let ticks = 0; ticks < 50; ticks++) {
+      let repathCount = 0
+      const MAX_REPATHS = 3
+
+      for (let wi = 0; wi < path.length; wi++) {
+        const wp = path[wi]!
+
+        // Skip waypoints we're already past (closer to next than current)
+        if (wi + 1 < path.length) {
+          const dCur = dist(game.player.x, game.player.y, wp.x, wp.y)
+          const dNext = dist(game.player.x, game.player.y, path[wi + 1]!.x, path[wi + 1]!.y)
+          if (dNext < dCur && dNext < 10) continue
+        }
+
+        let stuckCount = 0
+        let lastX = game.player.x, lastY = game.player.y
+
+        for (let ticks = 0; ticks < 80; ticks++) {
           const d = dist(game.player.x, game.player.y, wp.x, wp.y)
           if (d < 5) break
 
-          // Take small steps — click max 10 tiles at a time to avoid wall clicks
+          // Small steps — cap at 10 tiles to avoid clicking through walls
           let clickX = wp.x, clickY = wp.y
           if (d > 10) {
             const ratio = 10 / d
@@ -133,6 +145,44 @@ export const Movement = createService((game: Game, services) => {
 
           game.move(clickX, clickY)
           yield* game.delay(80)
+
+          // Stuck detection every ~20 ticks (~1.6s)
+          if (ticks > 0 && ticks % 20 === 0) {
+            const moved = dist(game.player.x, game.player.y, lastX, lastY)
+            if (moved < 3) {
+              stuckCount++
+
+              if (stuckCount >= 2) {
+                // Perpendicular sidestep (kolbot technique)
+                const angle = Math.atan2(game.player.y - wp.y, game.player.x - wp.x)
+                const side = stuckCount % 2 === 0 ? Math.PI / 2 : -Math.PI / 2
+                const jx = Math.round(Math.cos(angle + side) * 5 + game.player.x)
+                const jy = Math.round(Math.sin(angle + side) * 5 + game.player.y)
+                game.log(`[walk] stuck ${stuckCount}x, sidestep to ${jx},${jy}`)
+                game.move(jx, jy)
+                yield* game.delay(400)
+              }
+
+              if (stuckCount >= 4) {
+                // Re-path from current position
+                if (repathCount < MAX_REPATHS) {
+                  repathCount++
+                  game.log(`[walk] re-pathing (${repathCount}/${MAX_REPATHS})`)
+                  path = game.findPath(targetX, targetY)
+                  if (path.length === 0) return
+                  wi = -1 // restart loop (will increment to 0)
+                  break
+                } else {
+                  game.log(`[walk] max re-paths, giving up`)
+                  return
+                }
+              }
+            } else {
+              stuckCount = 0
+            }
+            lastX = game.player.x
+            lastY = game.player.y
+          }
         }
       }
     },
@@ -170,7 +220,6 @@ export const Movement = createService((game: Game, services) => {
       const exits = game.getExits()
       const exit = exits.find(e => e.area === areaId)
       if (!exit) {
-        // game.log(`[move] no exit to area ${areaId}`)
         return false
       }
 
@@ -188,21 +237,21 @@ export const Movement = createService((game: Game, services) => {
           if (dist(game.player.x, game.player.y, exit.x, exit.y) < 3) break
           game.move(exit.x, exit.y)
           yield* game.delay(100)
-          if (game.area === areaId) return true
+          if (game.area === areaId) break
         }
+
+        if (game.area === areaId) break
 
         // Find warp tile unit for our target area and interact
         const tile = game.tiles.find(t => t.destArea === areaId)
         if (tile) {
           game.interact(tile)
-        } else {
-          // game.log(`[move] no tile unit for area ${areaId}`)
         }
 
-        if (yield* game.waitForArea(areaId)) return true
+        if (yield* game.waitForArea(areaId)) break
       }
-      // game.log(`[move] exit to area ${areaId} timed out`)
-      return false
+
+      return game.area === areaId
     },
 
     findWaypointPreset() {

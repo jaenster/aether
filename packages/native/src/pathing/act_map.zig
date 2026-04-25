@@ -470,6 +470,8 @@ const ExitCandidate = struct {
     mid_x: i32,
     mid_y: i32,
     size: i32,
+    ortho_dx: i32,
+    ortho_dy: i32,
 };
 
 fn candidateDistance(c: ExitCandidate) f64 {
@@ -592,6 +594,8 @@ fn findRoomLinkageExits(buf: []Exit, count: *u32) void {
                             .mid_x = last_walkable_x - edge_dx * @divTrunc(spaces, 2),
                             .mid_y = last_walkable_y - edge_dy * @divTrunc(spaces, 2),
                             .size = spaces,
+                            .ortho_dx = ortho_dx,
+                            .ortho_dy = ortho_dy,
                         };
                         candidate_count += 1;
                     }
@@ -634,13 +638,11 @@ fn findRoomLinkageExits(buf: []Exit, count: *u32) void {
 
         if (count.* < buf.len) {
             const c = candidates[best_idx];
-            // Push 5 tiles into the target area (away from border)
-            const offset_x = c.center_x - c.mid_x;
-            const offset_y = c.center_y - c.mid_y;
-            const norm: i32 = @intCast(@max(@abs(offset_x), @abs(offset_y)));
+            // Push 5 tiles into the target area along the orthogonal direction
+            // ortho_dx/ortho_dy points from our room into the adjacent room
             const push: i32 = 5;
-            const into_x: i32 = if (norm > 0) c.mid_x + @divTrunc(offset_x * push, norm) else c.mid_x;
-            const into_y: i32 = if (norm > 0) c.mid_y + @divTrunc(offset_y * push, norm) else c.mid_y;
+            const into_x: i32 = c.mid_x + c.ortho_dx * push;
+            const into_y: i32 = c.mid_y + c.ortho_dy * push;
             buf[count.*] = .{
                 .target = c.level_no,
                 .x = @intCast(into_x),

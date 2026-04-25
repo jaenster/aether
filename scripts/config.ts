@@ -12,7 +12,7 @@ export const townAreas = new Set([
 export const Config = createService((game) => ({
   // Combat
   teleport: Skill.Teleport,
-  killRange: 25,        // max distance to engage
+  killRange: 30,        // max distance to engage (was 25, too tight for walking)
   maxAttacks: 50,       // bail after this many casts per clear
 
   // Loot

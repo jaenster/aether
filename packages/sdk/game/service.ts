@@ -175,11 +175,13 @@ export function createBot(name: string, factory: BotFactory): BotToken {
       if (state.pendingFactory) {
         game.load.clear()
         game._clearPacketHooks()
-        // Re-create service container with updated token factories
         const newSvc = new ServiceContainer(game)
         state.svc = newSvc
         state.mainGen = state.pendingFactory(game, newSvc)
         state.pendingFactory = null
+        // Step the new main generator once so it can register inGame scripts
+        // before we snapshot inGameScripts below
+        try { state.mainGen.next() } catch {}
       }
 
       state.frameCount = 0

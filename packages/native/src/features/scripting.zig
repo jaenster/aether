@@ -6,6 +6,7 @@ const bindings = @import("../sm/bindings.zig");
 const DaemonConnection = @import("../net/daemon.zig").DaemonConnection;
 const ScriptLoader = @import("../net/script_loader.zig").ScriptLoader;
 const packet_hooks = @import("packet_hooks.zig");
+const globals = @import("../d2/globals.zig");
 
 var engine: ?Engine = null;
 var daemon: DaemonConnection = .{};
@@ -153,6 +154,8 @@ fn tickCommon() void {
 
 fn gameLoop() void {
     was_in_game = true;
+    // Disable NoPickUp so items can be auto-picked when walking over them
+    globals.noPickUp().* = 0;
     tickCommon();
     const eng = &(engine orelse return);
 

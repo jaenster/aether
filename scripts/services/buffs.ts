@@ -335,11 +335,9 @@ export const Buffs = createService((game: Game) => {
       })
     }
 
-    // CTA buffs for non-barbs: always register as swap buffs.
-    // We can't check skill levels here (CTA is on swap weapon, not active),
-    // so we register them unconditionally. refreshAll/refreshOne will swap
-    // weapons and skip if skill level is 0 (no CTA equipped).
-    if (charClass !== 4 /* barb */) {
+    // CTA buffs for non-barbs: register as swap buffs only at level 25+
+    // (CTA requires level 25 to equip). Below that, no point swapping.
+    if (charClass !== 4 /* barb */ && game.charLevel >= 25) {
       for (const skillId of CTA_SKILLS) {
         if (tracked.some(t => t.def.skillId === skillId)) continue
         const def = BUFF_DEF_MAP.get(skillId)

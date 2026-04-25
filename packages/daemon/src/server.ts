@@ -42,12 +42,14 @@ export class AetherServer {
   start(): void {
     this.wss = new WebSocketServer({ port: this.port, host: this.host });
 
-    this.wss.on("connection", (ws) => {
+    this.wss.on("connection", (ws, req) => {
       const clientId = randomUUID();
       let client: ConnectedClient | null = null;
+      console.log(`[ws] New connection from ${req.socket.remoteAddress}:${req.socket.remotePort}`);
 
       // Wait for hello message
       const helloTimeout = setTimeout(() => {
+        console.log(`[ws] No hello from ${clientId} after 5s, closing`);
         ws.close(1008, "No hello received");
       }, 5000);
 

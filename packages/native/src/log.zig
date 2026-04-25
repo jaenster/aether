@@ -30,6 +30,13 @@ extern "kernel32" fn GetStdHandle(id: DWORD) callconv(.winapi) HANDLE;
 const STD_OUTPUT_HANDLE: DWORD = @as(DWORD, @bitCast(@as(i32, -11)));
 var console_handle: ?HANDLE = null;
 
+/// Callback for in-game console overlay. Set by features/console.zig during init.
+pub var ingame_console_callback: ?*const fn ([]const u8) void = null;
+
+fn toIngameConsole(msg: []const u8) void {
+    if (ingame_console_callback) |cb| cb(msg);
+}
+
 const SetFilePointer = struct {
     extern "kernel32" fn SetFilePointer(h: HANDLE, dist: i32, high: ?*i32, method: DWORD) callconv(.winapi) DWORD;
 }.SetFilePointer;
@@ -99,6 +106,7 @@ pub fn print(comptime msg: []const u8) void {
     defer _ = CloseHandle(h);
     writeRaw(h, msg ++ "\r\n");
     writeConsole(msg ++ "\r\n");
+    toIngameConsole(msg);
 }
 
 /// Print "prefix" + hex value + newline
@@ -132,6 +140,16 @@ pub fn printStr(comptime prefix: []const u8, s: []const u8) void {
     writeConsole(prefix);
     writeConsole(s);
     writeConsole("\r\n");
+    // Build combined string for in-game console
+    var combined: [512]u8 = undefined;
+    const plen = prefix.len;
+    if (plen + s.len <= combined.len) {
+        @memcpy(combined[0..plen], prefix);
+        @memcpy(combined[plen..plen + s.len], s);
+        toIngameConsole(combined[0 .. plen + s.len]);
+    } else {
+        toIngameConsole(prefix);
+    }
 }
 
 /// Print to verbose log file + console, but NOT the main log

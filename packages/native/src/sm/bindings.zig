@@ -544,6 +544,109 @@ fn jsItemGetCode(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_
     return 1;
 }
 
+/// Returns ItemsTxt.nType (item type id from ItemTypes.txt) — used by NIP [type] keyword
+fn jsItemGetItemType(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const unit_id: u32 = @bitCast(argInt32(argc, vp, 0));
+    const unit = units.findUnit(4, unit_id) orelse { retInt32(argc, vp, 0); return 1; };
+    const txt = d2.GetItemText.call(unit.dwTxtFileNo) orelse { retInt32(argc, vp, 0); return 1; };
+    retInt32(argc, vp, @bitCast(txt.nType));
+    return 1;
+}
+
+/// Returns ItemData.dwItemLevel (ilvl) — used by NIP [level] keyword
+fn jsItemGetLevel(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const unit_id: u32 = @bitCast(argInt32(argc, vp, 0));
+    const unit = units.findUnit(4, unit_id) orelse { retInt32(argc, vp, 0); return 1; };
+    const data: *types.ItemData = @ptrCast(@alignCast(unit.pUnitData orelse { retInt32(argc, vp, 0); return 1; }));
+    retInt32(argc, vp, @bitCast(data.dwItemLevel));
+    return 1;
+}
+
+/// Returns CSV "magic0,magic1,magic2,rare,auto" — the 5 prefix slot IDs from ItemData.
+/// Kolbot getPrefix(id) tests if any of these match the queried id.
+fn jsItemGetPrefixes(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const unit_id: u32 = @bitCast(argInt32(argc, vp, 0));
+    const unit = units.findUnit(4, unit_id) orelse { retString(cx, argc, vp, ""); return 1; };
+    const data: *types.ItemData = @ptrCast(@alignCast(unit.pUnitData orelse { retString(cx, argc, vp, ""); return 1; }));
+    var buf: [128]u8 = undefined;
+    const out = std.fmt.bufPrint(&buf, "{d},{d},{d},{d},{d}", .{
+        data.wMagicPrefix[0], data.wMagicPrefix[1], data.wMagicPrefix[2],
+        data.wRarePrefix, data.wAutoPrefix,
+    }) catch { retString(cx, argc, vp, ""); return 1; };
+    retString(cx, argc, vp, out);
+    return 1;
+}
+
+/// Returns CSV "magic0,magic1,magic2,rare" — the 4 suffix slot IDs.
+fn jsItemGetSuffixes(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const unit_id: u32 = @bitCast(argInt32(argc, vp, 0));
+    const unit = units.findUnit(4, unit_id) orelse { retString(cx, argc, vp, ""); return 1; };
+    const data: *types.ItemData = @ptrCast(@alignCast(unit.pUnitData orelse { retString(cx, argc, vp, ""); return 1; }));
+    var buf: [128]u8 = undefined;
+    const out = std.fmt.bufPrint(&buf, "{d},{d},{d},{d}", .{
+        data.wMagicSuffix[0], data.wMagicSuffix[1], data.wMagicSuffix[2],
+        data.wRareSuffix,
+    }) catch { retString(cx, argc, vp, ""); return 1; };
+    retString(cx, argc, vp, out);
+    return 1;
+}
+
+/// Returns the item's full stat list as a JSON array of [stat, layer, value] triples.
+/// Walks UnitAny.pStats.stat_vec and all linked set-lists so all affix/socketed/runeword
+/// stats are included. Matches kolbot d2bs getStat(-1) behaviour.
+fn jsItemGetStatList(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const unit_id: u32 = @bitCast(argInt32(argc, vp, 0));
+    const unit = units.findUnit(4, unit_id) orelse { retString(cx, argc, vp, "[]"); return 1; };
+
+    // 8 KB buffer — plenty for any realistic item (typically 5-30 stats → 300-1000 bytes JSON).
+    var buf: [8192]u8 = undefined;
+    var pos: usize = 0;
+    buf[pos] = '['; pos += 1;
+    var first = true;
+
+    const appendTriple = struct {
+        fn call(b: *[8192]u8, p: *usize, f: *bool, s: u16, l: u16, v: i32) void {
+            if (p.* + 40 >= b.len) return;  // safety margin
+            if (!f.*) { b[p.*] = ','; p.* += 1; }
+            f.* = false;
+            b[p.*] = '['; p.* += 1;
+            const w = std.fmt.bufPrint(b[p.*..], "{d},{d},{d}", .{ s, l, v }) catch return;
+            p.* += w.len;
+            b[p.*] = ']'; p.* += 1;
+        }
+    }.call;
+
+    // Walk primary stat list (pStats) and follow pNext chain.
+    var list: ?*types.StatList = unit.pStats;
+    var guard: u32 = 0;
+    while (list) |sl| : (guard += 1) {
+        if (guard > 32) break;  // defensive: don't follow pathological chains
+        // Main stat vector — pStats is a *Stat pointing to the first of a contiguous array
+        if (sl.stat_vec.pStats) |stats_ptr| {
+            const arr: [*]types.Stat = @ptrCast(stats_ptr);
+            var i: u16 = 0;
+            while (i < sl.stat_vec.wCount) : (i += 1) {
+                const s = arr[i];
+                appendTriple(&buf, &pos, &first, s.wStatIndex, s.wSubIndex, @bitCast(s.dwStatValue));
+            }
+        }
+        // Set bonus vector (active set bonuses live here)
+        if (sl.set_stat_vec.pStats) |stats_ptr| {
+            const arr: [*]types.Stat = @ptrCast(stats_ptr);
+            var i: u16 = 0;
+            while (i < sl.set_stat_vec.wCount) : (i += 1) {
+                const s = arr[i];
+                appendTriple(&buf, &pos, &first, s.wStatIndex, s.wSubIndex, @bitCast(s.dwStatValue));
+            }
+        }
+        list = sl.pNext;
+    }
+
+    if (pos + 1 < buf.len) { buf[pos] = ']'; pos += 1; }
+    retString(cx, argc, vp, buf[0..pos]);
+    return 1;
+}
+
 // ── Tile property bindings ───────────────────────────────────────────
 
 fn jsTileGetDestArea(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
@@ -922,22 +1025,33 @@ fn jsFindPreset(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_i
 // ── Skill level ─────────────────────────────────────────────────────
 
 /// getSkillLevel(skillId: i32, mode: i32) -> i32
-/// mode 0 = base (hard points via stat 107), mode 1 = effective (with +skills)
+/// mode 0 = base (hard points), mode 1 = effective (with +skills)
+/// Walks skill linked list like d2bs: GetSkill → GetSkillLevel
 fn jsGetSkillLevel(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const skill_id = argInt32(argc, vp, 0);
     const mode = argInt32(argc, vp, 1);
 
     const player = globals.playerUnit().* orelse { retInt32(argc, vp, 0); return 1; };
+    const info = player.pInfo orelse { retInt32(argc, vp, 0); return 1; };
 
-    if (mode == 0) {
-        // Base level = hard skill points (stat 107, layer = skillId)
-        const val = d2.GetUnitStat.call(player, 107, @bitCast(skill_id));
-        retInt32(argc, vp, @bitCast(val));
-    } else {
-        // Effective level via GetSkillLevelById (fastcall, includes +skills)
-        const val = d2.GetSkillLevelById.call(.{ player, skill_id });
-        retInt32(argc, vp, val);
+    // Walk skill linked list manually (d2bs pattern — D2's GetSkill has unknown calling convention)
+    var skill = info.pFirstSkill;
+    var skill_ptr: ?*anyopaque = null;
+    while (skill) |s| {
+        if (s.pSkillInfo) |si| {
+            if (si.wSkillId == @as(u16, @intCast(skill_id & 0xFFFF))) {
+                skill_ptr = @ptrCast(s);
+                break;
+            }
+        }
+        skill = s.pNextSkill;
     }
+    if (skill_ptr == null) { retInt32(argc, vp, 0); return 1; }
+
+    // mode 0 = base (no bonus), mode 1 = effective (with +skills)
+    const apply_bonus = mode != 0;
+    const val = d2.GetSkillLevel.call(player, skill_ptr, apply_bonus);
+    retInt32(argc, vp, val);
     return 1;
 }
 
@@ -1344,10 +1458,12 @@ fn jsGetQuest(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int 
     const quest_id: u32 = @bitCast(argInt32(argc, vp, 0));
     const sub_id: u32 = @bitCast(argInt32(argc, vp, 1));
     const player = globals.playerUnit().* orelse { retInt32(argc, vp, 0); return 1; };
-    const pdata: *types.PlayerData = @ptrCast(@alignCast(player.pUnitData orelse { retInt32(argc, vp, 0); return 1; }));
-    // Select quest buffer by difficulty
+    const pdata_ptr = player.pUnitData orelse { retInt32(argc, vp, 0); return 1; };
+    if (@intFromPtr(pdata_ptr) < 0x10000) { retInt32(argc, vp, 0); return 1; }
+    const pdata: *types.PlayerData = @ptrCast(@alignCast(pdata_ptr));
     const gi_ptr = globals.gameInfo().*;
     const diff: u32 = if (gi_ptr) |gi| blk: {
+        if (@intFromPtr(gi) < 0x10000) break :blk @as(u32, 0);
         const diff_ptr: *u32 = @ptrFromInt(@intFromPtr(gi) + 0x5C);
         break :blk diff_ptr.*;
     } else 0;
@@ -1358,7 +1474,11 @@ fn jsGetQuest(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int 
         else => pdata.pNormalQuest,
     };
     if (quest_buf == null) { retInt32(argc, vp, 0); return 1; }
-    const result = d2.GetQuestState.call(.{ quest_buf, quest_id, sub_id });
+    const qbuf = quest_buf.?;
+    if (@intFromPtr(qbuf) < 0x10000) { retInt32(argc, vp, 0); return 1; }
+    // Bounds check: max 48 quests (buffer is 0x60 bytes = 768 bits = 48 quests × 16 states)
+    if (quest_id >= 48 or sub_id >= 16) { retInt32(argc, vp, 0); return 1; }
+    const result = d2.GetQuestState(qbuf, quest_id, sub_id);
     retInt32(argc, vp, result);
     return 1;
 }
@@ -1367,11 +1487,16 @@ fn jsGetQuest(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int 
 /// Reads from PlayerData waypoint buffers, which are bitfields.
 fn jsHasWaypoint(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const wp_index: u32 = @bitCast(argInt32(argc, vp, 0));
+    if (wp_index >= 64) { retBool(argc, vp, false); return 1; } // sanity check
     const player = globals.playerUnit().* orelse { retBool(argc, vp, false); return 1; };
-    const pdata: *types.PlayerData = @ptrCast(@alignCast(player.pUnitData orelse { retBool(argc, vp, false); return 1; }));
+    const pdata_ptr = player.pUnitData orelse { retBool(argc, vp, false); return 1; };
+    // Validate pointer range (PlayerData should be in heap, not null page)
+    if (@intFromPtr(pdata_ptr) < 0x10000) { retBool(argc, vp, false); return 1; }
+    const pdata: *types.PlayerData = @ptrCast(@alignCast(pdata_ptr));
     // Select waypoint buffer by difficulty
     const gi_ptr = globals.gameInfo().*;
     const diff: u32 = if (gi_ptr) |gi| blk: {
+        if (@intFromPtr(gi) < 0x10000) break :blk @as(u32, 0);
         const diff_ptr: *u32 = @ptrFromInt(@intFromPtr(gi) + 0x5C);
         break :blk diff_ptr.*;
     } else 0;
@@ -1382,12 +1507,10 @@ fn jsHasWaypoint(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_i
         else => pdata.pNormalWaypoint,
     };
     const buf_ptr = wp_buf orelse { retBool(argc, vp, false); return 1; };
-    // Waypoint buffer is a bitfield — each waypoint is one bit
-    // The buffer starts with a 2-byte header, then the bitfield
+    if (@intFromPtr(buf_ptr) < 0x10000) { retBool(argc, vp, false); return 1; }
     const bytes: [*]const u8 = @ptrCast(buf_ptr);
     const byte_idx = wp_index / 8;
     const bit_idx: u3 = @intCast(wp_index % 8);
-    // Offset 2 bytes past start (standard D2 waypoint buffer layout)
     const val = bytes[2 + byte_idx];
     retBool(argc, vp, (val >> bit_idx) & 1 == 1);
     return 1;
@@ -2345,6 +2468,11 @@ const bindings = [_]Binding{
     .{ .name = "itemGetLocationRaw", .func = &jsItemGetLocationRaw, .nargs = 1 },
     .{ .name = "itemGetCode", .func = &jsItemGetCode, .nargs = 1 },
     .{ .name = "itemGetRunewordIndex", .func = &jsItemGetRunewordIndex, .nargs = 1 },
+    .{ .name = "itemGetItemType", .func = &jsItemGetItemType, .nargs = 1 },
+    .{ .name = "itemGetLevel", .func = &jsItemGetLevel, .nargs = 1 },
+    .{ .name = "itemGetStatList", .func = &jsItemGetStatList, .nargs = 1 },
+    .{ .name = "itemGetPrefixes", .func = &jsItemGetPrefixes, .nargs = 1 },
+    .{ .name = "itemGetSuffixes", .func = &jsItemGetSuffixes, .nargs = 1 },
     // Tile properties
     .{ .name = "tileGetDestArea", .func = &jsTileGetDestArea, .nargs = 1 },
     // Player

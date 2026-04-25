@@ -667,10 +667,10 @@ pub fn sendSelectSkill(skill_id: u16, left: bool) void {
 // Quest (__fastcall)
 // ============================================================================
 
-/// GetQuestState: check a single quest bit.
-/// ECX=pBitBuffer, EDX=questId (0-based), stack=stateId (bit within quest's 16-bit block)
-/// Returns 1 if the bit is set, 0 otherwise.
-pub const GetQuestState = fastcall(0x0065C310, fn (?*anyopaque, u32, u32) i32);
+/// GetQuestState: check a single quest bit.  __stdcall, all 3 params on stack.
+/// pBitBuffer is a D2BitBufferStrc* (NOT raw bytes — has a pBuffer pointer at offset 0).
+/// Bit offset = questId * 16 + stateId.  Buffer is 0x60 bytes = 768 bits = 48 quests × 16 states.
+pub const GetQuestState: *const fn (?*anyopaque, u32, u32) callconv(.winapi) i32 = @ptrFromInt(0x0065C310);
 
 // ============================================================================
 // Portal / Object creation (__fastcall)
@@ -694,8 +694,10 @@ pub const FindSpawnableLocation = fastcall(0x00545340, fn (?*anyopaque, *[2]i32,
 // ============================================================================
 
 /// GetSkill: returns D2SkillStrc* for a skill on a unit, or null.
-/// __unknown calling convention — appears to be fastcall: ECX=pUnit, EDX=eSkill
-pub const GetSkill = fastcall(0x00643810, fn (?*UnitAny, i32) ?*anyopaque);
+/// Calling convention is unknown — d2bs walks the skill list manually instead of calling this.
+/// We keep the manual walk in jsGetSkillLevel for safety, but also expose this for reference.
+/// Appears to be reversed fastcall: ECX=eSkill, EDX=pUnit (crash analysis: ECX had the skill ID).
+pub const GetSkill = fastcall(0x00643810, fn (i32, ?*UnitAny) ?*anyopaque);
 
 /// GetSkillLevel: returns skill level with or without +skills bonus.
 /// __stdcall(pUnit, pSkill, bApplyBonus) → int

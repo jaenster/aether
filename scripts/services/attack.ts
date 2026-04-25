@@ -39,9 +39,7 @@ export const Attack = createService((game: Game, services) => {
   /** Default filter: alive and within range. LoS check only for far targets. */
   function inRange(range: number): (m: Monster) => boolean {
     return (m: Monster) => {
-      if (!alive(m) || m.distance >= range) return false
-      // Only LoS-check at long range (>20) where terrain walls actually matter.
-      // Short/mid range: if the game shows the monster, we can hit it.
+      if (!alive(m) || m.distance > range) return false // > not >= so killRange itself is included
       if (m.distance > 20) {
         return game.hasLineOfSight(game.player.x, game.player.y, m.x, m.y)
       }
@@ -286,16 +284,27 @@ export const Attack = createService((game: Game, services) => {
         }
 
         const projType = skillProjectileType(action.skillId)
-        if (projType !== 'ground_aoe' && !game.hasLineOfSight(game.player.x, game.player.y, action.targetPos.x, action.targetPos.y)) {
+        // Skip LoS re-check for close targets — the native LoS function can crash
+        // if the target room is unloaded (monster died and rooms shifted)
+        const targetDist = Math.sqrt(
+          (game.player.x - action.targetPos.x) ** 2 + (game.player.y - action.targetPos.y) ** 2
+        )
+        if (targetDist > 20 && projType !== 'ground_aoe' && !game.hasLineOfSight(game.player.x, game.player.y, action.targetPos.x, action.targetPos.y)) {
           // No LoS after positioning — teleport closer to target and retry
           yield* move.moveNear(target.x, target.y, 3)
           currentSkill = -1
           continue
         }
 
-        if (action.skillId !== currentSkill) {
-          yield* preSelect(action.skillId)
-          currentSkill = action.skillId
+        // Mana check — switch to melee Attack if OOM
+        let castSkillId = action.skillId
+        if (castSkillId > 0 && game.player.mp < 3) {
+          castSkillId = 0
+        }
+
+        if (castSkillId !== currentSkill) {
+          yield* preSelect(castSkillId)
+          currentSkill = castSkillId
         }
 
         game.castSkill(action.targetPos.x, action.targetPos.y)
@@ -321,18 +330,22 @@ export const Attack = createService((game: Game, services) => {
 
       game.log(`[atk] clear: range=${killRange} maxCasts=${maxCasts} monsters=${[...game.monsters].length}`)
 
-      let repoFails = 0 // track consecutive failed repositions
+      let repoFails = 0
       for (let casts = 0; casts < maxCasts; casts++) {
         if (opts?.shouldContinue && !opts.shouldContinue()) return
 
         const allMonsters = [...game.monsters]
         const filtered = allMonsters.filter(filter)
         if (filtered.length === 0) {
-          game.log(`[atk] area clear after ${casts} casts (${allMonsters.length} total mons, 0 matched filter)`)
+          // Log closest monster distance for debugging range issues
+          let closest = Infinity
+          for (const m of allMonsters) { if (alive(m) && m.distance < closest) closest = m.distance }
+          if (casts === 0 && closest < 40) {
+            game.log(`[atk] 0 matched (${allMonsters.length} mons, closest=${closest|0}, range=${killRange}, mp=${game.player.mp})`)
+          }
           return
         }
 
-        // Select primary target via tactical options
         const primary = selectTarget(filtered, opts)
 
         const action = findBestAction(
@@ -346,7 +359,15 @@ export const Attack = createService((game: Game, services) => {
         )
 
         if (!action) {
-          game.log(`[atk] no action found (${filtered.length} mons, cast ${casts}), area clear`)
+          // OOM fallback: use basic Attack (skill 0) if we have monsters but no mana for spells
+          if (game.player.mp < 5 && filtered.length > 0) {
+            const target = filtered[0]!
+            game.selectSkill(0) // basic Attack
+            yield
+            game.castSkill(target.x, target.y)
+            yield* waitCastDone()
+            continue
+          }
           return
         }
 
@@ -411,9 +432,15 @@ export const Attack = createService((game: Game, services) => {
           }
         }
 
-        if (action.skillId !== currentSkill) {
-          yield* preSelect(action.skillId)
-          currentSkill = action.skillId
+        // Mana check — switch to melee Attack if OOM
+        let castSkillId = action.skillId
+        if (castSkillId > 0 && game.player.mp < 3) {
+          castSkillId = 0
+        }
+
+        if (castSkillId !== currentSkill) {
+          yield* preSelect(castSkillId)
+          currentSkill = castSkillId
         }
 
         game.castSkill(action.targetPos.x, action.targetPos.y)

@@ -10,6 +10,9 @@ if [ -z "$GAME_DIR" ]; then
 fi
 DLL_WINE_PATH="Z:$(echo "$SCRIPT_DIR/zig-out/bin/Aether.dll" | tr '/' '\\')"
 
+# Regenerate AOT-compiled pickit checker (reads scripts/pickit.config.json)
+node "$SCRIPT_DIR/../../scripts/build/compile-pickit.mjs"
+
 # Build
 zig build -Doptimize=ReleaseSmall
 

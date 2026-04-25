@@ -10,6 +10,9 @@ v8_monolith.zip
 packages/native/lib/
 packages/native/v8-include/
 
+# D2BS reference archive (too large for git)
+d2bs-modern.zip
+
 # SpiderMonkey build output
 packages/spidermonkey/build/
 packages/spidermonkey/build-mingw/

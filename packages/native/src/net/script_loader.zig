@@ -92,14 +92,22 @@ pub const ScriptLoader = struct {
             return false;
         };
 
+        const alloc = std.heap.page_allocator;
         var count: u32 = 0;
         while (modules.next()) |module_json| {
             const source = json.getString(module_json, "source") orelse continue;
             const specifier = json.getString(module_json, "specifier") orelse continue;
 
-            // Decode JSON-escaped source (up to 256KB for large transpiled + sourcemap modules)
-            var decode_buf: [262144]u8 = undefined;
-            const decoded = json.decodeString(source, &decode_buf) orelse {
+            // Decode JSON-escaped source into a heap buffer sized to the encoded length.
+            // Decoded output is always <= encoded length (escapes only shrink).
+            // Handles large modules (multi-MB generated files with inline sourcemaps).
+            const decode_buf = alloc.alloc(u8, source.len) catch {
+                log.printStr("loader: alloc failed for ", specifier);
+                self.state = .failed;
+                return false;
+            };
+            defer alloc.free(decode_buf);
+            const decoded = json.decodeString(source, decode_buf) orelse {
                 log.printStr("loader: decode failed for ", specifier);
                 continue;
             };

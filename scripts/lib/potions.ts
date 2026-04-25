@@ -93,21 +93,24 @@ export const PotionDrinker = createScript(function*(game, _svc) {
 
   while (true) {
     yield
-    if (!game.inGame || game.player.hp <= 0) continue
+    if (!game.inGame) continue
+    if (game.player.mode === 0 || game.player.mode === 17) continue // dead
 
     const area = game.player.area
     if (area === 1 || area === 40 || area === 75 || area === 103 || area === 109) continue // town
 
-    // HP pot at 30% HP (1s cooldown)
-    if (game.player.hp < game.player.maxHp * 0.3 && game._frame - lastHpDrink > 25) {
-      if (drinkHpPot(game)) {
-        lastHpDrink = game._frame
-      }
+    // HP pot at 50% HP (1s cooldown) — aggressive for low-level survival
+    if (game.player.hp > 0 && game.player.maxHp > 0 && game.player.hp < game.player.maxHp * 0.5 && game._frame - lastHpDrink > 25) {
+      const drank = drinkHpPot(game)
+      game.log(`[pot] HP ${game.player.hp}/${game.player.maxHp} (${(game.player.hp/game.player.maxHp*100)|0}%) → ${drank ? 'DRANK' : 'NO POTS'}`)
+      if (drank) lastHpDrink = game._frame
     }
 
     // MP pot at 15% MP (2s cooldown)
-    if (game.player.mp < game.player.mpmax * 0.15 && game._frame - lastMpDrink > 50) {
-      if (drinkMpPot(game)) {
+    if (game.player.mp > 0 && game.player.mpmax > 0 && game.player.mp < game.player.mpmax * 0.15 && game._frame - lastMpDrink > 50) {
+      const drank = drinkMpPot(game)
+      if (drank) {
+        game.log(`[pot] MP ${game.player.mp}/${game.player.mpmax} → drank`)
         lastMpDrink = game._frame
       }
     }

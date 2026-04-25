@@ -1,0 +1,47 @@
+dbghelp_proxy: DLL_PROCESS_ATTACH
+dbghelp_proxy: forwarders resolved
+aether: DLL_PROCESS_ATTACH
+crash handler: installed
+  Aether base: 0x794A0000
+  Aether end:  0x7A19D000
+  Game base:   0x00400000
+  Game end:    0x009BA000
+  Game symbols: 00003879
+aether: headless rendering disabled
+headless: applying safety patches
+headless: safety patches applied
+auto_move: initialized
+txt_override: hooked CompileTxt
+settings: initialized
+esc_menu: draw hook installed
+auto_enter: initialized
+aether: all hooks installed
+dbghelp_proxy: injected DLLs loaded
+input: WndProc hooked
+auto_enter: starting SP game entry
+scripting: initializing SpiderMonkey engine...
+scripting: SM engine initialized
+scripting: context created
+sm: native bindings registered
+scripting: eval result: 2
+daemon: will connect to 127.0.0.1:13119
+ws: connected
+daemon: hello sent
+daemon: welcome received
+auto_enter: dismissing splash screen
+auto_enter: opening char select
+auto_enter: chars loaded: 00000005
+auto_enter: found EpicSorc, entering game
+auto_enter: game entry triggered
+txt_override: uniqueitems ladder cleared=0000001D
+txt_override: runes server=0 patched=00000017
+txt_override: itemratio rebalanced rows=00000006
+txt_override: treasureclassex rune probs boosted
+txt_override: treasureclassex countess upgraded
+txt_override: cubemain ladder=0 patched=00000015
+map_reveal: game entered
+map_reveal: level 00000028
+ws: connect() failed
+ws: connected
+daemon: hello sent
+daemon: welcome received

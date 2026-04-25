@@ -2,8 +2,14 @@
   "name": "@blizzhackers/aether",
   "private": true,
   "packageManager": "pnpm@10.6.2",
+  "scripts": {
+    "compile:pickit": "node scripts/build/compile-pickit.mjs",
+    "test:sdk": "cd packages/sdk && node --import tsx --loader ./test-loader.mjs --test 'game/*.test.ts'"
+  },
   "devDependencies": {
-    "typescript": "^5.4.0",
-    "@aether/sdk": "workspace:*"
+    "@aether/sdk": "workspace:*",
+    "@blizzhackers/nip-compiler": "^0.1.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
   }
 }

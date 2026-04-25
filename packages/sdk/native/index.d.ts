@@ -46,6 +46,17 @@
   export function itemGetLocationRaw(unitId: number): number;
   export function itemGetCode(unitId: number): string;
   export function itemGetRunewordIndex(unitId: number): number;
+  /** ItemsTxt.nType — item type id from ItemTypes.txt (used by NIP [type]) */
+  export function itemGetItemType(unitId: number): number;
+  /** ItemData.dwItemLevel — ilvl (used by NIP [level]) */
+  export function itemGetLevel(unitId: number): number;
+  /** JSON array of [stat, layer, value] triples. Walks UnitAny.pStats + pNext chain
+   * and set-stat-vector. Matches kolbot d2bs getStat(-1). */
+  export function itemGetStatList(unitId: number): string;
+  /** CSV "mag0,mag1,mag2,rare,auto" — affix IDs from ItemData. */
+  export function itemGetPrefixes(unitId: number): string;
+  /** CSV "mag0,mag1,mag2,rare" — affix IDs from ItemData. */
+  export function itemGetSuffixes(unitId: number): string;
 
   // Tile properties
   export function tileGetDestArea(unitId: number): number;

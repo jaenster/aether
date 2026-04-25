@@ -36,6 +36,7 @@ const resource_monitor = @import("features/resource_monitor.zig");
 const game_data = @import("features/game_data.zig");
 const frame_limiter = @import("features/frame_limiter.zig");
 const perf_tracker = @import("features/perf_tracker.zig");
+pub const console = @import("features/console.zig");
 
 const BOOL = win.BOOL;
 const HMODULE = win.HINSTANCE;
@@ -82,6 +83,7 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
             feature.register(&room_init.hooks);
             feature.register(&item_qol.hooks);
             feature.register(&input.hooks);
+            feature.register(&console.hooks);
             feature.register(&debug_mode.hooks);
             feature.register(&auto_move.hooks);
             feature.register(&omnivision.hooks);
@@ -94,10 +96,10 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
                 feature.register(&spawn_capture.hooks);
                 log.print("aether: spawn capture enabled");
             }
-            if (!hasFlag("oog-js")) {
+            // auto_enter disabled — JS handles OOG (char select, game creation)
+            if (hasFlag("auto-enter")) {
                 feature.register(&auto_enter.hooks);
-            } else {
-                log.print("aether: auto_enter disabled — JS OOG mode");
+                log.print("aether: auto_enter enabled (--auto-enter flag)");
             }
             feature.register(&packet_hooks.hooks);
             feature.register(&scripting.hooks);

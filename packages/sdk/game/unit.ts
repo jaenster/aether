@@ -4,6 +4,7 @@ import {
   unitValid, meGetUnitId,
   monGetSpecType, monGetEnchants, monGetMaxHP,
   itemGetQuality, itemGetFlags, itemGetLocation, itemGetLocationRaw, itemGetCode, itemGetRunewordIndex,
+  itemGetItemType, itemGetLevel, itemGetStatList, itemGetPrefixes, itemGetSuffixes,
   tileGetDestArea,
   sendPacket as nativeSendPacket,
   interact as nativeInteract,
@@ -12,6 +13,7 @@ import {
   npcMenuSelect as nativeNpcMenuSelect,
 } from "diablo:native"
 import { UnitType, PlayerMode, MonsterMode, UiFlags, MonsterSpecType, MonsterClassId, ItemFlags, C2SPacket, REPAIR_ALL_FLAG } from "diablo:constants";
+import { computeStatEx } from "./stat-ex.js";
 
 export abstract class Unit {
   constructor(readonly type: number, readonly unitId: number) {}
@@ -122,7 +124,7 @@ export class Monster extends Unit {
 
   /** True if this monster is hostile and can be attacked (not a merc, summon, NPC, or friendly). */
   get isAttackable(): boolean {
-    if (!this.valid || this.hp <= 0 || this.mode === MonsterMode.Death || this.mode === MonsterMode.Dead) return false
+    if (!this.valid || this.mode === MonsterMode.Death || this.mode === MonsterMode.Dead) return false
     if (this.isNpc) return false
     if (mercClassIds.has(this.classid) || summonClassIds.has(this.classid)) {
       const p = this.parent
@@ -250,8 +252,11 @@ export class ItemUnit extends Unit {
 
   get quality(): number { return itemGetQuality(this.unitId) }
   get code(): string { return itemGetCode(this.unitId) }
-  get ilvl(): number { return this.getStat(92, 0) }
+  get itemType(): number { return itemGetItemType(this.unitId) }
+  get level(): number { return itemGetLevel(this.unitId) }
+  get ilvl(): number { return itemGetLevel(this.unitId) }
   get sockets(): number { return this.getStat(194, 0) }
+  get flags(): number { return itemGetFlags(this.unitId) }
 
   get ethereal(): boolean { return (itemGetFlags(this.unitId) & ItemFlags.Ethereal) !== 0 }
   get identified(): boolean { return (itemGetFlags(this.unitId) & ItemFlags.Identified) !== 0 }
@@ -264,6 +269,66 @@ export class ItemUnit extends Unit {
   get durability(): number { return this.getStat(72, 0) }
   get maxdurability(): number { return this.getStat(73, 0) }
   get quantity(): number { return this.getStat(70, 0) }
+
+  /** Enumerate the full stat list as [stat, layer, value] triples (kolbot d2bs getStat(-1)). */
+  getStatList(): Array<[number, number, number]> {
+    const raw = itemGetStatList(this.unitId)
+    if (!raw || raw === "[]") return []
+    try { return JSON.parse(raw) as Array<[number, number, number]> } catch { return [] }
+  }
+
+  /** True when item is on the ground (mode 3) or being dropped (mode 5). NIP uses this to gate [distance]. */
+  get onGroundOrDropping(): boolean {
+    const m = this.mode
+    return m === 3 || m === 5
+  }
+
+  /** Item rarity tier — kolbot itemclass: 0=normal, 1=exceptional, 2=elite. */
+  get itemclass(): number {
+    // Compare szCode against dwUberCode/dwUltraCode in ItemsTxt.
+    // We don't have getBaseStat in sdk yet, so compare 4-char codes via raw native txt read.
+    // For now: stub to 0 (normal) — wire to proper getBaseStat in follow-up.
+    return 0
+  }
+
+  /** Color enum from kolbot getColor() — stub returns -1 (no color match) until prefix-name table ported. */
+  getColor(): number { return -1 }
+
+  /** True if the given magic/rare/auto prefix id is on this item. Matches kolbot getPrefix(id) numeric. */
+  getPrefix(id: number): boolean {
+    const csv = itemGetPrefixes(this.unitId)
+    if (!csv) return false
+    const parts = csv.split(",")
+    for (let i = 0; i < parts.length; i++) {
+      const v = parts[i] ? parseInt(parts[i]!, 10) : 0
+      if (v && v === id) return true
+    }
+    return false
+  }
+
+  /** True if the given magic/rare suffix id is on this item. Matches kolbot getSuffix(id) numeric. */
+  getSuffix(id: number): boolean {
+    const csv = itemGetSuffixes(this.unitId)
+    if (!csv) return false
+    const parts = csv.split(",")
+    for (let i = 0; i < parts.length; i++) {
+      const v = parts[i] ? parseInt(parts[i]!, 10) : 0
+      if (v && v === id) return true
+    }
+    return false
+  }
+
+  /**
+   * Kolbot-compatible getStatEx — see game/stat-ex.ts for the algorithm.
+   */
+  getStatEx(id: number, subid?: number): number {
+    return computeStatEx(this, id, subid)
+  }
+
+  /** NIP-compatible flag-bit test: returns true when (flags & bit) != 0. */
+  getFlag(bit: number): boolean {
+    return (itemGetFlags(this.unitId) & bit) !== 0
+  }
 }
 
 export class ObjectUnit extends Unit {

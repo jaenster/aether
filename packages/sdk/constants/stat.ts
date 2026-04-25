@@ -1,4 +1,6 @@
 export enum Stat {
+  /** Kolbot pseudo-stat — not a real engine stat. Resolves to min of 4 resists when all equal. */
+  AllRes = 555,
   StunLength= 66,
   VelocityPercent= 67,
   OtherAnimrate= 69,
