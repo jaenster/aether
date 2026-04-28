@@ -20,11 +20,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Fetch pre-built DLLs from the artifacts branch
-      - name: Fetch artifact DLLs
+      # SpiderMonkey takes hours to build, so its prebuilt DLL + import library
+      # live on the artifacts branch. Aether.dll/dbghelp.dll are built fresh below.
+      - name: Fetch SpiderMonkey from artifacts branch
+        shell: bash
         run: |
           git fetch origin artifacts --depth=1
-          git checkout origin/artifacts -- Aether.dll dbghelp.dll mozjs.dll
+          mkdir -p packages/spidermonkey/build-mingw/dll
+          git show origin/artifacts:mozjs.dll > mozjs.dll
+          git show origin/artifacts:libmozjs.dll.a > packages/spidermonkey/build-mingw/dll/libmozjs.dll.a
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Build Aether.dll + dbghelp.dll
+        shell: bash
+        working-directory: packages/native
+        run: zig build -Doptimize=ReleaseSmall
 
       - uses: pnpm/action-setup@v4
         with:
@@ -51,9 +65,9 @@ jobs:
         shell: pwsh
         run: |
           $gameDir = "packages/native/minimal"
-          
-          # Copy artifact DLLs into the game directory
-          Copy-Item Aether.dll, dbghelp.dll, mozjs.dll -Destination $gameDir
+
+          # Built DLLs from zig build + mozjs.dll fetched from artifacts branch
+          Copy-Item packages/native/zig-out/bin/Aether.dll, packages/native/zig-out/bin/dbghelp.dll, mozjs.dll -Destination $gameDir
           
           # D2 1.14d uses KnownFolder SavedGames via SHGetKnownFolderPath
           $savedGames = [Environment]::GetFolderPath('UserProfile') + '\Saved Games\Diablo II'
