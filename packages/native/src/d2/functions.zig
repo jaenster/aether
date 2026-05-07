@@ -585,29 +585,56 @@ pub const GetInteractedUnit = struct {
 pub const NPCMenuArray: [*]const u8 = @ptrFromInt(0x00726C48);
 pub const NPCMenuCount: *const u32 = @ptrFromInt(0x00725A74);
 
-/// Call an NPC menu option by scanning the menu array for the given NPC classId
-/// and invoking the callback at the given option index.
-pub fn callNpcMenuOption(npc_class_id: u32, option_index: u32) bool {
-    const count = NPCMenuCount.*;
-    const entry_size: u32 = 39;
+/// NPCMenu entry layout (39 bytes):
+///   +0  (u32) classId
+///   +4  (u32) optionsCount
+///   +8  (i16[5]) stringIds (these are menu IDs — 0x0D44=Trade, 0x0D06=Trade/Repair, etc.)
+///   +18 (u32[5]) callbacks
+///   +38 (u8) enabled
+const NPC_MENU_ENTRY_SIZE: u32 = 39;
+const NPC_MENU_STRING_IDS_OFFSET: u32 = 8;
+const NPC_MENU_CALLBACKS_OFFSET: u32 = 18;
 
+/// Find the menu entry for an NPC classId, or null if absent.
+fn findNpcMenuEntry(npc_class_id: u32) ?[*]const u8 {
+    const count = NPCMenuCount.*;
     var i: u32 = 0;
     while (i < count) : (i += 1) {
-        const entry = NPCMenuArray + i * entry_size;
+        const entry = NPCMenuArray + i * NPC_MENU_ENTRY_SIZE;
         const entry_npc_id: u32 = @as(*align(1) const u32, @ptrCast(entry)).*;
-        if (entry_npc_id == npc_class_id) {
-            const options_count: u32 = @as(*align(1) const u32, @ptrCast(entry + 4)).*;
-            if (option_index < options_count) {
-                // Callback pointers start at offset 0x12 (18), each is 4 bytes
-                const cb_ptr: u32 = @as(*align(1) const u32, @ptrCast(entry + 18 + option_index * 4)).*;
-                if (cb_ptr != 0) {
-                    const callback: *const fn () callconv(.winapi) void = @ptrFromInt(cb_ptr);
-                    callback();
-                    return true;
-                }
-            }
-            break;
-        }
+        if (entry_npc_id == npc_class_id) return entry;
+    }
+    return null;
+}
+
+/// Invoke `entry`'s callback at the given option index. Returns false if the
+/// index is out of range or the callback slot is null.
+fn invokeNpcMenuCallback(entry: [*]const u8, option_index: u32) bool {
+    const options_count: u32 = @as(*align(1) const u32, @ptrCast(entry + 4)).*;
+    if (option_index >= options_count) return false;
+    const cb_ptr: u32 = @as(*align(1) const u32, @ptrCast(entry + NPC_MENU_CALLBACKS_OFFSET + option_index * 4)).*;
+    if (cb_ptr == 0) return false;
+    const callback: *const fn () callconv(.winapi) void = @ptrFromInt(cb_ptr);
+    callback();
+    return true;
+}
+
+/// Call an NPC menu option by index.
+pub fn callNpcMenuOption(npc_class_id: u32, option_index: u32) bool {
+    const entry = findNpcMenuEntry(npc_class_id) orelse return false;
+    return invokeNpcMenuCallback(entry, option_index);
+}
+
+/// Call an NPC menu option by menu ID (e.g. 0x0D44 = Trade). Mirrors kolbot's
+/// `Misc.useMenu(menuId)` — the canonical way to pick a menu option, since
+/// option order varies by NPC (Akara has Talk first; Charsi has Trade first).
+pub fn callNpcMenuByMenuId(npc_class_id: u32, menu_id: u16) bool {
+    const entry = findNpcMenuEntry(npc_class_id) orelse return false;
+    const options_count: u32 = @as(*align(1) const u32, @ptrCast(entry + 4)).*;
+    var j: u32 = 0;
+    while (j < options_count and j < 5) : (j += 1) {
+        const sid: u16 = @bitCast(@as(*align(1) const i16, @ptrCast(entry + NPC_MENU_STRING_IDS_OFFSET + j * 2)).*);
+        if (sid == menu_id) return invokeNpcMenuCallback(entry, j);
     }
     return false;
 }

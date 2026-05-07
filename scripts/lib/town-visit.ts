@@ -10,7 +10,7 @@ import { shop } from "./shopping.js"
 /** Full town visit: heal → sell junk → buy pots → equip upgrades */
 export function* townVisit(game: Game): Generator<void> {
   // 1. Heal (always free)
-  if (game.player.hp < game.player.maxHp || game.player.mp < game.player.mpmax) {
+  if (game.player.hp < game.player.hpmax || game.player.mp < game.player.mpmax) {
     yield* healInTown(game)
   }
 

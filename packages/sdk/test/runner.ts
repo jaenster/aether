@@ -1,49 +1,10 @@
-import {
-  log, exitGame, exitClient, inGame, getArea, getAct, getDifficulty, getTickCount,
-  meGetUnitId, meGetCharName,
-  unitGetX, unitGetY, unitGetStat, unitGetState,
-  getExits as nativeGetExits,
-} from "diablo:native"
+import { log, exitClient, inGame } from "diablo:native"
 import { __getTests } from "diablo:test"
+import { Game, FormType } from "../game/game.js"
 
-// Minimal Game object for test runner — avoids importing diablo:game barrel
-// which pulls in constants and exceeds the WS buffer.
-function makePlayer() {
-  const id = meGetUnitId()
-  return {
-    get charname() { return meGetCharName() },
-    get name() { return meGetCharName() },
-    get x() { return unitGetX(0, id) },
-    get y() { return unitGetY(0, id) },
-    get hp() { return unitGetStat(0, id, 6, 0) >> 8 },
-    get hpmax() { return unitGetStat(0, id, 7, 0) >> 8 },
-    get mp() { return unitGetStat(0, id, 8, 0) >> 8 },
-    get mpmax() { return unitGetStat(0, id, 9, 0) >> 8 },
-    getStat(stat: number, layer: number = 0) { return unitGetStat(0, id, stat, layer) },
-  }
-}
+const game = new Game()
 
-const game = {
-  get inGame() { return inGame() },
-  get area() { return getArea() },
-  get act() { return getAct() },
-  get difficulty() { return getDifficulty() },
-  get tickCount() { return getTickCount() },
-  get player() { return makePlayer() },
-  log(...args: any[]) { log(args.map((a: any) => String(a)).join(' ')) },
-  getExits() {
-    const raw = nativeGetExits()
-    if (!raw) return []
-    return raw.split(',').map(function(entry: string) {
-      const parts = entry.split(':')
-      return { area: parseInt(parts[0]!, 10), x: parseInt(parts[1]!, 10), y: parseInt(parts[2]!, 10) }
-    })
-  },
-  *delay(ms: number) {
-    const ticks = Math.ceil(ms / 40)
-    for (let i = 0; i < ticks; i++) yield
-  },
-}
+const CHAR_NAME = "EpicSorc"
 
 let started = false
 let finished = false
@@ -52,6 +13,57 @@ let currentGen: Generator<void> | null = null
 let passed = 0
 let failed = 0
 let failedNames: string[] = []
+
+// OOG flow — drives splash → main menu → char select → join.
+// Mirrors main.ts's existing-char path (no create-char, since e2e expects
+// the EpicSorc save to exist).
+let oogGen: Generator<void> | null = null
+
+function* oogFlow(): Generator<void> {
+  while (!game.inGame) {
+    yield
+    const controls = game.getControls()
+    const buttons = controls.filter(c => c.type === FormType.Button)
+
+    // Splash → click any text/image to dismiss
+    if (buttons.length === 0 && controls.length > 0) {
+      const c = controls.find(c => c.type === FormType.TextBox || c.type === FormType.Image)
+      if (c) game.clickControl(c.i)
+      yield* game.delay(500)
+      continue
+    }
+
+    // Main menu → SINGLE PLAYER
+    const sp = buttons.find(b => b.text?.includes("SINGLE"))
+    if (sp) { game.clickControl(sp.i); yield* game.delay(1000); continue }
+
+    // Char select → pick existing
+    if (game.oogSelectChar(CHAR_NAME)) {
+      yield* game.delay(3000)
+      continue
+    }
+
+    yield* game.delay(500)
+  }
+}
+
+function stepOog() {
+  if (finished) return
+  if (game.inGame) return
+  if (!oogGen) {
+    oogGen = oogFlow()
+    log("=== Aether Test Runner: OOG flow ===")
+  }
+  try {
+    const r = oogGen.next()
+    if (r.done) oogGen = null
+  } catch (e: any) {
+    log("OOG error: " + (e.message || String(e)))
+    oogGen = null
+  }
+}
+
+;(globalThis as any).__onOogTick = stepOog
 
 ;(globalThis as any).__onTick = function onTick() {
   if (finished) return
@@ -72,12 +84,10 @@ let failedNames: string[] = []
 
   const tests = __getTests()
 
-  // Advance current generator
   if (currentGen) {
     try {
       const result = currentGen.next()
-      if (!result.done) return // yield — wait for next tick
-      // Test passed
+      if (!result.done) return
       passed++
       log("  PASS: " + tests[currentTest]!.name)
     } catch (e: any) {
@@ -90,7 +100,6 @@ let failedNames: string[] = []
     currentTest++
   }
 
-  // Start next test
   if (currentTest < tests.length) {
     const entry = tests[currentTest]!
     try {
@@ -105,7 +114,6 @@ let failedNames: string[] = []
     return
   }
 
-  // All tests done
   log("")
   log("Results: " + passed + " passed, " + failed + " failed")
   if (failedNames.length > 0) {

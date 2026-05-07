@@ -37,7 +37,7 @@ export const Overlay = createScript(function*(game, _svc) {
     statusText.text = 'Aether | Level ' + level + ' | Area ' + game.area + ' | Gold ' + game.gold
 
     // HP/MP bars as text
-    const hpPct = Math.round(game.player.hp / game.player.maxHp * 100)
+    const hpPct = Math.round(game.player.hp / game.player.hpmax * 100)
     const mpPct = game.player.mpmax > 0 ? Math.round(game.player.mp / game.player.mpmax * 100) : 0
     // Read run count from persisted state
     const state = game.readState<{ runsCompleted?: number }>()

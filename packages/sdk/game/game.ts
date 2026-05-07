@@ -215,6 +215,72 @@ export class Game {
     return false
   }
 
+  /**
+   * Walk to a world position. Uses findPath to break long walks into nodes
+   * (D2 clips clicks to viewport; you can't reach a target a screen away in
+   * one click). Each node is walked with the kolbot single-click pattern:
+   * one click → wait for walk to start → wait for walk to finish → re-click
+   * if not close enough.
+   *
+   * Returns true on arrival, false if dead or stuck.
+   */
+  *moveTo(tx: number, ty: number, minDist = 4) {
+    const minDist2 = minDist * minDist
+
+    const path = this.findPath(tx, ty)
+    const nodes = path.slice()
+    // Ensure the actual target is always the final node so we close in fully.
+    const last = nodes[nodes.length - 1]
+    if (!last || last.x !== tx || last.y !== ty) nodes.push({ x: tx, y: ty })
+
+    for (const node of nodes) {
+      const arrived = yield* this.walkToNode(node.x, node.y, minDist2)
+      if (arrived === "dead") return false
+      // Even if we didn't reach this intermediate node, try the next one.
+    }
+
+    // Final check against the actual target.
+    const dx = this.player.x - tx, dy = this.player.y - ty
+    return dx * dx + dy * dy <= minDist2
+  }
+
+  /** Single-node walk — kolbot pattern. */
+  private *walkToNode(tx: number, ty: number, minDist2: number): Generator<void, "ok" | "stuck" | "dead"> {
+    let consecutiveFailedStarts = 0
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const p = this.player
+      const dx = p.x - tx, dy = p.y - ty
+      if (dx * dx + dy * dy <= minDist2) return "ok"
+      const m0 = p.mode
+      if (m0 === 0 || m0 === 17) return "dead"
+
+      nativeMove(tx, ty)
+
+      let walking = false
+      for (let t = 0; t < 20; t++) {
+        yield
+        const m = p.mode
+        if (m === 0 || m === 17) return "dead"
+        if (m === 2 || m === 3 || m === 6) { walking = true; break }
+      }
+      if (!walking) {
+        if (++consecutiveFailedStarts >= 3) return "stuck"
+        continue
+      }
+      consecutiveFailedStarts = 0
+
+      for (let t = 0; t < 120; t++) {
+        yield
+        const m = p.mode
+        if (m === 0 || m === 17) return "dead"
+        const dx2 = p.x - tx, dy2 = p.y - ty
+        if (dx2 * dx2 + dy2 * dy2 <= minDist2) return "ok"
+        if (m === 1 || m === 5) break
+      }
+    }
+    return "stuck"
+  }
+
   // ── Packet hooks (S2C interception) ──────────────────────────────
 
   private _packetHandlers = new Map<number, Array<(data: Uint8Array) => boolean | void>>()

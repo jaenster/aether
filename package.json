@@ -4,7 +4,10 @@
   "packageManager": "pnpm@10.6.2",
   "scripts": {
     "compile:pickit": "node scripts/build/compile-pickit.mjs",
-    "test:sdk": "cd packages/sdk && node --import tsx --loader ./test-loader.mjs --test 'game/*.test.ts'"
+    "test:sdk": "cd packages/sdk && node --import tsx --loader ./test-loader.mjs --test 'game/*.test.ts'",
+    "test:scripts": "node --import tsx --loader ./packages/sdk/test-loader.mjs --test 'scripts/lib/*.test.ts'",
+    "test": "pnpm test:sdk && pnpm test:scripts",
+    "test:e2e": "node scripts/e2e/run.mjs"
   },
   "devDependencies": {
     "@aether/sdk": "workspace:*",

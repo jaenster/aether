@@ -99,6 +99,9 @@
   // NPC interaction
   export function closeNPCInteract(): void;
   export function npcMenuSelect(menuIndex: number): boolean;
+  /** Pick an NPC menu option by its menu ID (e.g. NpcMenuId.Trade=0x0D44).
+   *  Mirrors kolbot's Misc.useMenu — order-independent. */
+  export function npcMenuByMenuId(menuId: number): boolean;
 
   // Merc
   /** Returns merc state: -1 = no merc, 0 = dead, 1+ = HP percent */
@@ -222,5 +225,12 @@
   export function drawSetText(slot: number, text: string): void;
 
   // Screenshot
-  /** Capture framebuffer to aether_screenshot.bmp in game dir. Returns filename or "" on failure. */
-  export function takeScreenshot(): string;
+  /**
+   * Request a BMP screenshot on the next draw frame. Works in-game and OOG
+   * (splash, char select). The file is written to the game directory.
+   *
+   * @param name Optional filename (".bmp" appended if missing).
+   *             Defaults to "aether_screenshot.bmp". Each call overwrites
+   *             the file with the same name.
+   */
+  export function takeScreenshot(name?: string): void;

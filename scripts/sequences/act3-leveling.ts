@@ -18,7 +18,7 @@ export function* act3Leveling(game: Game, svc: any) {
   const atk = svc.get(Attack)
   const pickit = svc.get(Pickit)
 
-  if (game.area === Area.KurastDocks && game.player.hp < game.player.maxHp) {
+  if (game.area === Area.KurastDocks && game.player.hp < game.player.hpmax) {
     yield* healInTown(game)
   }
 

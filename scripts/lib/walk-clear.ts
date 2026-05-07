@@ -95,7 +95,7 @@ function sortMonsters(monsters: Monster[], px: number, py: number): void {
 
 /** Should we backtrack? Ryuk: pressure >= floor(4 * hp% + 1) */
 function shouldBacktrack(game: Game): boolean {
-  const hpPct = game.player.hp / game.player.maxHp
+  const hpPct = game.player.hp / game.player.hpmax
   const maxPressure = Math.floor(4 * hpPct) + 1
 
   let pressure = 0
