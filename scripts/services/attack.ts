@@ -524,7 +524,7 @@ export const Attack = createService((game: Game, services) => {
       if (!report) return false
       if (report.action === 'retreat' || report.action === 'chicken') return true
 
-      const hpPct = game.player.hp / game.player.maxHp
+      const hpPct = game.player.hp / game.player.hpmax
       const maxPressure = Math.floor(4 * hpPct) + 1
 
       // Count nearby threats

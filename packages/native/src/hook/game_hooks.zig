@@ -101,6 +101,7 @@ fn hookOogDraw() callconv(.c) void {
     _ = d2.functions.SetFont.call(.{old});
     const drawCursorOog: *const fn () callconv(.c) void = @ptrFromInt(ADDR_DRAW_CURSOR_OOG);
     drawCursorOog();
+    @import("../sm/bindings.zig").flushScreenshot();
 }
 
 // --- Drawing: cursor (congrats/disc/unknown screens) ---

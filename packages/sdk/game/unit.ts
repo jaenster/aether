@@ -8,11 +8,14 @@ import {
   tileGetDestArea,
   sendPacket as nativeSendPacket,
   interact as nativeInteract,
+  move as nativeMove,
+  findPath as nativeFindPath,
   getUIFlag as nativeGetUIFlag,
   closeNPCInteract as nativeCloseNPCInteract,
   npcMenuSelect as nativeNpcMenuSelect,
+  npcMenuByMenuId,
 } from "diablo:native"
-import { UnitType, PlayerMode, MonsterMode, UiFlags, MonsterSpecType, MonsterClassId, ItemFlags, C2SPacket, REPAIR_ALL_FLAG } from "diablo:constants";
+import { UnitType, PlayerMode, MonsterMode, UiFlags, MonsterSpecType, MonsterClassId, ItemFlags, C2SPacket, REPAIR_ALL_FLAG, MenuOption } from "diablo:constants";
 import { computeStatEx } from "./stat-ex.js";
 
 export abstract class Unit {
@@ -170,6 +173,82 @@ function* waitUntil(pred: () => boolean, maxFrames = 150) {
   return false
 }
 
+/**
+ * Walk toward a world point.
+ *
+ * D2 clips long-distance clicks (you can't path beyond visible viewport in
+ * one click), so we get a path via findPath and walk node-by-node. Each
+ * node uses the kolbot single-click pattern: click → wait for walk to start
+ * → wait for walk to finish → re-click if not close enough.
+ *
+ * Modes: 0=Death, 1=Neutral, 2=Walk, 3=Run, 4=GetHit,
+ *        5=TownNeutral, 6=TownWalk, 17=Dead.
+ */
+function* moveToward(tx: number, ty: number, minDist = 4): Generator<void, boolean> {
+  const minDist2 = minDist * minDist
+  const pid = meGetUnitId()
+
+  const raw = nativeFindPath(tx, ty)
+  const nodes: Array<{ x: number; y: number }> = []
+  if (raw) {
+    try {
+      const arr = JSON.parse(raw) as number[][]
+      for (const p of arr) nodes.push({ x: p[0]!, y: p[1]! })
+    } catch { /* fallback handled below */ }
+  }
+  // Ensure the actual target is always the final node so we close in fully.
+  const last = nodes[nodes.length - 1]
+  if (!last || last.x !== tx || last.y !== ty) nodes.push({ x: tx, y: ty })
+
+  for (const node of nodes) {
+    const result = yield* walkToNode(pid, node.x, node.y, minDist2)
+    if (result === "dead") return false
+    // continue to next node even if this one was stuck — pathing may resume
+  }
+
+  const px = unitGetX(0, pid), py = unitGetY(0, pid)
+  const dx = px - tx, dy = py - ty
+  return dx * dx + dy * dy <= minDist2
+}
+
+function* walkToNode(pid: number, tx: number, ty: number, minDist2: number): Generator<void, "ok" | "stuck" | "dead"> {
+  let consecutiveFailedStarts = 0
+
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const px = unitGetX(0, pid), py = unitGetY(0, pid)
+    const dx = px - tx, dy = py - ty
+    if (dx * dx + dy * dy <= minDist2) return "ok"
+    const m0 = unitGetMode(0, pid)
+    if (m0 === 0 || m0 === 17) return "dead"
+
+    nativeMove(tx, ty)
+
+    let walking = false
+    for (let t = 0; t < 20; t++) {
+      yield
+      const m = unitGetMode(0, pid)
+      if (m === 0 || m === 17) return "dead"
+      if (m === 2 || m === 3 || m === 6) { walking = true; break }
+    }
+    if (!walking) {
+      if (++consecutiveFailedStarts >= 3) return "stuck"
+      continue
+    }
+    consecutiveFailedStarts = 0
+
+    for (let t = 0; t < 120; t++) {
+      yield
+      const m = unitGetMode(0, pid)
+      if (m === 0 || m === 17) return "dead"
+      const px2 = unitGetX(0, pid), py2 = unitGetY(0, pid)
+      const dx2 = px2 - tx, dy2 = py2 - ty
+      if (dx2 * dx2 + dy2 * dy2 <= minDist2) return "ok"
+      if (m === 1 || m === 5) break
+    }
+  }
+  return "stuck"
+}
+
 export class NPC extends Monster {
   static readonly npcClassIds = new Set([
     ...healClassIds, ...repairClassIds, ...tradeClassIds,
@@ -183,12 +262,16 @@ export class NPC extends Monster {
   get canIdentify(): boolean { return identifyClassIds.has(this.classid) }
   get canResurrect(): boolean { return resurrectClassIds.has(this.classid) }
 
-  /** Open interaction with this NPC (client-side walk + menu). */
+  /**
+   * Walk to this NPC, then send the interact packet and wait for NPCMenu/Shop
+   * to open. Returns true if the dialog opened.
+   */
   *interact() {
+    if (this.distance > 4) yield* moveToward(this.x, this.y, 4)
     nativeInteract(this.type, this.unitId)
     const ok: unknown = yield* waitUntil(() =>
       nativeGetUIFlag(UiFlags.NPCMenu) || nativeGetUIFlag(UiFlags.Shop)
-    )
+    , 200)
     return !!ok
   }
 
@@ -206,10 +289,7 @@ export class NPC extends Monster {
 
   /** Heal at this NPC — the game auto-heals on NPC interaction (HealByPlayerByNPC). */
   *heal() {
-    nativeInteract(this.type, this.unitId)
-    yield* waitUntil(() =>
-      nativeGetUIFlag(UiFlags.NPCMenu) || nativeGetUIFlag(UiFlags.Shop)
-    )
+    yield* this.interact()
     yield* delay(200)
     yield* this.close()
   }
@@ -218,8 +298,7 @@ export class NPC extends Monster {
   *repair() {
     yield* this.interact()
     yield* delay(200)
-    // Use NPC menu callback for repair (typically option index 1)
-    nativeNpcMenuSelect(1)
+    npcMenuByMenuId(MenuOption.TradeRepair)
     yield* delay(300)
     nativeSendPacket(buildPacket(C2SPacket.NpcRepair, this.unitId, 0, 0, REPAIR_ALL_FLAG))
     yield* delay(200)
@@ -231,9 +310,8 @@ export class NPC extends Monster {
     const interacted = yield* this.interact()
     if (!interacted) return false
     yield* delay(200)
-    // Use NPC menu callback for trade (option index 0)
-    const menuOk = nativeNpcMenuSelect(0)
-    if (!menuOk) return false
+    // Trade vs Trade/Repair varies per NPC (Akara: Trade; Charsi: TradeRepair).
+    if (!npcMenuByMenuId(MenuOption.Trade) && !npcMenuByMenuId(MenuOption.TradeRepair)) return false
     return yield* waitUntil(() => nativeGetUIFlag(UiFlags.Shop))
   }
 
@@ -241,8 +319,7 @@ export class NPC extends Monster {
   *openGamble() {
     yield* this.interact()
     yield* delay(200)
-    // Use NPC menu callback for gamble (typically option index 2)
-    nativeNpcMenuSelect(2)
+    npcMenuByMenuId(MenuOption.Gamble)
     return yield* waitUntil(() => nativeGetUIFlag(UiFlags.Shop))
   }
 }

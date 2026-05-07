@@ -9,6 +9,7 @@ const SDK_ROOT = dirname(fileURLToPath(import.meta.url))
 const ALIASES = {
   "diablo:constants": pathResolve(SDK_ROOT, "constants/index.ts"),
   "diablo:game": pathResolve(SDK_ROOT, "game/index.d.ts"),
+  "diablo:native": pathResolve(SDK_ROOT, "test/native-stub.ts"),
 }
 
 export async function resolve(specifier, context, nextResolve) {

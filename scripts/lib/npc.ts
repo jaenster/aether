@@ -6,7 +6,8 @@
  */
 
 import { type Game, type NPC, UiFlags } from "diablo:game"
-import { closeNPCInteract, getUIFlag, npcMenuSelect as nativeNpcMenuSelect } from "diablo:native"
+import { closeNPCInteract, getUIFlag, npcMenuByMenuId } from "diablo:native"
+import { MenuOption } from "diablo:game"
 import { walkTo } from "./walk-clear.js"
 
 /** Walk to an NPC and interact. Returns the NPC unit or null. */
@@ -60,18 +61,31 @@ export function dismissNPC() {
   closeNPCInteract()
 }
 
-/** Talk to NPC and heal (free — just interacting heals you) */
+/** Talk to NPC and heal (free — interacting auto-heals).
+ *  Retries until HP is full or attempts exhausted. */
 export function* healAtNPC(game: Game, classid: number): Generator<void> {
-  const npc = yield* interactNPC(game, classid)
-  if (!npc) {
-    game.log('[npc] healer classid=' + classid + ' not found')
-    return
+  const hpmax = game.player.hpmax
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (game.player.hp >= hpmax) return // already full
+
+    const npc = yield* interactNPC(game, classid)
+    if (!npc) {
+      game.log('[npc] healer classid=' + classid + ' not found (attempt ' + (attempt + 1) + ')')
+      yield* game.delay(300)
+      continue
+    }
+
+    const healed = yield* game.waitUntil(() => game.player.hp >= hpmax, 25)
+    dismissNPC()
+    yield* game.delay(200)
+
+    if (healed) {
+      game.log('[npc] healed at ' + (npc.name ?? 'NPC') + ' hp=' + game.player.hp + '/' + hpmax)
+      return
+    }
+    game.log('[npc] heal failed at ' + (npc.name ?? 'NPC') + ' hp=' + game.player.hp + '/' + hpmax + ' (retry)')
   }
-  // Interacting with a healer auto-heals. Just close the dialog.
-  yield* game.delay(300)
-  dismissNPC()
-  yield* game.delay(200)
-  game.log('[npc] healed at ' + (npc.name ?? 'NPC') + ' hp=' + game.player.hp + '/' + game.player.hpmax)
+  game.log('[npc] heal gave up hp=' + game.player.hp + '/' + hpmax)
 }
 
 /** Talk to NPC and open trade. Caller handles buying/selling. Close with dismissNPC(). */
@@ -81,7 +95,7 @@ export function* openTrade(game: Game, classid: number): Generator<void, boolean
 
   // Select "Trade" from NPC menu if menu is showing
   if (getUIFlag(UiFlags.NPCMenu)) {
-    nativeNpcMenuSelect(0) // first menu option is usually Trade
+    if (!npcMenuByMenuId(MenuOption.Trade)) npcMenuByMenuId(MenuOption.TradeRepair)
     yield* game.delay(500)
   }
 
@@ -94,7 +108,7 @@ export function* repairAtNPC(game: Game, classid: number): Generator<void> {
   if (!npc) return
 
   if (getUIFlag(UiFlags.NPCMenu)) {
-    nativeNpcMenuSelect(0) // Trade/Repair
+    npcMenuByMenuId(MenuOption.TradeRepair)
     yield* game.delay(500)
   }
 

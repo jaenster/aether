@@ -1,8 +1,6 @@
-import { createService, type Game } from "diablo:game"
+import { createService, type Game, ItemContainer } from "diablo:game"
 import { Config } from "../config.js"
 import { matchItemNip, type PickitMatch } from "../lib/pickit-checker.js"
-
-const GROUND = 5 // ItemContainer.Ground
 
 export const Pickit = createService((game: Game, services) => {
   const cfg = services.get(Config)
@@ -19,7 +17,7 @@ export const Pickit = createService((game: Game, services) => {
 
       const candidates: Array<{ item: ReturnType<typeof game.items.filter>[number]; match: PickitMatch }> = []
       for (const i of game.items) {
-        if (i.location !== GROUND) continue
+        if (i.location !== ItemContainer.Ground) continue
         if (i.distance >= cfg.pickRange) continue
         if (failedItems.has(i.unitId)) continue
         const m = matchItemNip(i, game)
@@ -56,7 +54,7 @@ export const Pickit = createService((game: Game, services) => {
           game.log('[pick] GOT GOLD! ' + goldBefore + ' → ' + goldAfter)
         }
 
-        const still = game.items.find(i => i.unitId === item.unitId && i.location === GROUND)
+        const still = game.items.find(i => i.unitId === item.unitId && i.location === ItemContainer.Ground)
         if (still) {
           failedItems.add(item.unitId)
         }

@@ -349,7 +349,21 @@ fn jsUnitGetName(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_
     const unit_type: u32 = @bitCast(argInt32(argc, vp, 0));
     const unit_id: u32 = @bitCast(argInt32(argc, vp, 1));
     const unit = units.findUnit(unit_type, unit_id) orelse { retString(cx, argc, vp, ""); return 1; };
-    // GetUnitName returns wide string — convert to ascii
+
+    // For player units, D2CLIENT_GetUnitName doesn't return the char name — read
+    // pUnitData->szName directly (the d2bs pattern).
+    if (unit.dwType == 0) {
+        if (unit.pUnitData) |raw| {
+            const data: *types.PlayerData = @ptrCast(@alignCast(raw));
+            var len: usize = 0;
+            while (len < 16 and data.szName[len] != 0) len += 1;
+            retString(cx, argc, vp, data.szName[0..len]);
+            return 1;
+        }
+        retString(cx, argc, vp, "");
+        return 1;
+    }
+
     const name_w = d2.GetUnitName.call(.{unit}) orelse { retString(cx, argc, vp, ""); return 1; };
     var buf: [64]u8 = undefined;
     var i: usize = 0;
@@ -493,18 +507,18 @@ fn jsItemGetLocation(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c)
     // body_location (0x44): non-zero = equipped body slot
     // node_page (0x69):     0=none, 1=inv grid, 2=belt, 3=bodyloc, 4=swapped
     const page = data.item_location;
-    const grid = data.game_location;
     const body = data.body_location;
     const npage = data.node_page;
 
     // First: check explicit container pages
+    // NOTE: only `page` (item_location) is authoritative for storage page.
+    // `grid` (game_location) is overloaded and frequently has small values
+    // (3 etc.) for plain inventory items — using it caused 23 inv items to
+    // misclassify as Cube.
     const result: i32 = blk: {
-        // item_location or game_location == 3 → cube
-        if (page == 3 or grid == 3) break :blk 3;
-        // item_location or game_location == 4 → stash
-        if (page == 4 or grid == 4) break :blk 4;
-        // vendor pages
-        if (page == 6 or page == 7 or grid == 6 or grid == 7) break :blk 6;
+        if (page == 3) break :blk 3; // cube
+        if (page == 4) break :blk 4; // stash
+        if (page == 6 or page == 7) break :blk 6; // vendor
 
         // Ground items: not in any inventory
         if (data.pOwnerInventory == null) break :blk @as(i32, 5); // ground
@@ -821,6 +835,19 @@ fn jsNpcMenuSelect(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c
     };
 
     const ok = d2.callNpcMenuOption(npc.dwTxtFileNo, menu_index);
+    retBool(argc, vp, ok);
+    return 1;
+}
+
+fn jsNpcMenuByMenuId(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const menu_id: u16 = @truncate(@as(u32, @bitCast(argInt32(argc, vp, 0))));
+
+    const npc = d2.GetInteractedUnit.call() orelse {
+        retBool(argc, vp, false);
+        return 1;
+    };
+
+    const ok = d2.callNpcMenuByMenuId(npc.dwTxtFileNo, menu_id);
     retBool(argc, vp, ok);
     return 1;
 }
@@ -2354,14 +2381,42 @@ const screenshot_mem = struct {
     extern "kernel32" fn VirtualFree(lpAddress: [*]u8, dwSize: usize, dwFreeType: u32) callconv(.winapi) i32;
 };
 
-/// takeScreenshot() — requests a screenshot on the next draw hook (where overlay is visible).
-fn jsScreenshot(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+/// Static filename buffer used between request and flush.
+/// Defaults to "aether_screenshot.bmp" if takeScreenshot() called with no arg.
+var screenshot_filename: [260]u8 = .{0} ** 260;
+
+/// takeScreenshot(name?: string) — requests a screenshot on the next draw hook
+/// (where overlay is visible). If `name` is given, ".bmp" is appended if missing.
+/// Works in-game and OOG. The file is written to the game directory.
+fn jsScreenshot(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const default_name = "aether_screenshot.bmp";
+    var len: usize = 0;
+    if (argc >= 1) {
+        var nbuf: [256]u8 = undefined;
+        const nlen = c.sm_arg_string(cx, argc, vp, 0, &nbuf, nbuf.len);
+        if (nlen > 0) {
+            const ulen: usize = @intCast(nlen);
+            const has_ext = ulen >= 4 and std.mem.eql(u8, nbuf[ulen - 4 .. ulen], ".bmp");
+            const total = if (has_ext) ulen else ulen + 4;
+            if (total < screenshot_filename.len) {
+                @memcpy(screenshot_filename[0..ulen], nbuf[0..ulen]);
+                if (!has_ext) @memcpy(screenshot_filename[ulen .. ulen + 4], ".bmp");
+                screenshot_filename[total] = 0;
+                len = total;
+            }
+        }
+    }
+    if (len == 0) {
+        @memcpy(screenshot_filename[0..default_name.len], default_name);
+        screenshot_filename[default_name.len] = 0;
+    }
     shared_state.set(.screenshot_pending, 1);
     retUndefined(argc, vp);
     return 1;
 }
 
 /// Called from the draw hook dispatch (game_hooks.zig) — captures if pending.
+/// Wired into both in-game and OOG post-draw hooks.
 pub fn flushScreenshot() void {
     if (shared_state.get(.screenshot_pending) == 0) return;
     shared_state.set(.screenshot_pending, 0);
@@ -2380,7 +2435,7 @@ pub fn flushScreenshot() void {
 
     if (d2.GetBackBuffer.call(buf) == 0) return;
 
-    const fp: [*:0]const u8 = "aether_screenshot.bmp";
+    const fp: [*:0]const u8 = @ptrCast(&screenshot_filename);
     const hFile = win32.CreateFileA(fp, 0x40000000, 0, null, 2, 0x80, null) orelse return;
     defer _ = win32.CloseHandle(hFile);
 
@@ -2420,7 +2475,7 @@ pub fn flushScreenshot() void {
         _ = win32.WriteFile(hFile, &row_buf, row_stride, &written, null);
     }
     _ = win32.FlushFileBuffers(hFile);
-    log.print("screenshot saved");
+    log.printStr("screenshot saved: ", std.mem.sliceTo(&screenshot_filename, 0));
 }
 
 const bindings = [_]Binding{
@@ -2505,6 +2560,7 @@ const bindings = [_]Binding{
     // Process control
     .{ .name = "closeNPCInteract", .func = &jsCloseNPCInteract, .nargs = 0 },
     .{ .name = "npcMenuSelect", .func = &jsNpcMenuSelect, .nargs = 1 },
+    .{ .name = "npcMenuByMenuId", .func = &jsNpcMenuByMenuId, .nargs = 1 },
     .{ .name = "exitGame", .func = &jsExitGame, .nargs = 0 },
     .{ .name = "exitClient", .func = &jsExitClient, .nargs = 0 },
     .{ .name = "takeWaypoint", .func = &jsTakeWaypoint, .nargs = 2 },

@@ -2,13 +2,10 @@
  * Shopping: sell inventory junk + buy potions at NPC.
  */
 
-import { type Game } from "diablo:game"
+import { type Game, ItemContainer, UiFlags, MenuOption } from "diablo:game"
+import { getUIFlag, npcMenuByMenuId } from "diablo:native"
 import { npcBuy, npcSell, npcSession } from "./packets.js"
 import { interactNPC, dismissNPC, getAct } from "./npc.js"
-
-const INVENTORY = 0
-const BELT = 2
-const VENDOR = 6  // items in vendor's shop window
 
 // Items to KEEP (don't sell)
 const KEEP_CODES = new Set([
@@ -18,10 +15,28 @@ const KEEP_CODES = new Set([
 ])
 const KEEP_PATTERNS = [/^r[0-3][0-9]$/, /^g[a-z][a-z]$/] // runes, gems
 
-function shouldKeep(code: string): boolean {
+export function shouldKeep(code: string): boolean {
   if (KEEP_CODES.has(code)) return true
   for (const p of KEEP_PATTERNS) { if (p.test(code)) return true }
   return false
+}
+
+/**
+ * Open the trade UI on the currently-interacted NPC. Picks "Trade" from the
+ * NPC menu by menu ID (Trade vs Trade/Repair varies per NPC); falls back to
+ * an explicit npcSession packet if the menu never appears.
+ */
+export function* openTradeUI(game: Game, npcId: number): Generator<void, boolean> {
+  if (getUIFlag(UiFlags.Shop)) return true
+
+  if (yield* game.waitUntil(() => getUIFlag(UiFlags.Shop) || getUIFlag(UiFlags.NPCMenu), 30)) {
+    if (getUIFlag(UiFlags.Shop)) return true
+    if (!npcMenuByMenuId(MenuOption.Trade)) npcMenuByMenuId(MenuOption.TradeRepair)
+    if (yield* game.waitUntil(() => getUIFlag(UiFlags.Shop), 30)) return true
+  }
+
+  game.sendPacket(npcSession(0, npcId))
+  return yield* game.waitUntil(() => getUIFlag(UiFlags.Shop), 30)
 }
 
 // NPC classids for selling
@@ -43,7 +58,7 @@ export function* sellJunk(game: Game): Generator<void> {
   // Collect items to sell
   const toSell: any[] = []
   for (const item of game.items) {
-    if (item.location !== INVENTORY) continue
+    if (item.location !== ItemContainer.Inventory) continue
     if (shouldKeep(item.code)) continue
     // Sell everything else (equipment, junk)
     toSell.push(item)
@@ -56,9 +71,10 @@ export function* sellJunk(game: Game): Generator<void> {
   const npc = yield* interactNPC(game, vendorId)
   if (!npc) { game.log('[shop] vendor not found'); return }
 
-  // Open trade session
-  game.sendPacket(npcSession(0, npc.unitId))
-  yield* game.delay(500)
+  if (!(yield* openTradeUI(game, npc.unitId))) {
+    game.log('[shop] trade UI failed to open for sell')
+    return
+  }
 
   for (const item of toSell) {
     game.log('[shop] sell ' + (item.name ?? item.code))
@@ -82,7 +98,7 @@ export function* buyPotions(game: Game): Generator<void> {
   // Count belt pots
   let beltCount = 0
   for (const item of game.items) {
-    if (item.location === BELT) beltCount++
+    if (item.location === ItemContainer.Belt) beltCount++
   }
   if (beltCount >= 8) return // belt full enough
 
@@ -91,14 +107,15 @@ export function* buyPotions(game: Game): Generator<void> {
   const npc = yield* interactNPC(game, vendorId)
   if (!npc) return
 
-  // Open trade
-  game.sendPacket(npcSession(0, npc.unitId))
-  yield* game.delay(500)
+  if (!(yield* openTradeUI(game, npc.unitId))) {
+    game.log('[shop] trade UI failed to open for buy')
+    return
+  }
 
-  // Look for HP pots in vendor's inventory (location = VENDOR = 6)
+  // Look for HP pots in vendor's inventory
   const vendorPots: any[] = []
   for (const item of game.items) {
-    if (item.location === VENDOR && item.code.startsWith('hp')) {
+    if (item.location === ItemContainer.Vendor && item.code.startsWith('hp')) {
       vendorPots.push(item)
     }
   }
