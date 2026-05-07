@@ -14,22 +14,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # SpiderMonkey is prebuilt on the artifacts branch (2+ hours to build).
+      - name: Fetch SpiderMonkey from artifacts branch
+        run: |
+          git fetch origin artifacts --depth=1
+          mkdir -p packages/spidermonkey/build-mingw/dll
+          git show origin/artifacts:mozjs.dll > mozjs.dll
+          git show origin/artifacts:libmozjs.dll.a > packages/spidermonkey/build-mingw/dll/libmozjs.dll.a
+
       - name: Install Zig
         uses: mlugg/setup-zig@v2
         with:
           version: 0.15.2
 
-      - name: Build
+      - name: Build Aether.dll + dbghelp.dll
+        working-directory: packages/native
         run: zig build -Doptimize=ReleaseSmall
 
       - name: Package
         run: |
           mkdir -p release
-          cp zig-out/bin/Aether.dll release/
-          cp zig-out/bin/dbghelp.dll release/
+          cp packages/native/zig-out/bin/Aether.dll release/
+          cp packages/native/zig-out/bin/dbghelp.dll release/
+          cp mozjs.dll release/
           cp -r scripts release/
           cp README.md release/
-          cp INSTALL.txt release/
           cd release && zip -r ../aether-${{ github.ref_name }}.zip .
 
       - name: Create Release
