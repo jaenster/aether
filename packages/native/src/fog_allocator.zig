@@ -18,15 +18,15 @@ const ADDR_POOL_REALLOC: usize = 0x0040A1F0; // cdecl (D2PoolManagerStrc*, void*
 const ADDR_FREE_MEMORY_POOL: usize = 0x00409C80; // thiscall — the teardown hook target
 
 // Thiscall: ECX = this, args on stack. On x86-windows Zig, .Thiscall puts first arg in ECX.
-const PoolAllocFn = *const fn (*D2PoolManagerStrc, usize, [*:0]const u8, i32) callconv(.Thiscall) ?[*]BYTE;
-const PoolFreeFn = *const fn (*D2PoolManagerStrc, *?[*]BYTE, [*:0]const u8, i32) callconv(.Thiscall) void;
-const PoolReallocFn = *const fn (*D2PoolManagerStrc, ?[*]BYTE, usize, [*:0]const u8, i32) callconv(.Fastcall) ?[*]BYTE;
+const PoolAllocFn = *const fn (*D2PoolManagerStrc, usize, [*:0]const u8, i32) callconv(.{ .x86_thiscall = .{} }) ?[*]BYTE;
+const PoolFreeFn = *const fn (*D2PoolManagerStrc, *?[*]BYTE, [*:0]const u8, i32) callconv(.{ .x86_thiscall = .{} }) void;
+const PoolReallocFn = *const fn (*D2PoolManagerStrc, ?[*]BYTE, usize, [*:0]const u8, i32) callconv(.{ .x86_fastcall = .{} }) ?[*]BYTE;
 
 pub const pool_alloc: PoolAllocFn = @ptrFromInt(ADDR_POOL_ALLOC);
 pub const pool_free: PoolFreeFn = @ptrFromInt(ADDR_POOL_FREE);
 pub const pool_realloc: PoolReallocFn = @ptrFromInt(ADDR_POOL_REALLOC);
 
-const InitPoolSystemFn = *const fn (**D2PoolManagerStrc, [*:0]const u8, i32) callconv(.Stdcall) void;
+const InitPoolSystemFn = *const fn (**D2PoolManagerStrc, [*:0]const u8, i32) callconv(.{ .x86_stdcall = .{} }) void;
 const init_pool_system: InitPoolSystemFn = @ptrFromInt(ADDR_INIT_POOL_SYSTEM);
 
 var aether_pool: ?*D2PoolManagerStrc = null;
@@ -116,10 +116,10 @@ pub fn registerCleanup(pool: *D2PoolManagerStrc, callback: CleanupFn, ctx: ?*any
 // We intercept FreeMemoryPool to run cleanup callbacks before the pool is destroyed.
 
 var free_pool_trampoline: ?trampoline.Trampoline = null;
-const FreePoolFn = *const fn (*D2PoolManagerStrc) callconv(.Thiscall) void;
+const FreePoolFn = *const fn (*D2PoolManagerStrc) callconv(.{ .x86_thiscall = .{} }) void;
 var original_free_pool: ?FreePoolFn = null;
 
-fn hookFreeMemoryPool(this: *D2PoolManagerStrc) callconv(.Thiscall) void {
+fn hookFreeMemoryPool(this: *D2PoolManagerStrc) callconv(.{ .x86_thiscall = .{} }) void {
     // Find and run cleanup for this pool
     for (&pool_registry) |*slot| {
         if (slot.*) |entry| {
@@ -191,21 +191,14 @@ fn fogFree(pool: *D2PoolManagerStrc, ptr: [*]u8, alignment: u29) void {
     pool_free(pool, &raw_ptr, FILE_TAG, 0);
 }
 
-fn fogAllocFn(ctx: *anyopaque, n: usize, log2_align: u8, _: usize) ?[*]u8 {
+fn fogAllocFn(ctx: *anyopaque, n: usize, alignment: std.mem.Alignment, _: usize) ?[*]u8 {
     const pool: *D2PoolManagerStrc = @ptrCast(@alignCast(ctx));
-    const alignment: u29 = @as(u29, 1) << @intCast(log2_align);
-    return fogAlloc(pool, n, alignment);
+    return fogAlloc(pool, n, @intCast(alignment.toByteUnits()));
 }
 
-fn fogResizeFn(_: *anyopaque, _: []u8, _: u8, _: usize) bool {
-    // FOG pools don't support in-place resize
-    return false;
-}
-
-fn fogFreeFn(ctx: *anyopaque, buf: []u8, log2_align: u8, _: usize) void {
+fn fogFreeFn(ctx: *anyopaque, buf: []u8, alignment: std.mem.Alignment, _: usize) void {
     const pool: *D2PoolManagerStrc = @ptrCast(@alignCast(ctx));
-    const alignment: u29 = @as(u29, 1) << @intCast(log2_align);
-    fogFree(pool, buf.ptr, alignment);
+    fogFree(pool, buf.ptr, @intCast(alignment.toByteUnits()));
 }
 
 /// Get a std.mem.Allocator backed by a specific FOG pool.
@@ -218,7 +211,9 @@ pub fn forPool(pool: *D2PoolManagerStrc) Allocator {
 
 const fog_vtable = Allocator.VTable{
     .alloc = fogAllocFn,
-    .resize = fogResizeFn,
+    // FOG pools don't support in-place resize
+    .resize = Allocator.noResize,
+    .remap = Allocator.noRemap,
     .free = fogFreeFn,
 };
 
@@ -228,26 +223,21 @@ const fog_vtable = Allocator.VTable{
 var bootstrap_buf: [64 * 1024]u8 align(16) = undefined;
 var bootstrap_offset: usize = 0;
 
-fn bootstrapAllocFn(_: *anyopaque, n: usize, log2_align: u8, _: usize) ?[*]u8 {
-    const alignment: usize = @as(usize, 1) << @intCast(log2_align);
+fn bootstrapAllocFn(_: *anyopaque, n: usize, log2_align: std.mem.Alignment, _: usize) ?[*]u8 {
+    const alignment: usize = log2_align.toByteUnits();
     const aligned = std.mem.alignForward(usize, bootstrap_offset, alignment);
     if (aligned + n > bootstrap_buf.len) return null;
     bootstrap_offset = aligned + n;
     return @ptrCast(&bootstrap_buf[aligned]);
 }
 
-fn bootstrapResizeFn(_: *anyopaque, _: []u8, _: u8, _: usize) bool {
-    return false;
-}
-
-fn bootstrapFreeFn(_: *anyopaque, _: []u8, _: u8, _: usize) void {
-    // Bump allocator doesn't free
-}
 
 const bootstrap_vtable = Allocator.VTable{
     .alloc = bootstrapAllocFn,
-    .resize = bootstrapResizeFn,
-    .free = bootstrapFreeFn,
+    .resize = Allocator.noResize,
+    .remap = Allocator.noRemap,
+    // Bump allocator doesn't free
+    .free = Allocator.noFree,
 };
 
 /// Static bump allocator for use before FOG pools are available.
