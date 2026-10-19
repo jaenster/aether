@@ -46,6 +46,18 @@ export GAME_DIR=~/path/to/diablo2
 bash packages/native/run.sh
 ```
 
+### The daemon as an MCP server
+
+`node dist/index.js --mcp http` also serves MCP at `http://127.0.0.1:13120/mcp` (loopback only; `--mcp-port`,
+`--mcp-token`), and `--mcp stdio` serves it on the daemon's own stdio. An MCP client such as Claude Code then drives
+the connected games: `games`, `eval` (JavaScript on the game thread, every binding a global), `state`, `run_script`,
+`stop_script`, `log`, `messages` (what scripts send with `daemonSend()`), `log_file`, `screenshot` and `stack_log`.
+`node dist/index.js --help` lists the options.
+
+```bash
+claude mcp add --transport http aether http://127.0.0.1:13120/mcp
+```
+
 ## Writing Bots
 
 ```typescript
