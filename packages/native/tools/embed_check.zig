@@ -1,4 +1,8 @@
-//! `embed_check SRC_DIR ROOT...`: the embedding path patches nothing.
+//! `embed_check [--list] SRC_DIR ROOT...`: the embedding path patches nothing.
+//!
+//! With --list it prints the files on the path instead (the .zig files and what
+//! they @embedFile), one per line, sorted: what a host that vendors the engine
+//! copies.
 //!
 //! Follows every @import from each root (embed.zig, embed_dll.zig) through the
 //! source tree and fails when it reaches a file that patches the game, owns the
@@ -53,9 +57,11 @@ fn code(gpa: std.mem.Allocator, src: []const u8) ![]u8 {
 pub fn main(init: std.process.Init) !void {
     const arena = init.arena.allocator();
     const io = init.io;
-    const args = try init.minimal.args.toSlice(arena);
+    const all_args = try init.minimal.args.toSlice(arena);
+    const list = all_args.len > 1 and std.mem.eql(u8, all_args[1], "--list");
+    const args = if (list) all_args[1..] else all_args;
     if (args.len < 3) {
-        std.debug.print("usage: embed_check SRC_DIR ROOT...\n", .{});
+        std.debug.print("usage: embed_check [--list] SRC_DIR ROOT...\n", .{});
         std.process.exit(2);
     }
     const src_dir = try std.Io.Dir.cwd().openDir(io, args[1], .{});
@@ -91,16 +97,36 @@ pub fn main(init: std.process.Init) !void {
         };
 
         const dir = std.fs.path.dirname(rel) orelse "";
-        var rest: []const u8 = src;
-        while (std.mem.indexOf(u8, rest, "@import(\"")) |at| {
-            rest = rest[at + "@import(\"".len ..];
-            const close = std.mem.indexOfScalar(u8, rest, '"') orelse break;
-            const name = rest[0..close];
-            rest = rest[close..];
-            if (!std.mem.endsWith(u8, name, ".zig")) continue; // std, builtin, build options
-            const joined = try std.fs.path.resolvePosix(arena, &.{ dir, name });
-            try todo.append(arena, joined);
+        for ([_][]const u8{ "@import(\"", "@embedFile(\"" }) |builtin| {
+            var rest: []const u8 = src;
+            while (std.mem.indexOf(u8, rest, builtin)) |at| {
+                rest = rest[at + builtin.len ..];
+                const close = std.mem.indexOfScalar(u8, rest, '"') orelse break;
+                const name = rest[0..close];
+                rest = rest[close..];
+                // std, builtin, build options
+                if (builtin[1] == 'i' and !std.mem.endsWith(u8, name, ".zig")) continue;
+                const joined = try std.fs.path.resolvePosix(arena, &.{ dir, name });
+                try todo.append(arena, joined);
+            }
         }
+    }
+
+    if (list) {
+        var names: std.ArrayList([]const u8) = .empty;
+        var it = seen.keyIterator();
+        while (it.next()) |k| try names.append(arena, k.*);
+        std.mem.sort([]const u8, names.items, {}, struct {
+            fn lt(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.lessThan(u8, a, b);
+            }
+        }.lt);
+        var buf: [4096]u8 = undefined;
+        var w = std.Io.File.stdout().writerStreaming(io, &buf);
+        for (names.items) |n| w.interface.print("{s}\n", .{n}) catch {};
+        w.interface.flush() catch {};
+        if (failures != 0) std.process.exit(1);
+        return;
     }
 
     if (seen.count() < 10) {
