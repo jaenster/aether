@@ -168,6 +168,15 @@ fn jsPrintScreen(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_
 
 const DWORD = u32;
 extern "kernel32" fn GetTickCount() callconv(.winapi) DWORD;
+extern "kernel32" fn GetSystemTimePreciseAsFileTime(ft: *u64) callconv(.winapi) void;
+
+/// Wall-clock milliseconds since the Unix epoch.
+fn milliTimestamp() i64 {
+    var ft: u64 = undefined;
+    GetSystemTimePreciseAsFileTime(&ft);
+    const epoch_adj: i64 = 11644473600 * 10_000_000; // 1601 -> 1970 in 100ns units
+    return @divFloor(@as(i64, @bitCast(ft)) - epoch_adj, 10_000);
+}
 
 const win32 = struct {
     extern "kernel32" fn CreateFileA(lpFileName: [*:0]const u8, dwDesiredAccess: u32, dwShareMode: u32, lpSA: ?*anyopaque, dwCreationDisposition: u32, dwFlagsAndAttrs: u32, hTemplate: ?*anyopaque) callconv(.winapi) ?*anyopaque;
@@ -959,9 +968,9 @@ fn jsFindTelePath(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c
 
     ensureActMap();
     const tp_range: u32 = 40;
-    const t0 = std.time.milliTimestamp();
+    const t0 = milliTimestamp();
     const wp_count = teleport_reducer.findPath(sx, sy, ex, ey, tp_range);
-    const dt = std.time.milliTimestamp() - t0;
+    const dt = milliTimestamp() - t0;
     var tbuf: [128]u8 = undefined;
     const tmsg = std.fmt.bufPrint(&tbuf, "tele path: {d}ms, {d} wps", .{ dt, wp_count }) catch "?";
     log.printStr("", tmsg);
@@ -1019,6 +1028,10 @@ fn jsGetExits(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int
 
 /// findPreset(unitType, classid) -> "x:y" or ""
 /// Walks Room2 preset units in the current level to find a matching preset.
+/// A Room2 the client has not loaded carries no preset list until its room
+/// data is added, so such rooms are added for the scan and removed again
+/// (the d2bs getPresetUnits pattern); otherwise only presets in the rooms
+/// around the player would be found.
 fn jsFindPreset(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const preset_type: u32 = @bitCast(argInt32(argc, vp, 0));
     const classid: u32 = @bitCast(argInt32(argc, vp, 1));
@@ -1028,24 +1041,41 @@ fn jsFindPreset(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_i
     const room1 = path.pRoom1 orelse { retString(cx, argc, vp, ""); return 1; };
     const room2 = room1.pRoom2 orelse { retString(cx, argc, vp, ""); return 1; };
     const level = room2.pLevel orelse { retString(cx, argc, vp, ""); return 1; };
+    const act: ?*types.Act = if (level.pMisc) |misc| misc.pAct else null;
+
+    var buf: [32]u8 = undefined;
+    var result: []const u8 = "";
 
     // Walk all Room2s in this level
     var r2 = level.pRoom2First;
     while (r2) |room| : (r2 = room.pRoom2Next) {
+        var added = false;
+        if (room.pPreset == null and room.pRoom1 == null) {
+            if (act) |a| {
+                d2.AddRoomData.call(a, @intCast(level.dwLevelNo), @intCast(room.dwPosX), @intCast(room.dwPosY), room1);
+                added = true;
+            }
+        }
+
         var preset = room.pPreset;
         while (preset) |unit| : (preset = unit.pPresetNext) {
             if (unit.dwType == preset_type and unit.dwTxtFileNo == classid) {
                 const wx = unit.dwPosX + room.dwPosX * 5;
                 const wy = unit.dwPosY + room.dwPosY * 5;
-                var buf: [32]u8 = undefined;
-                const result = std.fmt.bufPrint(&buf, "{d}:{d}", .{ wx, wy }) catch { retString(cx, argc, vp, ""); return 1; };
-                retString(cx, argc, vp, result);
-                return 1;
+                result = std.fmt.bufPrint(&buf, "{d}:{d}", .{ wx, wy }) catch "";
+                break;
             }
         }
+
+        if (added) {
+            if (room.pRoom1) |r1| {
+                d2.RemoveRoomData.call(act, @intCast(level.dwLevelNo), @intCast(room.dwPosX), @intCast(room.dwPosY), r1);
+            }
+        }
+        if (result.len != 0) break;
     }
 
-    retString(cx, argc, vp, "");
+    retString(cx, argc, vp, result);
     return 1;
 }
 

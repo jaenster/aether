@@ -257,7 +257,7 @@ fn loadSettings() void {
         // Parse "key: value"
         if (std.mem.indexOf(u8, line, ": ")) |sep| {
             const key = line[0..sep];
-            const val_str = std.mem.trimRight(u8, line[sep + 2 ..], "\r\n ");
+            const val_str = std.mem.trimEnd(u8, line[sep + 2 ..], "\r\n ");
             const val = std.fmt.parseInt(u32, val_str, 10) catch continue;
             applySettingByName(key, val != 0);
         }

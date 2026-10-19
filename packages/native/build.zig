@@ -41,11 +41,11 @@ pub fn build(b: *std.Build) void {
     const sm = std.Build.LazyPath{ .cwd_relative = "../spidermonkey" };
 
     // Link against mozjs.dll import library (built by build-dll.sh with MinGW g++)
-    aether.addObjectFile(sm.path(b, "build-mingw/dll/libmozjs.dll.a"));
+    aether_mod.addObjectFile(sm.path(b, "build-mingw/dll/libmozjs.dll.a"));
 
     // SM bridge header include path (for engine.zig's @cImport)
     aether_mod.addCMacro("MOZJS_DLL_IMPORT", "1");
-    aether.addIncludePath(b.path("src/sm"));
+    aether_mod.addIncludePath(b.path("src/sm"));
 
     b.installArtifact(aether);
 }

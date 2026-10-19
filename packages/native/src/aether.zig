@@ -38,7 +38,7 @@ const frame_limiter = @import("features/frame_limiter.zig");
 const perf_tracker = @import("features/perf_tracker.zig");
 pub const console = @import("features/console.zig");
 
-const BOOL = win.BOOL;
+const BOOL = c_int;
 const HMODULE = win.HINSTANCE;
 
 extern "kernel32" fn DisableThreadLibraryCalls(h: HMODULE) callconv(.winapi) BOOL;
@@ -63,7 +63,7 @@ fn hasFlag(comptime flag: []const u8) bool {
     return false;
 }
 
-pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
+pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) win.BOOL {
     switch (reason) {
         1 => { // DLL_PROCESS_ATTACH
             log.initConsole();
@@ -118,5 +118,5 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
         },
         else => {},
     }
-    return 1; // TRUE
+    return .TRUE;
 }

@@ -33,7 +33,7 @@ jobs:
       - name: Install Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.15.2
+          version: 0.16.0
 
       - name: Build Aether.dll + dbghelp.dll
         shell: bash
@@ -88,7 +88,7 @@ jobs:
       # ── Launch game and run in-game tests ─────────────────────────────
       - name: Run in-game tests
         shell: pwsh
-        timeout-minutes: 3
+        timeout-minutes: 4
         env:
           AETHER_DAEMON: 127.0.0.1:13119
           AETHER_ENTRY: main.ts
@@ -104,8 +104,9 @@ jobs:
             -WorkingDirectory $PWD `
             -PassThru -NoNewWindow
 
-          # Wait for tests to complete (watch log for results)
-          $deadline = (Get-Date).AddSeconds(30)
+          # Wait for tests to complete (watch log for results). The live
+          # shopping tests walk across town first, so allow for that.
+          $deadline = (Get-Date).AddSeconds(120)
           while ((Get-Date) -lt $deadline) {
             if ((Test-Path aether_log.txt) -and (Select-String -Path aether_log.txt -Pattern "Results:.*failed" -Quiet)) {
               Write-Host "Test results detected in log"

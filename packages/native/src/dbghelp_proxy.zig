@@ -3,7 +3,7 @@ const win = std.os.windows;
 
 const HMODULE = win.HINSTANCE;
 const FARPROC = *const fn () callconv(.winapi) isize;
-const BOOL = win.BOOL;
+const BOOL = c_int;
 const LPCSTR = [*:0]const u8;
 const LPCWSTR = [*:0]const u16;
 const LPWSTR = [*:0]u16;
@@ -142,7 +142,7 @@ comptime {
     @export(makeForwarder(8), .{ .name = "MiniDumpWriteDump", .linkage = .strong });
 }
 
-pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
+pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) win.BOOL {
     switch (reason) {
         1 => { // DLL_PROCESS_ATTACH
             log.print("dbghelp_proxy: DLL_PROCESS_ATTACH");
@@ -160,5 +160,5 @@ pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) BOOL {
         },
         else => {},
     }
-    return 1;
+    return .TRUE;
 }
