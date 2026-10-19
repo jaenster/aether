@@ -1,5 +1,6 @@
 const patch = @import("patch.zig");
 const feature = @import("../feature.zig");
+const mode = @import("../mode.zig");
 const globals = @import("../d2/globals.zig");
 const draw_list = @import("../draw_list.zig");
 const d2 = struct {
@@ -43,7 +44,7 @@ const ADDR_DRAW_CURSOR: usize = 0x004684C0;
 // --- Logic ---
 
 fn hookGameLoop() callconv(.c) void {
-    feature.in_game = globals.playerUnit().* != null;
+    mode.in_game = globals.playerUnit().* != null;
     feature.dispatchGameLoop();
 }
 
@@ -54,7 +55,7 @@ fn hookOogLoop() callconv(.c) void {
 // --- Drawing: units ---
 
 fn hookUnitPreDraw() callconv(.c) void {
-    feature.in_game = true;
+    mode.in_game = true;
     feature.dispatchGameUnitPreDraw();
     const drawUnits: *const fn () callconv(.c) void = @ptrFromInt(ADDR_DRAW_UNITS);
     drawUnits();
@@ -94,7 +95,7 @@ fn hookGamePostDraw() callconv(.c) void {
 // --- Drawing: OOG ---
 
 fn hookOogDraw() callconv(.c) void {
-    feature.in_game = false;
+    mode.in_game = false;
     const old = d2.functions.SetFont.call(.{1});
     feature.dispatchOogPostDraw();
     feature.dispatchAllPostDraw();

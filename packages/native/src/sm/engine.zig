@@ -1,5 +1,7 @@
 const std = @import("std");
-pub const c = @cImport(@cInclude("sm_bridge.h"));
+pub const bridge = @import("bridge.zig");
+/// Every bridge call goes through the table, see bridge.zig.
+pub const c = &bridge.api;
 const log = @import("../log.zig");
 
 pub const NativeFn = *const fn (?*anyopaque, c_uint, ?*anyopaque) callconv(.c) c_int;
@@ -10,6 +12,10 @@ pub const Engine = struct {
     game_context: ?*anyopaque = null,
 
     pub fn init(heap_limit_mb: i32) Engine {
+        if (!bridge.ready) {
+            log.print("sm: bridge not resolved");
+            return .{};
+        }
         if (c.sm_init() != 0) {
             log.print("sm: init failed");
             return .{};

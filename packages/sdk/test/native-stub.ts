@@ -218,6 +218,7 @@ export function sendPacket(data: Uint8Array): void {
   state.sentPackets.push(new Uint8Array(data))
 }
 export function registerPacketHook(_o: number): void {}
+export function registerPacketOutHook(_o: number): void {}
 export function getPacketData(): Uint8Array { return new Uint8Array() }
 export function getPacketSize(): number { return 0 }
 export function injectPacket(_d: Uint8Array): void {}

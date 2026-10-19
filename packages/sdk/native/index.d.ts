@@ -117,6 +117,8 @@
 
   // Packet hooks — S2C interception
   export function registerPacketHook(opcode: number): void;
+  // C2S: __onPacketOut(opcode) before the packet is sent (embedded hosts report sends)
+  export function registerPacketOutHook(opcode: number): void;
   export function getPacketData(): Uint8Array;
   export function getPacketSize(): number;
   export function injectPacket(data: Uint8Array): void;

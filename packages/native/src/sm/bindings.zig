@@ -6,7 +6,7 @@ const log = @import("../log.zig");
 const d2 = @import("../d2/functions.zig");
 const globals = @import("../d2/globals.zig");
 const types = @import("../d2/types.zig");
-const feature = @import("../feature.zig");
+const run_mode = @import("../mode.zig");
 const units = @import("units.zig");
 const walk_reducer = @import("../pathing/walk_reducer.zig");
 const teleport_reducer = @import("../pathing/teleport_reducer.zig");
@@ -104,7 +104,7 @@ fn jsGetUnitStat(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_i
 }
 
 fn jsInGame(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
-    retBool(argc, vp, feature.in_game and globals.playerUnit().* != null);
+    retBool(argc, vp, run_mode.in_game and globals.playerUnit().* != null);
     return 1;
 }
 
@@ -140,8 +140,7 @@ fn jsLogVerbose(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_i
 }
 
 fn jsPrintScreen(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
-    const headless = @import("../features/headless.zig");
-    if (headless.isHeadless()) {
+    if (run_mode.headless) {
         retUndefined(argc, vp);
         return 1;
     }
@@ -1249,13 +1248,24 @@ fn jsTakeWaypoint(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_
 
 // ── Packet hooks ────────────────────────────────────────────────────
 
-const packet_hooks = @import("../features/packet_hooks.zig");
+const packets = @import("../net/packets.zig");
 
 /// Register JS interest in an S2C packet opcode. JS __onPacket(opcode) will be called.
 fn jsRegisterPacketHook(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
     const opcode = argInt32(argc, vp, 0);
     if (opcode >= 0 and opcode < 175) {
-        packet_hooks.registerOpcode(@intCast(@as(u32, @bitCast(opcode))));
+        packets.registerOpcode(@intCast(@as(u32, @bitCast(opcode))));
+    }
+    retUndefined(argc, vp);
+    return 1;
+}
+
+/// Register JS interest in a C2S packet opcode. JS __onPacketOut(opcode) will be
+/// called before the packet is sent, where the host reports sends.
+fn jsRegisterPacketOutHook(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const opcode = argInt32(argc, vp, 0);
+    if (opcode >= 0 and opcode < 256) {
+        packets.registerOutOpcode(@intCast(@as(u32, @bitCast(opcode))));
     }
     retUndefined(argc, vp);
     return 1;
@@ -1264,8 +1274,8 @@ fn jsRegisterPacketHook(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(
 /// Get current packet data as a copy. Only valid inside __onPacket callback.
 /// Returns the raw packet bytes (including opcode at [0]) via Uint8Array.
 fn jsGetPacketData(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
-    const ptr = packet_hooks.current_packet_ptr;
-    const len = packet_hooks.current_packet_len;
+    const ptr = packets.current_packet_ptr;
+    const len = packets.current_packet_len;
     if (ptr != null and len > 0) {
         c.sm_ret_uint8array(cx, argc, vp, @ptrCast(ptr.?), @intCast(len));
     } else {
@@ -1276,7 +1286,7 @@ fn jsGetPacketData(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) 
 
 /// Get current packet size. Only valid inside __onPacket callback.
 fn jsGetPacketSize(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
-    retInt32(argc, vp, @intCast(packet_hooks.current_packet_len));
+    retInt32(argc, vp, @intCast(packets.current_packet_len));
     return 1;
 }
 
@@ -1286,7 +1296,7 @@ fn jsInjectPacket(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c
     const len = c.sm_arg_uint8array(cx, argc, vp, 0, &data_ptr);
     if (len > 0 and data_ptr != null) {
         const ptr: [*]const u8 = @ptrCast(data_ptr);
-        packet_hooks.injectPacket(ptr, @intCast(len));
+        packets.inject(ptr, @intCast(len));
     }
     retUndefined(argc, vp);
     return 1;
@@ -2426,6 +2436,14 @@ fn jsScreenshot(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_i
 
 /// Called from the draw hook dispatch (game_hooks.zig) — captures if pending.
 /// Wired into both in-game and OOG post-draw hooks.
+/// Take a pending screenshot request: the file name the script asked for, or
+/// null when none is pending. For a host that captures frames itself.
+pub fn takeScreenshotRequest() ?[*:0]const u8 {
+    if (shared_state.get(.screenshot_pending) == 0) return null;
+    shared_state.set(.screenshot_pending, 0);
+    return @ptrCast(&screenshot_filename);
+}
+
 pub fn flushScreenshot() void {
     if (shared_state.get(.screenshot_pending) == 0) return;
     shared_state.set(.screenshot_pending, 0);
@@ -2577,6 +2595,7 @@ const bindings = [_]Binding{
     .{ .name = "sendPacket", .func = &jsSendPacket, .nargs = 1 },
     // Packet hooks — S2C interception
     .{ .name = "registerPacketHook", .func = &jsRegisterPacketHook, .nargs = 1 },
+    .{ .name = "registerPacketOutHook", .func = &jsRegisterPacketOutHook, .nargs = 1 },
     .{ .name = "getPacketData", .func = &jsGetPacketData, .nargs = 0 },
     .{ .name = "getPacketSize", .func = &jsGetPacketSize, .nargs = 0 },
     .{ .name = "injectPacket", .func = &jsInjectPacket, .nargs = 1 },

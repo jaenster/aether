@@ -11,6 +11,7 @@ const d2 = struct {
 pub const fog_allocator = @import("fog_allocator.zig");
 const crash_handler = @import("crash_handler.zig");
 const log = @import("log.zig");
+const bridge_linked = @import("sm/bridge_linked.zig");
 
 // Features
 const headless = @import("features/headless.zig");
@@ -43,6 +44,10 @@ const HMODULE = win.HINSTANCE;
 
 extern "kernel32" fn DisableThreadLibraryCalls(h: HMODULE) callconv(.winapi) BOOL;
 extern "kernel32" fn GetCommandLineA() callconv(.winapi) [*:0]const u8;
+extern "kernel32" fn AllocConsole() callconv(.winapi) c_int;
+extern "kernel32" fn GetStdHandle(id: u32) callconv(.winapi) *anyopaque;
+
+const STD_OUTPUT_HANDLE: u32 = @bitCast(@as(i32, -11));
 
 /// Check for --flag in command line (e.g. hasFlag("headless") matches "--headless")
 fn hasFlag(comptime flag: []const u8) bool {
@@ -66,7 +71,9 @@ fn hasFlag(comptime flag: []const u8) bool {
 pub export fn DllMain(hModule: HMODULE, reason: u32, _: ?*anyopaque) win.BOOL {
     switch (reason) {
         1 => { // DLL_PROCESS_ATTACH
-            log.initConsole();
+            _ = AllocConsole();
+            log.setConsole(GetStdHandle(STD_OUTPUT_HANDLE));
+            bridge_linked.install();
             log.print("aether: DLL_PROCESS_ATTACH");
             _ = DisableThreadLibraryCalls(hModule);
             crash_handler.install();

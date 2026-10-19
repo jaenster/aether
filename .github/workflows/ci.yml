@@ -35,10 +35,15 @@ jobs:
         with:
           version: 0.16.0
 
-      - name: Build Aether.dll + dbghelp.dll
+      - name: Build Aether.dll + dbghelp.dll + AetherEmbed.dll
         shell: bash
         working-directory: packages/native
         run: zig build -Doptimize=ReleaseSmall
+
+      - name: Unit tests and the embed path check
+        shell: bash
+        working-directory: packages/native
+        run: zig build test
 
       - uses: pnpm/action-setup@v4
         with:

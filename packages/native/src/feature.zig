@@ -33,7 +33,6 @@ pub const Hooks = struct {
 const MAX_FEATURES = 32;
 var features: [MAX_FEATURES]*const Hooks = undefined;
 var count: u8 = 0;
-pub var in_game: bool = false;
 
 // Per-feature timing (microseconds per 10s window)
 pub var feature_us: [MAX_FEATURES]u64 = [_]u64{0} ** MAX_FEATURES;

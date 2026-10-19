@@ -13,14 +13,14 @@ const crash_handler = @import("../crash_handler.zig");
 // - Char select works without DC6 sprites
 // - Video/palette loaders stubbed (files don't exist)
 
-var headless_rendering: bool = false;
+const mode = @import("../mode.zig");
 
 pub fn isHeadless() bool {
-    return headless_rendering;
+    return mode.headless;
 }
 
 pub fn enableHeadlessMode() void {
-    headless_rendering = true;
+    mode.headless = true;
 
     // Hide the game window — NOP the ShowWindow call at 0x004F585A
     // PUSH 1 (2B) + PUSH EAX (1B) + CALL [0x006cc4ec] (6B) = 9 bytes
@@ -126,7 +126,7 @@ fn deinit() void {
     patch.revertRange(0x006019F0, 6);
     patch.revertRange(0x005186d0, 3);
     patch.revertRange(0x0043BF60, 3);
-    if (headless_rendering) {
+    if (mode.headless) {
         patch.revertRange(0x004F585A, 9);
         patch.revertRange(0x004F98E0, 1);
         patch.revertRange(0x0044C990, 3);

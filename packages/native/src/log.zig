@@ -24,11 +24,24 @@ extern "kernel32" fn WriteFile(
 ) callconv(.winapi) c_int;
 
 extern "kernel32" fn CloseHandle(h: HANDLE) callconv(.winapi) c_int;
-extern "kernel32" fn AllocConsole() callconv(.winapi) c_int;
-extern "kernel32" fn GetStdHandle(id: DWORD) callconv(.winapi) HANDLE;
-
-const STD_OUTPUT_HANDLE: DWORD = @as(DWORD, @bitCast(@as(i32, -11)));
 var console_handle: ?HANDLE = null;
+
+/// Set by an embedding host: every line goes to the host instead of
+/// aether_log.txt, aether_verbose.txt and the console.
+pub var sink: ?*const fn ([]const u8) void = null;
+
+fn toSink(parts: []const []const u8) bool {
+    const out = sink orelse return false;
+    var buf: [1024]u8 = undefined;
+    var n: usize = 0;
+    for (parts) |p| {
+        const take = @min(p.len, buf.len - n);
+        @memcpy(buf[n .. n + take], p[0..take]);
+        n += take;
+    }
+    out(buf[0..n]);
+    return true;
+}
 
 /// Callback for in-game console overlay. Set by features/console.zig during init.
 pub var ingame_console_callback: ?*const fn ([]const u8) void = null;
@@ -46,15 +59,15 @@ const FILE_SHARE_READ: DWORD = 0x00000001;
 const OPEN_ALWAYS: DWORD = 4;
 const FILE_ATTRIBUTE_NORMAL: DWORD = 0x80;
 
-pub fn initConsole() void {
-    _ = AllocConsole();
-    const h = GetStdHandle(STD_OUTPUT_HANDLE);
+/// Also echo every line to this console (the injector allocates one).
+pub fn setConsole(h: HANDLE) void {
     if (h != INVALID_HANDLE) {
         console_handle = h;
     }
 }
 
 pub fn openLogHandle() ?HANDLE {
+    if (sink != null) return null;
     return openLog();
 }
 
@@ -102,6 +115,7 @@ fn writeConsole(buf: []const u8) void {
 }
 
 pub fn print(comptime msg: []const u8) void {
+    if (toSink(&.{msg})) return;
     const h = openLog() orelse return;
     defer _ = CloseHandle(h);
     writeRaw(h, msg ++ "\r\n");
@@ -111,9 +125,6 @@ pub fn print(comptime msg: []const u8) void {
 
 /// Print "prefix" + hex value + newline
 pub fn hex(comptime prefix: []const u8, value: usize) void {
-    const h = openLog() orelse return;
-    defer _ = CloseHandle(h);
-    writeRaw(h, prefix);
     var buf: [8]u8 = undefined;
     const digits = "0123456789ABCDEF";
     var v = value;
@@ -123,6 +134,10 @@ pub fn hex(comptime prefix: []const u8, value: usize) void {
         buf[i] = digits[v & 0xF];
         v >>= 4;
     }
+    if (toSink(&.{ prefix, &buf })) return;
+    const h = openLog() orelse return;
+    defer _ = CloseHandle(h);
+    writeRaw(h, prefix);
     writeRaw(h, &buf);
     writeRaw(h, "\r\n");
     writeConsole(prefix);
@@ -132,6 +147,7 @@ pub fn hex(comptime prefix: []const u8, value: usize) void {
 
 /// Print comptime prefix + runtime string slice + newline
 pub fn printStr(comptime prefix: []const u8, s: []const u8) void {
+    if (toSink(&.{ prefix, s })) return;
     const h = openLog() orelse return;
     defer _ = CloseHandle(h);
     writeRaw(h, prefix);
@@ -154,6 +170,7 @@ pub fn printStr(comptime prefix: []const u8, s: []const u8) void {
 
 /// Print to verbose log file + console, but NOT the main log
 pub fn printStrVerbose(comptime prefix: []const u8, s: []const u8) void {
+    if (toSink(&.{ prefix, s })) return;
     const h = openVerboseLog() orelse return;
     defer _ = CloseHandle(h);
     writeRaw(h, prefix);
