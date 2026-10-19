@@ -165,6 +165,28 @@ pub fn decodeString(json_str: []const u8, buf: []u8) ?[]const u8 {
                     out += 1;
                     i += 2;
                 },
+                'b' => {
+                    buf[out] = 0x08;
+                    out += 1;
+                    i += 2;
+                },
+                'f' => {
+                    buf[out] = 0x0C;
+                    out += 1;
+                    i += 2;
+                },
+                'u' => {
+                    // \uXXXX as UTF-8. A surrogate half becomes U+FFFD.
+                    if (i + 6 > json_str.len) return null;
+                    const cp = std.fmt.parseInt(u21, json_str[i + 2 .. i + 6], 16) catch return null;
+                    const ch: u21 = if (cp >= 0xD800 and cp <= 0xDFFF) 0xFFFD else cp;
+                    var enc: [4]u8 = undefined;
+                    const n = std.unicode.utf8Encode(ch, &enc) catch return null;
+                    if (out + n > buf.len) return null;
+                    @memcpy(buf[out .. out + n], enc[0..n]);
+                    out += n;
+                    i += 6;
+                },
                 else => {
                     buf[out] = json_str[i];
                     out += 1;
@@ -191,4 +213,53 @@ fn findClosingQuote(data: []const u8, start: usize) ?usize {
         i += 1;
     }
     return null;
+}
+
+/// Append `s` as a JSON string literal, quotes included. Bytes >= 0x80 pass
+/// through as they are (the game's strings are UTF-8 or Latin-1; the daemon
+/// reads both).
+pub fn appendString(out: *std.ArrayList(u8), gpa: std.mem.Allocator, s: []const u8) !void {
+    try out.append(gpa, '"');
+    for (s) |ch| {
+        switch (ch) {
+            '"' => try out.appendSlice(gpa, "\\\""),
+            '\\' => try out.appendSlice(gpa, "\\\\"),
+            '\n' => try out.appendSlice(gpa, "\\n"),
+            '\r' => try out.appendSlice(gpa, "\\r"),
+            '\t' => try out.appendSlice(gpa, "\\t"),
+            0...8, 11, 12, 14...0x1F, 0x7F => {
+                var b: [6]u8 = undefined;
+                _ = std.fmt.bufPrint(&b, "\\u{x:0>4}", .{ch}) catch unreachable;
+                try out.appendSlice(gpa, &b);
+            },
+            else => try out.append(gpa, ch),
+        }
+    }
+    try out.append(gpa, '"');
+}
+
+test "appendString escapes what JSON requires and decodeString reads it back" {
+    const gpa = std.testing.allocator;
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(gpa);
+    const src = "a\"b\\c\nd\te\x01f\x7f";
+    try appendString(&out, gpa, src);
+    try std.testing.expectEqualStrings("\"a\\\"b\\\\c\\nd\\te\\u0001f\\u007f\"", out.items);
+    var buf: [64]u8 = undefined;
+    const back = decodeString(out.items[1 .. out.items.len - 1], &buf).?;
+    try std.testing.expectEqualStrings(src, back);
+}
+
+test "decodeString reads \\u escapes as UTF-8" {
+    var buf: [16]u8 = undefined;
+    try std.testing.expectEqualStrings("\xc3\xa9!", decodeString("\\u00e9!", &buf).?);
+    try std.testing.expectEqualStrings("\xef\xbf\xbd", decodeString("\\ud83d", &buf).?);
+}
+
+test "getString finds an eval request's code" {
+    const msg = "{\"type\":\"eval\",\"id\":\"7\",\"code\":\"getArea() + \\\"x\\\"\"}";
+    try std.testing.expect(hasStringValue(msg, "type", "eval"));
+    try std.testing.expectEqualStrings("7", getString(msg, "id").?);
+    var buf: [64]u8 = undefined;
+    try std.testing.expectEqualStrings("getArea() + \"x\"", decodeString(getString(msg, "code").?, &buf).?);
 }

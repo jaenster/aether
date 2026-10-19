@@ -283,3 +283,4 @@ export function drawFree(_s: number): void {}
 export function drawUpdate(_s: number, _x: number, _y: number, _x2: number, _y2: number, _c: number, _a: number, _v: number): void {}
 export function drawSetText(_s: number, _t: string): void {}
 export function takeScreenshot(_name?: string): void {}
+export function daemonSend(_text: string): boolean { return false }

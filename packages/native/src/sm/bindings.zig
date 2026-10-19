@@ -36,13 +36,35 @@ fn retString(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque, s: []const u8) void
 
 // ── State bindings (existing) ────────────────────────────────────────
 
+/// The player's level number, or -1 out of game or between rooms.
+pub fn currentArea() i32 {
+    const player = globals.playerUnit().* orelse return -1;
+    const path = player.dynamicPath() orelse return -1;
+    const room1 = path.pRoom1 orelse return -1;
+    const room2 = room1.pRoom2 orelse return -1;
+    const level = room2.pLevel orelse return -1;
+    return @bitCast(level.dwLevelNo);
+}
+
 fn jsGetArea(_: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
-    const player = globals.playerUnit().* orelse { retInt32(argc, vp, -1); return 1; };
-    const path = player.dynamicPath() orelse { retInt32(argc, vp, -1); return 1; };
-    const room1 = path.pRoom1 orelse { retInt32(argc, vp, -1); return 1; };
-    const room2 = room1.pRoom2 orelse { retInt32(argc, vp, -1); return 1; };
-    const level = room2.pLevel orelse { retInt32(argc, vp, -1); return 1; };
-    retInt32(argc, vp, @bitCast(level.dwLevelNo));
+    retInt32(argc, vp, currentArea());
+    return 1;
+}
+
+/// Set by the script host: sends a script message to the daemon.
+pub var daemon_send: ?*const fn ([]const u8) bool = null;
+
+/// daemonSend(text) -> bool: one message to the daemon (scripts send JSON).
+/// False when no daemon is connected. At most 64 KB.
+fn jsDaemonSend(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_int {
+    const S = struct {
+        var buf: [64 * 1024]u8 = undefined;
+    };
+    const send = daemon_send orelse { retBool(argc, vp, false); return 1; };
+    const len = c.sm_arg_string(cx, argc, vp, 0, &S.buf, S.buf.len);
+    if (len < 0) { retBool(argc, vp, false); return 1; }
+    const n: usize = @min(@as(usize, @intCast(len)), S.buf.len - 1);
+    retBool(argc, vp, send(S.buf[0..n]));
     return 1;
 }
 
@@ -2659,6 +2681,7 @@ const bindings = [_]Binding{
     .{ .name = "drawSetText", .func = &jsDrawSetText, .nargs = 2 },
     // Screenshot
     .{ .name = "takeScreenshot", .func = &jsScreenshot, .nargs = 0 },
+    .{ .name = "daemonSend", .func = &jsDaemonSend, .nargs = 1 },
 };
 
 /// Comptime-generated ES module source for "diablo:native".

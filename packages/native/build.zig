@@ -72,6 +72,14 @@ pub fn build(b: *std.Build) void {
     });
     test_step.dependOn(&b.addRunArtifact(bridge_tests).step);
 
+    const json_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/net/json.zig"),
+            .target = b.graph.host,
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(json_tests).step);
+
     const embed_check = b.addExecutable(.{
         .name = "embed_check",
         .root_module = b.createModule(.{

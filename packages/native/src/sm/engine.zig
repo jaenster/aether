@@ -54,20 +54,39 @@ pub const Engine = struct {
     }
 
     pub fn eval(_: *Engine, ctx: *anyopaque, source: []const u8) ?[]const u8 {
-        var result_buf: [4096]u8 = undefined;
+        // Static: the slice returned below outlives this call.
+        const S = struct {
+            var result_buf: [4096]u8 = undefined;
+        };
+        const result_buf = &S.result_buf;
         const len = c.sm_eval(
             ctx,
             source.ptr,
             @intCast(source.len),
-            &result_buf,
+            result_buf,
             result_buf.len,
         );
         if (len < 0) {
-            const err_msg = std.mem.sliceTo(@as([*:0]const u8, @ptrCast(&result_buf)), 0);
+            const err_msg = std.mem.sliceTo(@as([*:0]const u8, @ptrCast(result_buf)), 0);
             log.printStr("sm eval error: ", err_msg);
             return null;
         }
-        return result_buf[0..@intCast(len)];
+        // sm_eval returns the full length even when it cut the copy
+        return result_buf[0..@min(@as(usize, @intCast(len)), result_buf.len - 1)];
+    }
+
+    pub const EvalResult = struct { ok: bool, text: []const u8 };
+
+    /// Evaluate `source` as a global script. The result's string form, or the
+    /// exception's, goes into `buf` (cut at its size). Logs nothing.
+    pub fn evalInto(_: *Engine, ctx: *anyopaque, source: []const u8, buf: []u8) EvalResult {
+        const len = c.sm_eval(ctx, source.ptr, @intCast(source.len), buf.ptr, @intCast(buf.len));
+        if (len < 0) {
+            return .{ .ok = false, .text = std.mem.sliceTo(@as([*:0]const u8, @ptrCast(buf.ptr)), 0) };
+        }
+        // sm_eval returns the full length even when it cut the copy
+        const n: usize = @min(@as(usize, @intCast(len)), buf.len - 1);
+        return .{ .ok = true, .text = buf[0..n] };
     }
 
     pub fn registerNativeFn(self: *Engine, ctx: *anyopaque, name: [*:0]const u8, func: NativeFn, nargs: c_uint) bool {

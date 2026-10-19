@@ -30,6 +30,10 @@ var console_handle: ?HANDLE = null;
 /// aether_log.txt, aether_verbose.txt and the console.
 pub var sink: ?*const fn ([]const u8) void = null;
 
+/// Set by the script host: also receives every line that goes to the sink, so
+/// the daemon can show a host's Aether lines without reading its log file.
+pub var tap: ?*const fn ([]const u8) void = null;
+
 fn toSink(parts: []const []const u8) bool {
     const out = sink orelse return false;
     var buf: [1024]u8 = undefined;
@@ -40,6 +44,7 @@ fn toSink(parts: []const []const u8) bool {
         n += take;
     }
     out(buf[0..n]);
+    if (tap) |t| t(buf[0..n]);
     return true;
 }
 

@@ -48,7 +48,7 @@ pub const ScriptLoader = struct {
     /// Handle a daemon message — check if it's a file:response for us.
     /// On hot-reload (state == .loaded), returns true to signal context recreation needed.
     pub fn handleMessage(self: *ScriptLoader, msg: []const u8, eng: *Engine, ctx: *anyopaque) bool {
-        if (self.state != .waiting_response and self.state != .loaded and self.state != .failed) return false;
+        // .idle as well: the daemon may push a bundle to a game that asked for none.
 
         if (!json.hasStringValue(msg, "type", "file:response")) return false;
 

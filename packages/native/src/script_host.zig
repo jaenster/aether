@@ -10,6 +10,8 @@ const DaemonConnection = @import("net/daemon.zig").DaemonConnection;
 const ScriptLoader = @import("net/script_loader.zig").ScriptLoader;
 const packets = @import("net/packets.zig");
 const json = @import("net/json.zig");
+const remote = @import("net/remote.zig");
+const mode = @import("mode.zig");
 
 var engine: ?Engine = null;
 var daemon: DaemonConnection = .{};
@@ -77,6 +79,8 @@ fn ensureInit() void {
     daemon_enabled = daemon.init();
     if (daemon_enabled) {
         loader_enabled = loader.init();
+        log.tap = &remote.tapLine;
+        bindings.daemon_send = &sendScriptMessage;
     }
 }
 
@@ -85,7 +89,13 @@ pub fn running() bool {
     return engine != null;
 }
 
+fn sendScriptMessage(payload: []const u8) bool {
+    return remote.sendScriptMessage(&daemon, payload);
+}
+
 pub fn deinit() void {
+    log.tap = null;
+    bindings.daemon_send = null;
     if (daemon_enabled) daemon.deinit();
     if (engine) |*eng| {
         eng.deinit();
@@ -126,6 +136,18 @@ fn tickCommon() void {
         handleDaemonMessage(eng, msg);
     }
 
+    if (daemon.isReady()) {
+        remote.flushLog(&daemon);
+        remote.maybeSendState(&daemon, .{
+            .in_game = mode.in_game,
+            .area = if (mode.in_game) bindings.currentArea() else -1,
+            .game_ticks = game_ticks,
+            .oog_ticks = oog_ticks,
+            .loader = @tagName(loader.state),
+            .heap_used = eng.heapUsed(),
+        });
+    }
+
     // Request entry script once daemon is ready
     if (loader_enabled and loader.state == .idle and daemon.isReady()) {
         loader.requestEntry(&daemon);
@@ -151,10 +173,13 @@ fn reportNativeStats(eng: *Engine) void {
 }
 
 var was_in_game: bool = false;
+var game_ticks: u32 = 0;
+var oog_ticks: u32 = 0;
 
 /// One game-thread tick while in game: runs the script's __onTick.
 pub fn gameTick() void {
     was_in_game = true;
+    game_ticks +%= 1;
     tickCommon();
     const eng = &(engine orelse return);
 
@@ -169,6 +194,7 @@ pub fn gameTick() void {
 
 /// One game-thread tick out of game: runs the script's __onOogTick.
 pub fn oogTick() void {
+    oog_ticks +%= 1;
     // Trigger GC when transitioning out of game — lots of garbage from the run
     if (was_in_game) {
         was_in_game = false;
@@ -193,6 +219,8 @@ pub fn oogTick() void {
 
 fn handleDaemonMessage(eng: *Engine, msg: []const u8) void {
     const ctx = eng.oog_context orelse return;
+
+    if (remote.handleEval(&daemon, eng, ctx, msg)) return;
 
     // Check if this is a hot-reload (loader already in .loaded state)
     const is_reload = loader.state == .loaded;

@@ -236,3 +236,5 @@
    *             the file with the same name.
    */
   export function takeScreenshot(name?: string): void;
+  /** One message to the daemon (send JSON). False when no daemon is connected. At most 64 KB. */
+  export function daemonSend(text: string): boolean;
