@@ -33,6 +33,8 @@ export class AetherServer {
   private wss: WebSocketServer | null = null;
   private clients = new Map<string, ConnectedClient>();
   private handlers = new Map<string, MessageHandler>();
+  private alsoHandlers = new Map<string, MessageHandler[]>();
+  private disconnectHandlers: ((client: ConnectedClient) => void)[] = [];
 
   constructor(
     private port: number = 13119,
@@ -92,9 +94,11 @@ export class AetherServer {
 
         // Route to registered handler
         const handler = this.handlers.get(msg.type as string);
+        const also = this.alsoHandlers.get(msg.type as string) ?? [];
+        for (const h of also) h(client, msg);
         if (handler) {
           handler(client, msg);
-        } else {
+        } else if (also.length === 0) {
           console.log(`Unhandled message type: ${msg.type}`);
         }
       });
@@ -104,6 +108,7 @@ export class AetherServer {
         if (client) {
           this.clients.delete(client.id);
           console.log(`Client disconnected: ${client.name} [${client.id}]`);
+          for (const h of this.disconnectHandlers) h(client);
         }
       });
 
@@ -126,6 +131,23 @@ export class AetherServer {
 
   on(messageType: string, handler: MessageHandler): void {
     this.handlers.set(messageType, handler);
+  }
+
+  /** A second handler for a type another module already handles. */
+  onAlso(messageType: string, handler: MessageHandler): void {
+    const list = this.alsoHandlers.get(messageType) ?? [];
+    list.push(handler);
+    this.alsoHandlers.set(messageType, list);
+  }
+
+  onDisconnect(handler: (client: ConnectedClient) => void): void {
+    this.disconnectHandlers.push(handler);
+  }
+
+  /** The port the game connection listens on (the real one when 0 was asked). */
+  get listenPort(): number {
+    const a = this.wss?.address();
+    return typeof a === "object" && a ? a.port : this.port;
   }
 
   getClient(id: string): ConnectedClient | undefined {
