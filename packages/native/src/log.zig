@@ -21,10 +21,10 @@ extern "kernel32" fn WriteFile(
     len: DWORD,
     written: ?*DWORD,
     overlapped: ?*anyopaque,
-) callconv(.winapi) win.BOOL;
+) callconv(.winapi) c_int;
 
-extern "kernel32" fn CloseHandle(h: HANDLE) callconv(.winapi) win.BOOL;
-extern "kernel32" fn AllocConsole() callconv(.winapi) win.BOOL;
+extern "kernel32" fn CloseHandle(h: HANDLE) callconv(.winapi) c_int;
+extern "kernel32" fn AllocConsole() callconv(.winapi) c_int;
 extern "kernel32" fn GetStdHandle(id: DWORD) callconv(.winapi) HANDLE;
 
 const STD_OUTPUT_HANDLE: DWORD = @as(DWORD, @bitCast(@as(i32, -11)));

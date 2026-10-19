@@ -4,7 +4,7 @@ const log = @import("log.zig");
 const win = std.os.windows;
 const HANDLE = *anyopaque;
 const DWORD = u32;
-const BOOL = win.BOOL;
+const BOOL = c_int;
 const INVALID_HANDLE: HANDLE = @ptrFromInt(std.math.maxInt(usize));
 
 extern "kernel32" fn CreateFileA(

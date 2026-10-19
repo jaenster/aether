@@ -11,7 +11,7 @@ const MEM_RELEASE: DWORD = 0x8000;
 const PAGE_EXECUTE_READWRITE: DWORD = 0x40;
 
 extern "kernel32" fn VirtualAlloc(addr: ?*anyopaque, size: usize, alloc_type: DWORD, protect: DWORD) callconv(.winapi) ?[*]BYTE;
-extern "kernel32" fn VirtualFree(addr: *anyopaque, size: usize, free_type: DWORD) callconv(.winapi) win.BOOL;
+extern "kernel32" fn VirtualFree(addr: *anyopaque, size: usize, free_type: DWORD) callconv(.winapi) c_int;
 
 pub const Trampoline = struct {
     buffer: [*]BYTE,

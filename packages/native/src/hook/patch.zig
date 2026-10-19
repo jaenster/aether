@@ -4,7 +4,7 @@ const win = std.os.windows;
 const DWORD = u32;
 const BYTE = u8;
 
-extern "kernel32" fn VirtualProtect(addr: *anyopaque, size: usize, new_protect: DWORD, old_protect: *DWORD) callconv(.winapi) win.BOOL;
+extern "kernel32" fn VirtualProtect(addr: *anyopaque, size: usize, new_protect: DWORD, old_protect: *DWORD) callconv(.winapi) c_int;
 
 const PAGE_READWRITE: DWORD = 0x04;
 

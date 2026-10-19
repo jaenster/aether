@@ -168,6 +168,15 @@ fn jsPrintScreen(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c_
 
 const DWORD = u32;
 extern "kernel32" fn GetTickCount() callconv(.winapi) DWORD;
+extern "kernel32" fn GetSystemTimePreciseAsFileTime(ft: *u64) callconv(.winapi) void;
+
+/// Wall-clock milliseconds since the Unix epoch.
+fn milliTimestamp() i64 {
+    var ft: u64 = undefined;
+    GetSystemTimePreciseAsFileTime(&ft);
+    const epoch_adj: i64 = 11644473600 * 10_000_000; // 1601 -> 1970 in 100ns units
+    return @divFloor(@as(i64, @bitCast(ft)) - epoch_adj, 10_000);
+}
 
 const win32 = struct {
     extern "kernel32" fn CreateFileA(lpFileName: [*:0]const u8, dwDesiredAccess: u32, dwShareMode: u32, lpSA: ?*anyopaque, dwCreationDisposition: u32, dwFlagsAndAttrs: u32, hTemplate: ?*anyopaque) callconv(.winapi) ?*anyopaque;
@@ -959,9 +968,9 @@ fn jsFindTelePath(cx: ?*anyopaque, argc: c_uint, vp: ?*anyopaque) callconv(.c) c
 
     ensureActMap();
     const tp_range: u32 = 40;
-    const t0 = std.time.milliTimestamp();
+    const t0 = milliTimestamp();
     const wp_count = teleport_reducer.findPath(sx, sy, ex, ey, tp_range);
-    const dt = std.time.milliTimestamp() - t0;
+    const dt = milliTimestamp() - t0;
     var tbuf: [128]u8 = undefined;
     const tmsg = std.fmt.bufPrint(&tbuf, "tele path: {d}ms, {d} wps", .{ dt, wp_count }) catch "?";
     log.printStr("", tmsg);
